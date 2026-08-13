@@ -31,20 +31,46 @@
     color: #c45500;
 }
 
-/* =========================
-   MAIN BANNER
-========================= */
-
-.main-banner {
-    display: block;
+header {
+    position: fixed;
+    top: 0;
+    left: 0;
     width: 100%;
+    z-index: 1000;
+}
+
+#mainBannerCarousel {
+    position: relative;
+    width: 100%;
+    margin-top: 48px;
     overflow: hidden;
 }
 
-.main-banner img {
+.main-banner {
     width: 100%;
     height: auto;
-}   
+    display: block;
+}
+
+.carousel-control-prev-icon,
+.carousel-control-next-icon {
+    background-color: rgba(0, 0, 0, 0.6);
+    border-radius: 50%;
+    padding: 20px;
+    background-size: 50%;
+}
+
+@media (max-width: 768px) {
+    #mainBannerCarousel {
+        margin-top: 60px;
+    }
+
+    .main-banner {
+        width: 100%;
+        height: auto;
+    }
+}
+
 
 
 /* =========================
@@ -285,4 +311,93 @@
     .footer-column ul li {
         margin-bottom: 9px;
     }
+}
+
+
+/* sidebar */
+
+.sidebar-overlay {
+    position: fixed;
+    top: 0;
+    left: 0;
+    width: 100%;
+    height: 100%;
+    background: rgba(0, 0, 0, 0.6);
+    display: none;
+    z-index: 999;
+}
+
+.sidebar-overlay.show {
+    display: block;
+}
+
+.sidebar {
+    position: fixed;
+    top: 0;
+    left: -350px;
+    width: 350px;
+    height: 100vh;
+    background: #232f3e;
+    color: #fff;
+    z-index: 1000;
+    overflow-y: auto;
+    transition: left 0.3s ease;
+}
+
+.sidebar.open {
+    left: 0;
+}
+
+.sidebar-header {
+    height: 65px;
+    background: #131a22;
+    padding: 0 20px;
+
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+
+    font-size: 20px;
+    font-weight: bold;
+}
+
+.sidebar-header button {
+    background: none;
+    border: none;
+    color: white;
+    font-size: 32px;
+    cursor: pointer;
+}
+
+.sidebar-section {
+    padding: 20px 0;
+    border-bottom: 1px solid #3a4553;
+}
+
+.sidebar-section h3 {
+    padding: 0 25px;
+    margin: 0 0 10px;
+    font-size: 18px;
+}
+
+.sidebar-section a {
+    display: block;
+    padding: 11px 25px;
+    color: white;
+    text-decoration: none;
+}
+
+.sidebar-section a:hover {
+    background: #37475a;
+}
+
+
+/* top deals  */
+
+html {
+    scroll-behavior: smooth;
+}
+
+#todayDeals {
+    scroll-margin-top: 80px;
 }
