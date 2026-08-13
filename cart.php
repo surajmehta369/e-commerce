@@ -1,11 +1,11 @@
-<!DOCTYPE html>
-<html lang="en">
-<head>
-    <meta charset="UTF-8">
-    <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Cart</title>
-</head>
-<body>
-    <h class="display-2" align="center">Cart</h>
-</body>
-</html>
+<?php
+include "components/header.php";
+include "components/sidebar.php";
+
+?>
+<main>
+        <h class="display-2" align="center">Cart</h>
+</main>
+<?php
+include "components/footer.php";
+?>
