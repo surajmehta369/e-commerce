@@ -59,7 +59,7 @@
         <p>© 2026 Your Store. All Rights Reserved.</p>
     </div>
 </footer>
-
+<script src="assets/js/script.js"></script>
 </body>
 
 </html>
