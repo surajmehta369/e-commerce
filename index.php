@@ -83,74 +83,105 @@ $banners = [
 
     <!-- SHOP CARDS -->
 
-    <?php
+   <?php
 
-    $cards = [
-        [
-            'image' => 'assets/uploads/image1.jpg',
-            'alt' => 'Continue shopping deals',
-            'title' => 'Continue Shopping Deals',
-            'description' => 'Explore our latest offers and best deals.',
-            'button' => 'Shop Now →',
-            'link' => '#'
-        ],
-        [
-            'image' => 'assets/uploads/image2.jpg',
-            'alt' => 'Electronics recommendations',
-            'title' => 'Electronics & Photo',
-            'description' => 'Discover the latest electronics and accessories.',
-            'button' => 'Shop Now →',
-            'link' => '#'
-        ],
-        [
-            'image' => 'assets/uploads/image.jpg',
-            'alt' => 'Smartphones',
-            'title' => 'Smartphones Curated For You',
-            'description' => 'Find smartphones that match your needs and budget.',
-            'button' => 'See All Offers →',
-            'link' => '#'
-        ]
-    ];
+require_once "connection/dbconnect.php";
 
-    ?>
+$database = new Database();
+$db = $database->connect();
 
-    <div class="shop-cards-section">
-        <div class="container-fluid">
-            <div class="row g-4 px-2">
 
-                <?php foreach ($cards as $card): ?>
+// Get active products
 
-                    <div class="col-lg-4 col-md-6 col-sm-12">
-                        <div class="shop-card">
+$sql = "
+    SELECT
+        id,
+        title,
+        description,
+        image,
+        price,
+        stock
+    FROM products
+    WHERE status = 1
+    ORDER BY id ASC
+";
 
-                            <a href="<?= $card['link']; ?>" class="shop-card-image">
-                                <img src="<?= $card['image']; ?>" alt="<?= $card['alt']; ?>">
-                            </a>
+$stmt = $db->prepare($sql);
+$stmt->execute();
 
-                            <div class="shop-card-body">
+$cards = $stmt->fetchAll(PDO::FETCH_ASSOC);
 
-                                <h4><?= $card['title']; ?></h4>
+?>
 
-                                <p>
-                                    <?= $card['description']; ?>
-                                </p>
 
-                                <a href="<?= $card['link']; ?>" class="shop-btn">
-                                    <?= $card['button']; ?>
-                                </a>
+<div class="shop-cards-section">
 
-                            </div>
+    <div class="container-fluid">
 
-                        </div>
-                    </div>
+        <div class="row g-4 px-2">
+<?php foreach ($cards as $card): ?>
 
-                <?php endforeach; ?>
+    <div class="col-lg-4 col-md-6 col-sm-12">
+
+        <div class="shop-card">
+
+            <div class="shop-card-image">
+
+                <img
+                    src="<?= htmlspecialchars($card['image']); ?>"
+                    alt="<?= htmlspecialchars($card['title']); ?>"
+                >
 
             </div>
+
+
+            <div class="shop-card-body">
+
+                <h4>
+                    <?= htmlspecialchars($card['title']); ?>
+                </h4>
+
+
+                <p>
+                    <?= htmlspecialchars($card['description']); ?>
+                </p>
+
+
+                <h5 class="mb-3">
+                    ₹<?= number_format($card['price'], 2); ?>
+                </h5>
+
+
+                <button
+                    type="button"
+                    class="shop-btn add-to-cart"
+
+                    data-id="<?= $card['id']; ?>"
+
+                    data-title="<?= htmlspecialchars($card['title']); ?>"
+
+                    data-price="<?= $card['price']; ?>"
+
+                    data-image="<?= htmlspecialchars($card['image']); ?>"
+                >
+                    <i class="fa-solid fa-cart-plus me-2"></i>
+                    Add to Cart
+                </button>
+
+            </div>
+
         </div>
+
     </div>
 
+<?php endforeach; ?>
 
+
+        </div>
+
+    </div>
+
+</div>
     <hr>
 
 <?php
@@ -606,7 +637,169 @@ $dealSections = [
         </div>
 
     </div>
+
+
+<!-- =====================================================
+     ADD TO CART QUANTITY MODAL
+===================================================== -->
+
+<div
+    class="modal fade"
+    id="quantityModal"
+    tabindex="-1"
+    aria-hidden="true"
+>
+
+    <div class="modal-dialog modal-dialog-centered">
+
+        <div class="modal-content border-0 rounded-4 shadow">
+
+            <div class="modal-header border-0">
+
+                <h5 class="modal-title fw-bold">
+                    Add to Cart
+                </h5>
+
+                <button
+                    type="button"
+                    class="btn-close"
+                    data-bs-dismiss="modal"
+                    aria-label="Close"
+                ></button>
+
+            </div>
+
+
+            <div class="modal-body text-center px-4">
+
+                <!-- PRODUCT IMAGE -->
+
+                <img
+                    id="modalProductImage"
+                    src=""
+                    alt=""
+                    style="
+                        width:120px;
+                        height:120px;
+                        object-fit:cover;
+                        border-radius:12px;
+                    "
+                    class="mb-3"
+                >
+
+
+                <!-- PRODUCT NAME -->
+
+                <h5
+                    id="modalProductTitle"
+                    class="fw-bold mb-2"
+                ></h5>
+
+
+                <!-- PRODUCT PRICE -->
+
+                <p
+                    id="modalProductPrice"
+                    class="text-primary fw-bold fs-5"
+                ></p>
+
+
+                <!-- QUANTITY -->
+
+                <div class="mt-4">
+
+                    <label
+                        class="fw-semibold d-block mb-2"
+                    >
+                        Quantity
+                    </label>
+
+
+                    <div
+                        class="d-flex
+                               justify-content-center
+                               align-items-center
+                               gap-3"
+                    >
+
+                        <button
+                            type="button"
+                            id="quantityMinus"
+                            class="btn btn-outline-secondary
+                                   rounded-circle"
+                            style="
+                                width:40px;
+                                height:40px;
+                            "
+                        >
+                            −
+                        </button>
+
+
+                        <input
+                            type="number"
+                            id="quantityInput"
+                            value="1"
+                            min="1"
+                            class="form-control text-center fw-bold"
+                            style="width:70px;"
+                        >
+
+
+                        <button
+                            type="button"
+                            id="quantityPlus"
+                            class="btn btn-outline-primary
+                                   rounded-circle"
+                            style="
+                                width:40px;
+                                height:40px;
+                            "
+                        >
+                            +
+                        </button>
+
+                    </div>
+
+                </div>
+
+            </div>
+
+
+            <div class="modal-footer border-0 justify-content-center pb-4">
+
+                <button
+                    type="button"
+                    class="btn btn-secondary rounded-pill px-4"
+                    data-bs-dismiss="modal"
+                >
+                    Cancel
+                </button>
+
+
+                <button
+                    type="button"
+                    id="confirmAddToCart"
+                    class="btn btn-primary rounded-pill px-4"
+                >
+
+                    <i class="fa-solid fa-cart-plus me-2"></i>
+
+                    Add to Cart
+
+                </button>
+
+            </div>
+
+        </div>
+
+    </div>
+
+</div>
+
 </main>
 <?php
 include "components/footer.php";
 ?>
+
+

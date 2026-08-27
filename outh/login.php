@@ -58,6 +58,11 @@ if($_SERVER['REQUEST_METHOD']==='POST'){
                 SET last_login_at = NOW()
                 WHERE id = :id
             ";
+            $stmt = $db->prepare($sql);
+
+            $stmt->execute([
+                "id" => $user['id']
+            ]);
 
         
             if ($user['role'] === 'admin') {
@@ -70,11 +75,33 @@ if($_SERVER['REQUEST_METHOD']==='POST'){
                 header("Location: ../vendor/index.php");
                 exit;
 
-            } else {
+           } else {
 
-                header("Location: ../index.php");
-                exit;
-            }
+    if (isset($_SESSION['checkout_redirect'])) {
+
+        $redirectPage =
+            $_SESSION['checkout_redirect'];
+
+
+
+        unset($_SESSION['checkout_redirect']);
+
+
+    
+
+        if ($redirectPage === 'checkout.php') {
+
+            header("Location: ../checkout.php");
+            exit;
+
+        }
+
+    }
+
+    header("Location: ../index.php");
+    exit;
+}
+
         }
         }
 

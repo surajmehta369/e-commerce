@@ -24,10 +24,9 @@
 </head>
 
 <body>
-<script src="assets/js/script.js"></script>
   <header>
     <nav class="navbar navbar-expand-lg fixed-top navbar-dark" style="background-color:rgb(35, 47, 62);">
-      <a class="navbar-brand" href="#">Myshop.in</a>
+      <a class="navbar-brand" href="index.php">Myshop.in</a>
       <button class="navbar-toggler" type="button" data-toggle="collapse" data-target="#navbarSupportedContent"
         aria-controls="navbarSupportedContent" aria-expanded="false" aria-label="Toggle navigation">
         <span class="navbar-toggler-icon"></span>
@@ -39,14 +38,6 @@
             <a class="nav-link" href="#" id="allMenuBtn"> <i class="fa-solid fa-bars">&nbsp;All</i></a>
           </li>
 
-
-          <li class="nav-item">
-            <a class="nav-link" href="#">Fresh</a>
-          </li>
-          <li class="nav-item">
-            <a class="nav-link" href="#">Prime video</a>
-          </li>
-
           <li class="nav-item">
             <a class="nav-link" href="#">sell</a>
           </li>
@@ -55,9 +46,6 @@
           </li>
           <li class="nav-item">
             <a class="nav-link" href="#todayDeals"  >Today deals</a>
-          </li>
-          <li class="nav-item">
-            <a class="nav-link" href="#">customer Services</a>
           </li>
           <li class="nav-item">
             <a class="nav-link" href="#">Mobile</a>
@@ -73,7 +61,6 @@
       </div>
 <?php if (isset($_SESSION['user_id'])): ?>
 
-    <!-- Logout -->
     <a href="outh/logout.php"
        class="btn btn-danger"
        title="Logout"
@@ -84,6 +71,16 @@
 <?php else: ?>
 
     <!-- Sign Up -->
+     
+<a
+    href="orders.php"
+    class="btn btn-light rounded-pill"
+>
+    <i class="fa-solid fa-box me-2"></i>
+    My Orders
+</a>
+
+&nbsp;
     <a href="outh/register.php"
        class="btn btn-light"
        title="Sign Up"
@@ -91,13 +88,27 @@
         <i class="fa-solid fa-user-plus"></i>
     </a>
 &nbsp;
-    <!-- Login -->
- <a href="cart.php"
-   class="btn btn-light"
-   title="Add to Cart"
-   aria-label="Add to Cart">
+ 
+<a href="cart.php"
+   class="btn btn-light position-relative"
+   title="View Cart"
+   aria-label="View Cart">
+
     <i class="fa-solid fa-cart-plus"></i>
+
+    <span
+        id="cart-count"
+        class="position-absolute top-0 start-100
+               translate-middle badge rounded-pill
+               bg-danger"
+        style="font-size: 10px;"
+    >
+        0
+    </span>
+
 </a>
+
+
 
 <?php endif; ?>
     </nav>
