@@ -51,12 +51,31 @@
             <a class="nav-link" href="#">Mobile</a>
           </li>
 
-          <form class="d-flex  my-2 my-lg-0">
-            <input class="form-control me-2" type="search" placeholder="Search" aria-label="Search">
-            <button class="btn btn-outline-light" type="submit">
-              Search
-            </button>
-          </form>
+  <form
+    class="d-flex my-2 my-lg-0"
+    id="searchForm"
+    action="search.php"
+    method="GET"
+>
+    <input
+        class="form-control me-2"
+        type="search"
+        id="searchInput"
+        name="q"
+        placeholder="Search"
+        aria-label="Search"
+        autocomplete="off"
+    >
+
+    <button
+        class="btn btn-outline-light"
+        type="submit"
+    >
+        Search
+    </button>
+</form>
+
+
         </ul>
       </div>
 <?php if (isset($_SESSION['user_id'])): ?>

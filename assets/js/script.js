@@ -976,3 +976,711 @@ if (checkoutForm) {
     );
 
 }
+
+
+
+document.addEventListener("DOMContentLoaded", function () {
+
+    const searchForm =
+        document.getElementById("searchForm");
+
+    const searchInput =
+        document.getElementById("searchInput");
+
+    const searchResults =
+        document.getElementById("searchResults");
+
+    const defaultProducts =
+        document.getElementById("defaultProducts");
+
+
+
+    if (
+        !searchForm ||
+        !searchInput ||
+        !searchResults ||
+        !defaultProducts
+    ) {
+
+        console.error("Search elements not found.");
+
+        return;
+
+    }
+
+
+    let searchTimer = null;
+
+    searchInput.addEventListener(
+        "input",
+        function () {
+
+            const query =
+                this.value.trim();
+
+
+
+            clearTimeout(searchTimer);
+
+
+            if (query === "") {
+
+                searchResults.style.display =
+                    "none";
+
+                defaultProducts.style.display =
+                    "block";
+
+                searchResults.innerHTML = "";
+
+                return;
+
+            }
+
+            searchTimer = setTimeout(
+                function () {
+
+                    performSearch(query);
+
+                },
+                400
+            );
+
+        }
+    );
+
+    searchForm.addEventListener(
+        "submit",
+        function (event) {
+
+            event.preventDefault();
+
+        }
+    );
+async function performSearch(query) {
+
+    console.log(
+        "Searching for:",
+        query
+    );
+
+
+    // --------------------------------
+    // START SEARCH TIMER
+    // --------------------------------
+
+    const startTime = performance.now();
+
+
+    // --------------------------------
+    // SHOW SEARCH AREA
+    // --------------------------------
+
+    searchResults.style.display = "block";
+
+    defaultProducts.style.display = "none";
+
+
+    searchResults.innerHTML = `
+
+        <div class="text-center py-5">
+
+            <div
+                class="spinner-border text-primary"
+                role="status"
+            ></div>
+
+            <p class="mt-2">
+                Searching...
+            </p>
+
+        </div>
+
+    `;
+
+
+    try {
+
+        // --------------------------------
+        // CALL SEARCH API
+        // --------------------------------
+
+        const response = await fetch(
+            "api/search.php?q=" +
+            encodeURIComponent(query)
+        );
+
+
+        // Check HTTP status
+
+        if (!response.ok) {
+
+            throw new Error(
+                "HTTP error: " +
+                response.status
+            );
+
+        }
+
+
+        // --------------------------------
+        // GET RAW RESPONSE
+        // --------------------------------
+
+        const responseText =
+            await response.text();
+
+
+        console.log(
+            "Raw API response:",
+            responseText
+        );
+
+
+        // --------------------------------
+        // CONVERT JSON
+        // --------------------------------
+
+        let data;
+
+
+        try {
+
+            data = JSON.parse(responseText);
+
+        } catch (jsonError) {
+
+            console.error(
+                "Invalid JSON:",
+                responseText
+            );
+
+            throw new Error(
+                "Server returned invalid JSON."
+            );
+
+        }
+
+
+        console.log(
+            "Search response:",
+            data
+        );
+
+
+        // --------------------------------
+        // END SEARCH TIMER
+        // --------------------------------
+
+        const endTime =
+            performance.now();
+
+
+        const searchTime =
+            (endTime - startTime).toFixed(2);
+
+
+        // --------------------------------
+        // CHECK API SUCCESS
+        // --------------------------------
+
+        if (!data.success) {
+
+            throw new Error(
+                data.message ||
+                "Search failed."
+            );
+
+        }
+
+
+        // --------------------------------
+        // SEARCH INFORMATION
+        // --------------------------------
+
+        let wordsHtml = "-";
+
+
+        if (
+            Array.isArray(data.words) &&
+            data.words.length > 0
+        ) {
+
+            wordsHtml = data.words
+                .map(function(word) {
+
+                    return escapeHtml(word);
+
+                })
+                .join(", ");
+
+        }
+
+
+        // --------------------------------
+        // NO RESULTS
+        // --------------------------------
+
+        if (data.count === 0) {
+
+            searchResults.innerHTML = `
+
+                <div class="container-fluid">
+
+                    <div class="card shadow-sm mb-4">
+
+                        <div class="card-body">
+
+                            <h5 class="mb-3">
+                                Search Information
+                            </h5>
+
+                            <div class="row g-3">
+
+                                <div class="col-lg-3 col-md-6">
+
+                                    <div class="border rounded p-3">
+
+                                        <small class="text-muted">
+                                            Query
+                                        </small>
+
+                                        <div class="fw-bold">
+                                            ${escapeHtml(
+                                                data.query || query
+                                            )}
+                                        </div>
+
+                                    </div>
+
+                                </div>
+
+
+                                <div class="col-lg-3 col-md-6">
+
+                                    <div class="border rounded p-3">
+
+                                        <small class="text-muted">
+                                            Search Words
+                                        </small>
+
+                                        <div class="fw-bold">
+                                            ${wordsHtml}
+                                        </div>
+
+                                    </div>
+
+                                </div>
+
+
+                                <div class="col-lg-3 col-md-6">
+
+                                    <div class="border rounded p-3">
+
+                                        <small class="text-muted">
+                                            Total Results
+                                        </small>
+
+                                        <div class="fw-bold fs-4">
+                                            0
+                                        </div>
+
+                                    </div>
+
+                                </div>
+
+
+                                <div class="col-lg-3 col-md-6">
+
+                                    <div class="border rounded p-3">
+
+                                        <small class="text-muted">
+                                            Search Time
+                                        </small>
+
+                                        <div class="fw-bold">
+                                            ${searchTime} ms
+                                        </div>
+
+                                    </div>
+
+                                </div>
+
+                            </div>
+
+                        </div>
+
+                    </div>
+
+
+                    <div class="text-center py-5">
+
+                        <h4>
+                            No products found
+                        </h4>
+
+                        <p class="text-muted">
+
+                            No products matched
+                            "${escapeHtml(query)}"
+
+                        </p>
+
+                    </div>
+
+                </div>
+
+            `;
+
+            return;
+        }
+
+
+        // --------------------------------
+        // BUILD SEARCH RESULTS
+        // --------------------------------
+
+        let html = `
+
+            <div class="container-fluid">
+
+
+                <!-- SEARCH ENGINE INFORMATION -->
+
+                <div class="card shadow-sm mb-4">
+
+                    <div class="card-body">
+
+                        <h5 class="mb-3">
+
+                            Search Engine Information
+
+                        </h5>
+
+
+                        <div class="row g-3">
+
+
+                            <!-- QUERY -->
+
+                            <div class="col-lg-3 col-md-6">
+
+                                <div class="border rounded p-3">
+
+                                    <small class="text-muted">
+                                        Query
+                                    </small>
+
+                                    <div class="fw-bold">
+
+                                        ${escapeHtml(
+                                            data.query || query
+                                        )}
+
+                                    </div>
+
+                                </div>
+
+                            </div>
+
+
+                            <!-- WORDS -->
+
+                            <div class="col-lg-3 col-md-6">
+
+                                <div class="border rounded p-3">
+
+                                    <small class="text-muted">
+                                        Search Words
+                                    </small>
+
+                                    <div class="fw-bold">
+
+                                        ${wordsHtml}
+
+                                    </div>
+
+                                </div>
+
+                            </div>
+
+
+                            <!-- TOTAL -->
+
+                            <div class="col-lg-3 col-md-6">
+
+                                <div class="border rounded p-3">
+
+                                    <small class="text-muted">
+                                        Total Results
+                                    </small>
+
+                                    <div class="fw-bold fs-4">
+
+                                        ${data.count}
+
+                                    </div>
+
+                                </div>
+
+                            </div>
+
+
+                            <!-- TIME -->
+
+                            <div class="col-lg-3 col-md-6">
+
+                                <div class="border rounded p-3">
+
+                                    <small class="text-muted">
+                                        Search Time
+                                    </small>
+
+                                    <div class="fw-bold">
+
+                                        ${searchTime} ms
+
+                                    </div>
+
+                                </div>
+
+                            </div>
+
+                        </div>
+
+                    </div>
+
+                </div>
+
+
+                <!-- SEARCH RESULT HEADER -->
+
+                <div
+                    class="d-flex
+                           justify-content-between
+                           align-items-center
+                           mb-3"
+                >
+
+                    <h3>
+                        Search Results
+                    </h3>
+
+                    <span class="text-muted">
+
+                        ${data.count}
+                        product(s)
+
+                    </span>
+
+                </div>
+
+
+                <div class="row g-4">
+
+        `;
+
+
+        // --------------------------------
+        // PRODUCTS
+        // --------------------------------
+
+        data.products.forEach(
+            function(product) {
+
+                html += `
+
+                    <div
+                        class="col-lg-4
+                               col-md-6
+                               col-sm-12"
+                    >
+
+                        <div class="shop-card">
+
+
+                            <!-- IMAGE -->
+
+                            <div class="shop-card-image">
+
+                                <img
+                                    src="${escapeHtml(
+                                        product.image
+                                    )}"
+
+                                    alt="${escapeHtml(
+                                        product.title
+                                    )}"
+                                >
+
+                            </div>
+
+
+                            <!-- BODY -->
+
+                            <div class="shop-card-body">
+
+
+                                <!-- TITLE -->
+
+                                <h4>
+
+                                    ${escapeHtml(
+                                        product.title
+                                    )}
+
+                                </h4>
+
+
+                                <!-- DESCRIPTION -->
+
+                                <p>
+
+                                    ${escapeHtml(
+                                        product.description
+                                    )}
+
+                                </p>
+
+
+                                <!-- PRICE -->
+
+                                <h5 class="mb-3">
+
+                                    ₹${Number(
+                                        product.price
+                                    ).toFixed(2)}
+
+                                </h5>
+
+
+                                <!-- RELEVANCE SCORE -->
+
+                                <div class="mb-3">
+
+                                    <small class="text-muted">
+                                        Relevance Score
+                                    </small>
+
+                                    <strong class="text-success ms-1">
+
+                                        ${
+                                            product.relevance_score
+                                            ?? 0
+                                        }
+
+                                    </strong>
+
+                                </div>
+
+
+                                <!-- ADD TO CART -->
+
+                                <button
+                                    type="button"
+                                    class="shop-btn add-to-cart"
+
+                                    data-id="${product.id}"
+
+                                    data-title="${escapeHtml(
+                                        product.title
+                                    )}"
+
+                                    data-price="${product.price}"
+
+                                    data-image="${escapeHtml(
+                                        product.image
+                                    )}"
+                                >
+
+                                    <i
+                                        class="fa-solid
+                                               fa-cart-plus
+                                               me-2"
+                                    ></i>
+
+                                    Add to Cart
+
+                                </button>
+
+
+                            </div>
+
+                        </div>
+
+                    </div>
+
+                `;
+
+            }
+        );
+
+
+        // --------------------------------
+        // CLOSE HTML
+        // --------------------------------
+
+        html += `
+
+                </div>
+
+            </div>
+
+        `;
+
+
+        // --------------------------------
+        // DISPLAY RESULTS
+        // --------------------------------
+
+        searchResults.innerHTML = html;
+
+
+    } catch (error) {
+
+        console.error(
+            "Search error:",
+            error
+        );
+
+
+        searchResults.innerHTML = `
+
+            <div class="alert alert-danger">
+
+                <strong>
+                    Unable to search products.
+                </strong>
+
+                <br>
+
+                <small>
+                    ${escapeHtml(
+                        error.message
+                    )}
+                </small>
+
+            </div>
+
+        `;
+
+    }
+
+}
+
+
+
+    function escapeHtml(value) {
+
+        const div =
+            document.createElement("div");
+
+        div.textContent =
+            value ?? "";
+
+        return div.innerHTML;
+
+    }
+
+});
+
