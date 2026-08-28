@@ -38,44 +38,363 @@ document.addEventListener("DOMContentLoaded", function () {
         localStorage.setItem("cart", JSON.stringify(cart));
     }
 
-    // =====================================================
-// UPDATE CART COUNT
-// =====================================================
 
-function updateCartCount() {
+    function updateCartCount() {
 
-    const cartCountElement =
-        document.getElementById("cart-count");
+        const cartCountElement =
+            document.getElementById("cart-count");
 
-    if (!cartCountElement) {
-        return;
+        if (!cartCountElement) {
+            return;
+        }
+
+
+        const cart = getCart();
+
+
+        // Calculate total quantity
+
+        let totalQuantity = 0;
+
+
+        cart.forEach(function (product) {
+
+            totalQuantity += Number(product.quantity) || 0;
+
+        });
+
+
+        cartCountElement.textContent =
+            totalQuantity;
+
     }
+    updateCartCount();
 
 
-    const cart = getCart();
+
+// ==========================================
+// PRODUCT DETAILS PAGE - ADD TO CART
+// ==========================================
+
+const detailQuantity =
+    document.getElementById("detailQuantity");
+
+const detailQuantityMinus =
+    document.getElementById("detailQuantityMinus");
+
+const detailQuantityPlus =
+    document.getElementById("detailQuantityPlus");
 
 
-    // Calculate total quantity
+// ==========================================
+// DETAIL QUANTITY MINUS
+// ==========================================
 
-    let totalQuantity = 0;
+if (detailQuantityMinus && detailQuantity) {
 
+    detailQuantityMinus.addEventListener(
+        "click",
+        function () {
 
-    cart.forEach(function (product) {
+            let quantity =
+                Number(detailQuantity.value);
 
-        totalQuantity += Number(product.quantity) || 0;
+            if (
+                !Number.isInteger(quantity) ||
+                quantity < 1
+            ) {
+                quantity = 1;
+            }
 
-    });
+            if (quantity > 1) {
+                quantity--;
+            }
 
+            detailQuantity.value = quantity;
 
-    cartCountElement.textContent =
-        totalQuantity;
+        }
+    );
 
 }
-updateCartCount();
 
 
+// ==========================================
+// DETAIL QUANTITY PLUS
+// ==========================================
+
+if (detailQuantityPlus && detailQuantity) {
+
+    detailQuantityPlus.addEventListener(
+        "click",
+        function () {
+
+            let quantity =
+                Number(detailQuantity.value);
+
+            const maxQuantity =
+                Number(detailQuantity.max);
+
+            if (
+                !Number.isInteger(quantity) ||
+                quantity < 1
+            ) {
+                quantity = 1;
+            }
+
+            if (
+                maxQuantity > 0 &&
+                quantity < maxQuantity
+            ) {
+                quantity++;
+            }
+
+            detailQuantity.value = quantity;
+
+        }
+    );
+
+}
 
 
+// ==========================================
+// DETAIL QUANTITY MANUAL INPUT
+// ==========================================
+
+if (detailQuantity) {
+
+    detailQuantity.addEventListener(
+        "input",
+        function () {
+
+            let quantity =
+                Number(this.value);
+
+            const maxQuantity =
+                Number(this.max);
+
+            if (
+                !Number.isInteger(quantity) ||
+                quantity < 1
+            ) {
+                quantity = 1;
+            }
+
+            if (
+                maxQuantity > 0 &&
+                quantity > maxQuantity
+            ) {
+                quantity = maxQuantity;
+            }
+
+            this.value = quantity;
+
+        }
+    );
+
+}
+
+
+// ==========================================
+// PRODUCT DETAILS ADD TO CART
+// ==========================================
+
+document.addEventListener(
+    "click",
+    function (event) {
+
+        const button =
+            event.target.closest(
+                ".add-to-cart"
+            );
+
+        if (!button) {
+            return;
+        }
+
+
+        // Only handle product-details page
+        // when detailQuantity exists.
+
+        if (!detailQuantity) {
+            return;
+        }
+
+
+        event.preventDefault();
+
+
+        const product = {
+
+            id: String(
+                button.dataset.id
+            ),
+
+            title:
+                button.dataset.title,
+
+            price:
+                Number(
+                    button.dataset.price
+                ),
+
+            image:
+                button.dataset.image,
+
+            quantity:
+                Number(
+                    detailQuantity.value
+                )
+
+        };
+
+
+        // ==================================
+        // VALIDATE QUANTITY
+        // ==================================
+
+        if (
+            !Number.isInteger(product.quantity) ||
+            product.quantity < 1
+        ) {
+
+            alert(
+                "Please enter a valid quantity."
+            );
+
+            return;
+
+        }
+
+
+        const maxStock =
+            Number(detailQuantity.max);
+
+
+        if (
+            maxStock > 0 &&
+            product.quantity > maxStock
+        ) {
+
+            alert(
+                "Only " +
+                maxStock +
+                " items are available in stock."
+            );
+
+            detailQuantity.value =
+                maxStock;
+
+            return;
+
+        }
+
+
+        // ==================================
+        // GET CURRENT CART
+        // ==================================
+
+        let cart =
+            getCart();
+
+
+        // ==================================
+        // FIND EXISTING PRODUCT
+        // ==================================
+
+        const existingProduct =
+            cart.find(function (item) {
+
+                return String(item.id) ===
+                    String(product.id);
+
+            });
+
+
+        if (existingProduct) {
+
+            const newQuantity =
+                Number(
+                    existingProduct.quantity
+                ) +
+                product.quantity;
+
+
+            if (
+                maxStock > 0 &&
+                newQuantity > maxStock
+            ) {
+
+                alert(
+                    "You already have " +
+                    existingProduct.quantity +
+                    " in your cart. Only " +
+                    maxStock +
+                    " items are available."
+                );
+
+                return;
+
+            }
+
+
+            existingProduct.quantity =
+                newQuantity;
+
+        } else {
+
+            cart.push(product);
+
+        }
+
+
+        // ==================================
+        // SAVE CART
+        // ==================================
+
+        saveCart(cart);
+
+
+        // ==================================
+        // UPDATE CART BADGE
+        // ==================================
+
+        updateCartCount();
+
+
+        console.log(
+            "Product added to cart:",
+            product
+        );
+
+
+        console.log(
+            "Current cart:",
+            cart
+        );
+
+
+        // Optional visual feedback
+
+        const originalText =
+            button.innerHTML;
+
+        button.innerHTML =
+            '<i class="fa-solid fa-check me-2"></i> Added to Cart';
+
+        button.disabled = true;
+
+
+        setTimeout(function () {
+
+            button.innerHTML =
+                originalText;
+
+            button.disabled = false;
+
+        }, 1500);
+
+    }
+);
 
 
     const addToCartButtons =
@@ -342,10 +661,6 @@ updateCartCount();
 
                     }
 
-
-                    alert(
-                        "Product added to cart!"
-                    );
 
                 }
             );
@@ -681,91 +996,91 @@ updateCartCount();
 
         });
 
-const plusButtons =
-    document.querySelectorAll(".cart-quantity-plus");
+        const plusButtons =
+            document.querySelectorAll(".cart-quantity-plus");
 
 
-plusButtons.forEach(function (button) {
+        plusButtons.forEach(function (button) {
 
-    button.addEventListener("click", function () {
+            button.addEventListener("click", function () {
 
-        const productId =
-            this.dataset.id;
-
-
-        let updatedCart = getCart();
+                const productId =
+                    this.dataset.id;
 
 
-        const product =
-            updatedCart.find(function (item) {
-
-                return item.id === productId;
-
-            });
+                let updatedCart = getCart();
 
 
-        if (product) {
+                const product =
+                    updatedCart.find(function (item) {
 
-            product.quantity++;
+                        return item.id === productId;
 
-        }
-
-
-        saveCart(updatedCart);
-
-        updateCartCount();
-
-        displayCart();
-
-    });
-
-});
+                    });
 
 
-const minusButtons =
-    document.querySelectorAll(".cart-quantity-minus");
+                if (product) {
+
+                    product.quantity++;
+
+                }
 
 
-minusButtons.forEach(function (button) {
+                saveCart(updatedCart);
 
-    button.addEventListener("click", function () {
+                updateCartCount();
 
-        const productId =
-            this.dataset.id;
-
-
-        let updatedCart = getCart();
-
-
-        const product =
-            updatedCart.find(function (item) {
-
-                return item.id === productId;
+                displayCart();
 
             });
 
-
-        if (product) {
-
-
-            if (product.quantity > 1) {
-
-                product.quantity--;
-
-            }
-
-        }
+        });
 
 
-        saveCart(updatedCart);
+        const minusButtons =
+            document.querySelectorAll(".cart-quantity-minus");
 
-        updateCartCount();
 
-        displayCart();
+        minusButtons.forEach(function (button) {
 
-    });
+            button.addEventListener("click", function () {
 
-});
+                const productId =
+                    this.dataset.id;
+
+
+                let updatedCart = getCart();
+
+
+                const product =
+                    updatedCart.find(function (item) {
+
+                        return item.id === productId;
+
+                    });
+
+
+                if (product) {
+
+
+                    if (product.quantity > 1) {
+
+                        product.quantity--;
+
+                    }
+
+                }
+
+
+                saveCart(updatedCart);
+
+                updateCartCount();
+
+                displayCart();
+
+            });
+
+        });
 
 
     }
@@ -794,8 +1109,6 @@ function loadCheckoutCart() {
             localStorage.getItem("cart")
         ) || [];
 
-
-    // Empty cart
 
     if (cart.length === 0) {
 
@@ -881,7 +1194,7 @@ function loadCheckoutCart() {
                     <small class="text-muted">
 
                         ₹${Number(product.price)
-                            .toLocaleString("en-IN")}
+                .toLocaleString("en-IN")}
 
                         ×
 
@@ -895,7 +1208,7 @@ function loadCheckoutCart() {
                 <strong>
 
                     ₹${subtotal
-                        .toLocaleString("en-IN")}
+                .toLocaleString("en-IN")}
 
                 </strong>
 
@@ -929,7 +1242,7 @@ function loadCheckoutCart() {
             >
 
                 ₹${total
-                    .toLocaleString("en-IN")}
+            .toLocaleString("en-IN")}
 
             </h4>
 
@@ -1057,31 +1370,22 @@ document.addEventListener("DOMContentLoaded", function () {
 
         }
     );
-async function performSearch(query) {
+    async function performSearch(query) {
 
-    console.log(
-        "Searching for:",
-        query
-    );
-
-
-    // --------------------------------
-    // START SEARCH TIMER
-    // --------------------------------
-
-    const startTime = performance.now();
+        console.log(
+            "Searching for:",
+            query
+        );
 
 
-    // --------------------------------
-    // SHOW SEARCH AREA
-    // --------------------------------
+        const startTime = performance.now();
 
-    searchResults.style.display = "block";
+        searchResults.style.display = "block";
 
-    defaultProducts.style.display = "none";
+        defaultProducts.style.display = "none";
 
 
-    searchResults.innerHTML = `
+        searchResults.innerHTML = `
 
         <div class="text-center py-5">
 
@@ -1099,131 +1403,98 @@ async function performSearch(query) {
     `;
 
 
-    try {
-
-        // --------------------------------
-        // CALL SEARCH API
-        // --------------------------------
-
-        const response = await fetch(
-            "api/search.php?q=" +
-            encodeURIComponent(query)
-        );
-
-
-        // Check HTTP status
-
-        if (!response.ok) {
-
-            throw new Error(
-                "HTTP error: " +
-                response.status
-            );
-
-        }
-
-
-        // --------------------------------
-        // GET RAW RESPONSE
-        // --------------------------------
-
-        const responseText =
-            await response.text();
-
-
-        console.log(
-            "Raw API response:",
-            responseText
-        );
-
-
-        // --------------------------------
-        // CONVERT JSON
-        // --------------------------------
-
-        let data;
-
-
         try {
 
-            data = JSON.parse(responseText);
+            const response = await fetch(
+                "api/search.php?q=" +
+                encodeURIComponent(query)
+            );
 
-        } catch (jsonError) {
 
-            console.error(
-                "Invalid JSON:",
+            if (!response.ok) {
+
+                throw new Error(
+                    "HTTP error: " +
+                    response.status
+                );
+
+            }
+
+
+            const responseText =
+                await response.text();
+
+
+            console.log(
+                "Raw API response:",
                 responseText
             );
 
-            throw new Error(
-                "Server returned invalid JSON."
+
+            let data;
+
+
+            try {
+
+                data = JSON.parse(responseText);
+
+            } catch (jsonError) {
+
+                console.error(
+                    "Invalid JSON:",
+                    responseText
+                );
+
+                throw new Error(
+                    "Server returned invalid JSON."
+                );
+
+            }
+
+
+            console.log(
+                "Search response:",
+                data
             );
 
-        }
+            const endTime =
+                performance.now();
 
 
-        console.log(
-            "Search response:",
-            data
-        );
+            const searchTime =
+                (endTime - startTime).toFixed(2);
+
+            if (!data.success) {
+
+                throw new Error(
+                    data.message ||
+                    "Search failed."
+                );
+
+            }
 
 
-        // --------------------------------
-        // END SEARCH TIMER
-        // --------------------------------
-
-        const endTime =
-            performance.now();
+            let wordsHtml = "-";
 
 
-        const searchTime =
-            (endTime - startTime).toFixed(2);
+            if (
+                Array.isArray(data.words) &&
+                data.words.length > 0
+            ) {
 
+                wordsHtml = data.words
+                    .map(function (word) {
 
-        // --------------------------------
-        // CHECK API SUCCESS
-        // --------------------------------
+                        return escapeHtml(word);
 
-        if (!data.success) {
+                    })
+                    .join(", ");
 
-            throw new Error(
-                data.message ||
-                "Search failed."
-            );
+            }
 
-        }
+            if (data.count === 0) {
 
-
-        // --------------------------------
-        // SEARCH INFORMATION
-        // --------------------------------
-
-        let wordsHtml = "-";
-
-
-        if (
-            Array.isArray(data.words) &&
-            data.words.length > 0
-        ) {
-
-            wordsHtml = data.words
-                .map(function(word) {
-
-                    return escapeHtml(word);
-
-                })
-                .join(", ");
-
-        }
-
-
-        // --------------------------------
-        // NO RESULTS
-        // --------------------------------
-
-        if (data.count === 0) {
-
-            searchResults.innerHTML = `
+                searchResults.innerHTML = `
 
                 <div class="container-fluid">
 
@@ -1247,8 +1518,8 @@ async function performSearch(query) {
 
                                         <div class="fw-bold">
                                             ${escapeHtml(
-                                                data.query || query
-                                            )}
+                    data.query || query
+                )}
                                         </div>
 
                                     </div>
@@ -1332,15 +1603,11 @@ async function performSearch(query) {
 
             `;
 
-            return;
-        }
+                return;
+            }
 
 
-        // --------------------------------
-        // BUILD SEARCH RESULTS
-        // --------------------------------
-
-        let html = `
+            let html = `
 
             <div class="container-fluid">
 
@@ -1374,8 +1641,8 @@ async function performSearch(query) {
                                     <div class="fw-bold">
 
                                         ${escapeHtml(
-                                            data.query || query
-                                        )}
+                data.query || query
+            )}
 
                                     </div>
 
@@ -1481,14 +1748,14 @@ async function performSearch(query) {
         `;
 
 
-        // --------------------------------
-        // PRODUCTS
-        // --------------------------------
+            // --------------------------------
+            // PRODUCTS
+            // --------------------------------
 
-        data.products.forEach(
-            function(product) {
+            data.products.forEach(
+                function (product) {
 
-                html += `
+                    html += `
 
                     <div
                         class="col-lg-4
@@ -1501,20 +1768,21 @@ async function performSearch(query) {
 
                             <!-- IMAGE -->
 
-                            <div class="shop-card-image">
+                           <div class="shop-card-image">
 
-                                <img
-                                    src="${escapeHtml(
-                                        product.image
-                                    )}"
+    <a
+        href="product-details.php?id=${encodeURIComponent(product.id)}"
+        class="text-decoration-none"
+    >
 
-                                    alt="${escapeHtml(
-                                        product.title
-                                    )}"
-                                >
+        <img
+            src="${escapeHtml(product.image)}"
+            alt="${escapeHtml(product.title)}"
+        >
 
-                            </div>
+    </a>
 
+</div>
 
                             <!-- BODY -->
 
@@ -1523,22 +1791,26 @@ async function performSearch(query) {
 
                                 <!-- TITLE -->
 
-                                <h4>
+                               <h4>
 
-                                    ${escapeHtml(
-                                        product.title
-                                    )}
+    <a
+        href="product-details.php?id=${encodeURIComponent(product.id)}"
+        class="text-decoration-none text-dark"
+    >
 
-                                </h4>
+        ${escapeHtml(product.title)}
 
+    </a>
+
+</h4>
 
                                 <!-- DESCRIPTION -->
 
                                 <p>
 
                                     ${escapeHtml(
-                                        product.description
-                                    )}
+                        product.description
+                    )}
 
                                 </p>
 
@@ -1548,8 +1820,8 @@ async function performSearch(query) {
                                 <h5 class="mb-3">
 
                                     ₹${Number(
-                                        product.price
-                                    ).toFixed(2)}
+                        product.price
+                    ).toFixed(2)}
 
                                 </h5>
 
@@ -1564,10 +1836,9 @@ async function performSearch(query) {
 
                                     <strong class="text-success ms-1">
 
-                                        ${
-                                            product.relevance_score
-                                            ?? 0
-                                        }
+                                        ${product.relevance_score
+                        ?? 0
+                        }
 
                                     </strong>
 
@@ -1583,14 +1854,14 @@ async function performSearch(query) {
                                     data-id="${product.id}"
 
                                     data-title="${escapeHtml(
-                                        product.title
-                                    )}"
+                            product.title
+                        )}"
 
                                     data-price="${product.price}"
 
                                     data-image="${escapeHtml(
-                                        product.image
-                                    )}"
+                            product.image
+                        )}"
                                 >
 
                                     <i
@@ -1612,15 +1883,15 @@ async function performSearch(query) {
 
                 `;
 
-            }
-        );
+                }
+            );
 
 
-        // --------------------------------
-        // CLOSE HTML
-        // --------------------------------
+            // --------------------------------
+            // CLOSE HTML
+            // --------------------------------
 
-        html += `
+            html += `
 
                 </div>
 
@@ -1629,22 +1900,22 @@ async function performSearch(query) {
         `;
 
 
-        // --------------------------------
-        // DISPLAY RESULTS
-        // --------------------------------
+            // --------------------------------
+            // DISPLAY RESULTS
+            // --------------------------------
 
-        searchResults.innerHTML = html;
-
-
-    } catch (error) {
-
-        console.error(
-            "Search error:",
-            error
-        );
+            searchResults.innerHTML = html;
 
 
-        searchResults.innerHTML = `
+        } catch (error) {
+
+            console.error(
+                "Search error:",
+                error
+            );
+
+
+            searchResults.innerHTML = `
 
             <div class="alert alert-danger">
 
@@ -1656,17 +1927,17 @@ async function performSearch(query) {
 
                 <small>
                     ${escapeHtml(
-                        error.message
-                    )}
+                error.message
+            )}
                 </small>
 
             </div>
 
         `;
 
-    }
+        }
 
-}
+    }
 
 
 
@@ -1684,3 +1955,271 @@ async function performSearch(query) {
 
 });
 
+
+
+// =====================================================
+// RELATED PRODUCTS
+// =====================================================
+
+document.addEventListener("DOMContentLoaded", function () {
+
+    const relatedContainer =
+        document.getElementById("relatedProducts");
+
+    if (!relatedContainer) {
+        return;
+    }
+
+    const productId =
+        relatedContainer.dataset.productId;
+
+    if (!productId) {
+        return;
+    }
+
+    loadRelatedProducts(productId);
+
+
+    async function loadRelatedProducts(productId) {
+
+        try {
+
+            const response = await fetch(
+                "api/product-filter.php?exclude_id=" +
+                encodeURIComponent(productId) +
+                "&limit=4"
+            );
+
+
+            if (!response.ok) {
+
+                throw new Error(
+                    "HTTP error: " + response.status
+                );
+
+            }
+
+
+            const data =
+                await response.json();
+
+
+            if (!data.success) {
+
+                throw new Error(
+                    data.message ||
+                    "Unable to load related products."
+                );
+
+            }
+
+
+            if (
+                !Array.isArray(data.products) ||
+                data.products.length === 0
+            ) {
+
+                relatedContainer.innerHTML = `
+
+                    <div class="col-12">
+
+                        <div class="text-center py-5">
+
+                            <h5>
+                                No related products found.
+                            </h5>
+
+                            <p class="text-muted">
+                                We couldn't find any products related
+                                to this item.
+                            </p>
+
+                        </div>
+
+                    </div>
+
+                `;
+
+                return;
+            }
+
+
+            let html = "";
+
+
+            data.products.forEach(function (product) {
+
+                html += `
+
+                    <div class="
+                        col-lg-3
+                        col-md-6
+                        col-sm-12
+                    ">
+
+                        <div class="shop-card h-100">
+
+                            <div class="shop-card-image">
+
+                                <a
+                                    href="product-details.php?id=${product.id}"
+                                >
+
+                                    <img
+                                        src="${escapeHtml(product.image)}"
+                                        alt="${escapeHtml(product.title)}"
+                                    >
+
+                                </a>
+
+                            </div>
+
+
+                            <div class="shop-card-body">
+
+                                <h4>
+
+                                    <a
+                                        href="product-details.php?id=${product.id}"
+                                        class="text-decoration-none text-dark"
+                                    >
+                                        ${escapeHtml(product.title)}
+                                    </a>
+
+                                </h4>
+
+
+                                <p>
+
+                                    ${escapeHtml(
+                    product.description || ""
+                )}
+
+                                </p>
+
+
+                                <h5 class="mb-3">
+
+                                    ₹${Number(
+                    product.price
+                ).toLocaleString("en-IN", {
+                    minimumFractionDigits: 2
+                })}
+
+                                </h5>
+
+
+                                ${Number(product.discount) > 0
+                        ?
+                        `
+                                    <div class="mb-3">
+
+                                        <span class="badge bg-success">
+
+                                            ${Number(
+                            product.discount
+                        )}% OFF
+
+                                        </span>
+
+                                    </div>
+                                    `
+                        :
+                        ""
+                    }
+
+
+                                <button
+                                    type="button"
+                                    class="shop-btn add-to-cart"
+
+                                    data-id="${product.id}"
+
+                                    data-title="${escapeHtml(
+                        product.title
+                    )}"
+
+                                    data-price="${product.price}"
+
+                                    data-image="${escapeHtml(
+                        product.image
+                    )}"
+                                >
+
+                                    <i
+                                        class="
+                                            fa-solid
+                                            fa-cart-plus
+                                            me-2
+                                        "
+                                    ></i>
+
+                                    Add to Cart
+
+                                </button>
+
+                            </div>
+
+                        </div>
+
+                    </div>
+
+                `;
+
+            });
+
+
+            relatedContainer.innerHTML = html;
+
+
+            /*
+             * IMPORTANT
+             *
+             * The Add to Cart buttons were created dynamically,
+             * so the existing click handlers from the initial
+             * page load will not automatically attach to them.
+             *
+             * We will handle this properly in the next step.
+             */
+
+
+        } catch (error) {
+
+            console.error(
+                "Related products error:",
+                error
+            );
+
+
+            relatedContainer.innerHTML = `
+
+                <div class="col-12">
+
+                    <div class="alert alert-danger">
+
+                        Unable to load related products.
+
+                    </div>
+
+                </div>
+
+            `;
+
+        }
+
+    }
+
+
+    function escapeHtml(value) {
+
+        const div =
+            document.createElement("div");
+
+        div.textContent =
+            value ?? "";
+
+        return div.innerHTML;
+
+    }
+
+});
