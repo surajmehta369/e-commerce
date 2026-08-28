@@ -113,8 +113,14 @@ $cards = $stmt->fetchAll(PDO::FETCH_ASSOC);
 
 ?>
 
+<div
+    id="searchResults"
+    class="container-fluid"
+    style="display: none;"
+>
+</div>
 
-<div class="shop-cards-section">
+<div class="shop-cards-section"  id="defaultProducts">
 
     <div class="container-fluid">
 
