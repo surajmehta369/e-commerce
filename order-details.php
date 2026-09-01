@@ -64,7 +64,6 @@ if (!$order) {
 
     header("Location: orders.php");
     exit;
-
 }
 
 
@@ -105,8 +104,7 @@ $orderItems = $itemStmt->fetchAll(PDO::FETCH_ASSOC);
         class="d-flex
                justify-content-between
                align-items-center
-               mb-4"
-    >
+               mb-4">
 
         <div>
 
@@ -116,8 +114,7 @@ $orderItems = $itemStmt->fetchAll(PDO::FETCH_ASSOC);
                     class="fa-solid
                            fa-box
                            text-primary
-                           me-2"
-                ></i>
+                           me-2"></i>
 
                 Order #<?= htmlspecialchars($order['id']) ?>
 
@@ -142,14 +139,12 @@ $orderItems = $itemStmt->fetchAll(PDO::FETCH_ASSOC);
             href="orders.php"
             class="btn btn-outline-primary
                    rounded-pill
-                   px-4"
-        >
+                   px-4">
 
             <i
                 class="fa-solid
                        fa-arrow-left
-                       me-2"
-            ></i>
+                       me-2"></i>
 
             Back to Orders
 
@@ -162,16 +157,14 @@ $orderItems = $itemStmt->fetchAll(PDO::FETCH_ASSOC);
         class="card border-0
                shadow-sm
                rounded-4
-               mb-4"
-    >
+               mb-4">
 
         <div class="card-body p-4">
 
             <div
                 class="row
                        align-items-center
-                       g-3"
-            >
+                       g-3">
 
                 <!-- ORDER STATUS -->
 
@@ -200,42 +193,36 @@ $orderItems = $itemStmt->fetchAll(PDO::FETCH_ASSOC);
 
                         $orderStatusClass =
                             'bg-success';
-
                     } elseif (
                         $orderStatus === 'pending'
                     ) {
 
                         $orderStatusClass =
                             'bg-warning text-dark';
-
                     } elseif (
                         $orderStatus === 'processing'
                     ) {
 
                         $orderStatusClass =
                             'bg-info text-dark';
-
                     } elseif (
                         $orderStatus === 'shipped'
                     ) {
 
                         $orderStatusClass =
                             'bg-primary';
-
                     } elseif (
                         $orderStatus === 'delivered'
                     ) {
 
                         $orderStatusClass =
                             'bg-success';
-
                     } elseif (
                         $orderStatus === 'cancelled'
                     ) {
 
                         $orderStatusClass =
                             'bg-danger';
-
                     }
 
                     ?>
@@ -246,8 +233,7 @@ $orderItems = $itemStmt->fetchAll(PDO::FETCH_ASSOC);
                                <?= $orderStatusClass ?>
                                px-3
                                py-2
-                               mt-2"
-                    >
+                               mt-2">
 
                         <?= htmlspecialchars(
                             ucfirst(
@@ -288,21 +274,18 @@ $orderItems = $itemStmt->fetchAll(PDO::FETCH_ASSOC);
 
                         $paymentStatusClass =
                             'bg-warning text-dark';
-
                     } elseif (
                         $paymentStatus === 'paid'
                     ) {
 
                         $paymentStatusClass =
                             'bg-success';
-
                     } elseif (
                         $paymentStatus === 'failed'
                     ) {
 
                         $paymentStatusClass =
                             'bg-danger';
-
                     }
 
                     ?>
@@ -313,8 +296,7 @@ $orderItems = $itemStmt->fetchAll(PDO::FETCH_ASSOC);
                                <?= $paymentStatusClass ?>
                                px-3
                                py-2
-                               mt-2"
-                    >
+                               mt-2">
 
                         <?= htmlspecialchars(
                             ucfirst(
@@ -343,13 +325,12 @@ $orderItems = $itemStmt->fetchAll(PDO::FETCH_ASSOC);
                         class="fw-bold
                                text-primary
                                mb-0
-                               mt-1"
-                    >
+                               mt-1">
 
                         ₹<?= number_format(
-                            $order['total_amount'],
-                            2
-                        ) ?>
+                                $order['total_amount'],
+                                2
+                            ) ?>
 
                     </h4>
 
@@ -371,8 +352,7 @@ $orderItems = $itemStmt->fetchAll(PDO::FETCH_ASSOC);
             <div
                 class="card border-0
                        shadow-sm
-                       rounded-4"
-            >
+                       rounded-4">
 
                 <div class="card-body p-4">
 
@@ -382,8 +362,7 @@ $orderItems = $itemStmt->fetchAll(PDO::FETCH_ASSOC);
                             class="fa-solid
                                    fa-cart-shopping
                                    text-primary
-                                   me-2"
-                        ></i>
+                                   me-2"></i>
 
                         Order Items
 
@@ -397,33 +376,30 @@ $orderItems = $itemStmt->fetchAll(PDO::FETCH_ASSOC);
                                    align-items-center
                                    border-bottom
                                    pb-4
-                                   mb-4"
-                        >
+                                   mb-4">
 
                             <!-- PRODUCT IMAGE -->
 
                             <img
                                 src="<?= htmlspecialchars(
-                                    $item['product_image']
-                                ) ?>"
+                                            $item['product_image']
+                                        ) ?>"
                                 alt="<?= htmlspecialchars(
-                                    $item['product_name']
-                                ) ?>"
+                                            $item['product_name']
+                                        ) ?>"
                                 style="
                                     width:100px;
                                     height:100px;
                                     object-fit:cover;
                                     border-radius:12px;
-                                "
-                            >
+                                ">
 
 
                             <!-- PRODUCT INFO -->
 
                             <div
                                 class="ms-3
-                                       flex-grow-1"
-                            >
+                                       flex-grow-1">
 
                                 <h5 class="fw-bold mb-2">
 
@@ -436,23 +412,21 @@ $orderItems = $itemStmt->fetchAll(PDO::FETCH_ASSOC);
 
                                 <p
                                     class="text-muted
-                                           mb-1"
-                                >
+                                           mb-1">
 
                                     Price:
 
                                     ₹<?= number_format(
-                                        $item['price'],
-                                        2
-                                    ) ?>
+                                            $item['price'],
+                                            2
+                                        ) ?>
 
                                 </p>
 
 
                                 <p
                                     class="text-muted
-                                           mb-0"
-                                >
+                                           mb-0">
 
                                     Quantity:
 
@@ -469,8 +443,7 @@ $orderItems = $itemStmt->fetchAll(PDO::FETCH_ASSOC);
 
                                 <small
                                     class="text-muted
-                                           d-block"
-                                >
+                                           d-block">
 
                                     Subtotal
 
@@ -478,13 +451,12 @@ $orderItems = $itemStmt->fetchAll(PDO::FETCH_ASSOC);
 
 
                                 <strong
-                                    class="fs-5"
-                                >
+                                    class="fs-5">
 
                                     ₹<?= number_format(
-                                        $item['subtotal'],
-                                        2
-                                    ) ?>
+                                            $item['subtotal'],
+                                            2
+                                        ) ?>
 
                                 </strong>
 
@@ -500,8 +472,7 @@ $orderItems = $itemStmt->fetchAll(PDO::FETCH_ASSOC);
                     <div
                         class="d-flex
                                justify-content-between
-                               align-items-center"
-                    >
+                               align-items-center">
 
                         <h5 class="fw-bold mb-0">
 
@@ -513,13 +484,12 @@ $orderItems = $itemStmt->fetchAll(PDO::FETCH_ASSOC);
                         <h4
                             class="fw-bold
                                    text-primary
-                                   mb-0"
-                        >
+                                   mb-0">
 
                             ₹<?= number_format(
-                                $order['total_amount'],
-                                2
-                            ) ?>
+                                    $order['total_amount'],
+                                    2
+                                ) ?>
 
                         </h4>
 
@@ -538,8 +508,7 @@ $orderItems = $itemStmt->fetchAll(PDO::FETCH_ASSOC);
                 class="card border-0
                        shadow-sm
                        rounded-4
-                       mb-4"
-            >
+                       mb-4">
 
                 <div class="card-body p-4">
 
@@ -549,8 +518,7 @@ $orderItems = $itemStmt->fetchAll(PDO::FETCH_ASSOC);
                             class="fa-solid
                                    fa-location-dot
                                    text-primary
-                                   me-2"
-                        ></i>
+                                   me-2"></i>
 
                         Delivery Address
 
@@ -571,8 +539,7 @@ $orderItems = $itemStmt->fetchAll(PDO::FETCH_ASSOC);
                         <i
                             class="fa-solid
                                    fa-phone
-                                   me-2"
-                        ></i>
+                                   me-2"></i>
 
                         <?= htmlspecialchars(
                             $order['shipping_phone']
@@ -615,8 +582,7 @@ $orderItems = $itemStmt->fetchAll(PDO::FETCH_ASSOC);
             <div
                 class="card border-0
                        shadow-sm
-                       rounded-4"
-            >
+                       rounded-4">
 
                 <div class="card-body p-4">
 
@@ -626,8 +592,7 @@ $orderItems = $itemStmt->fetchAll(PDO::FETCH_ASSOC);
                             class="fa-solid
                                    fa-credit-card
                                    text-primary
-                                   me-2"
-                        ></i>
+                                   me-2"></i>
 
                         Payment
 
@@ -637,8 +602,7 @@ $orderItems = $itemStmt->fetchAll(PDO::FETCH_ASSOC);
                     <div
                         class="d-flex
                                justify-content-between
-                               mb-3"
-                    >
+                               mb-3">
 
                         <span class="text-muted">
 
@@ -649,7 +613,15 @@ $orderItems = $itemStmt->fetchAll(PDO::FETCH_ASSOC);
 
                         <strong>
 
-                            Cash on Delivery
+                            <?php if ($order['payment_method'] === 'stripe'): ?>
+
+                                Stripe
+
+                            <?php else: ?>
+
+                                Cash on Delivery
+
+                            <?php endif; ?>
 
                         </strong>
 
@@ -658,8 +630,7 @@ $orderItems = $itemStmt->fetchAll(PDO::FETCH_ASSOC);
 
                     <div
                         class="d-flex
-                               justify-content-between"
-                    >
+                               justify-content-between">
 
                         <span class="text-muted">
 
@@ -672,8 +643,7 @@ $orderItems = $itemStmt->fetchAll(PDO::FETCH_ASSOC);
                             class="badge
                                    <?= $paymentStatusClass ?>
                                    px-3
-                                   py-2"
-                        >
+                                   py-2">
 
                             <?= htmlspecialchars(
                                 ucfirst(
@@ -699,14 +669,12 @@ $orderItems = $itemStmt->fetchAll(PDO::FETCH_ASSOC);
             href="index.php"
             class="btn btn-primary
                    rounded-pill
-                   px-4"
-        >
+                   px-4">
 
             <i
                 class="fa-solid
                        fa-bag-shopping
-                       me-2"
-            ></i>
+                       me-2"></i>
 
             Continue Shopping
 

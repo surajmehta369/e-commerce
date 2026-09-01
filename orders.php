@@ -62,8 +62,7 @@ $orders = $stmt->fetchAll(PDO::FETCH_ASSOC);
                     class="fa-solid
                            fa-box
                            text-primary
-                           me-2"
-                ></i>
+                           me-2"></i>
 
                 My Orders
 
@@ -82,14 +81,12 @@ $orders = $stmt->fetchAll(PDO::FETCH_ASSOC);
             href="index.php"
             class="btn btn-primary
                    rounded-pill
-                   px-4"
-        >
+                   px-4">
 
             <i
                 class="fa-solid
                        fa-bag-shopping
-                       me-2"
-            ></i>
+                       me-2"></i>
 
             Continue Shopping
 
@@ -108,8 +105,7 @@ $orders = $stmt->fetchAll(PDO::FETCH_ASSOC);
                            shadow-sm
                            rounded-4
                            text-center
-                           p-5"
-                >
+                           p-5">
 
                     <div class="mb-4">
 
@@ -122,8 +118,7 @@ $orders = $stmt->fetchAll(PDO::FETCH_ASSOC);
                             style="
                                 width:110px;
                                 height:110px;
-                            "
-                        >
+                            ">
 
                             <i
                                 class="fa-solid
@@ -131,8 +126,7 @@ $orders = $stmt->fetchAll(PDO::FETCH_ASSOC);
                                        text-primary"
                                 style="
                                     font-size:50px;
-                                "
-                            ></i>
+                                "></i>
 
                         </div>
 
@@ -158,14 +152,12 @@ $orders = $stmt->fetchAll(PDO::FETCH_ASSOC);
                         href="index.php"
                         class="btn btn-primary
                                rounded-pill
-                               px-4"
-                    >
+                               px-4">
 
                         <i
                             class="fa-solid
                                    fa-bag-shopping
-                                   me-2"
-                        ></i>
+                                   me-2"></i>
 
                         Start Shopping
 
@@ -190,8 +182,7 @@ $orders = $stmt->fetchAll(PDO::FETCH_ASSOC);
                     <div
                         class="card border-0
                                shadow-sm
-                               rounded-4"
-                    >
+                               rounded-4">
 
                         <div class="card-body p-4">
                             <div
@@ -199,15 +190,13 @@ $orders = $stmt->fetchAll(PDO::FETCH_ASSOC);
                                        flex-wrap
                                        justify-content-between
                                        align-items-center
-                                       mb-3"
-                            >
+                                       mb-3">
 
                                 <div>
 
                                     <span
                                         class="text-muted
-                                               small"
-                                    >
+                                               small">
 
                                         Order Number
 
@@ -217,15 +206,14 @@ $orders = $stmt->fetchAll(PDO::FETCH_ASSOC);
                                     <h5 class="fw-bold mb-1">
 
                                         #<?= htmlspecialchars(
-                                            $order['id']
-                                        ) ?>
+                                                $order['id']
+                                            ) ?>
 
                                     </h5>
 
 
                                     <small
-                                        class="text-muted"
-                                    >
+                                        class="text-muted">
 
                                         <?= date(
                                             'd M Y, h:i A',
@@ -238,8 +226,6 @@ $orders = $stmt->fetchAll(PDO::FETCH_ASSOC);
 
                                 </div>
 
-
-                                <!-- ORDER STATUS -->
 
                                 <div>
 
@@ -259,21 +245,18 @@ $orders = $stmt->fetchAll(PDO::FETCH_ASSOC);
 
                                         $statusClass =
                                             'bg-success';
-
                                     } elseif (
                                         $status === 'pending'
                                     ) {
 
                                         $statusClass =
                                             'bg-warning text-dark';
-
                                     } elseif (
                                         $status === 'cancelled'
                                     ) {
 
                                         $statusClass =
                                             'bg-danger';
-
                                     }
 
                                     ?>
@@ -282,8 +265,7 @@ $orders = $stmt->fetchAll(PDO::FETCH_ASSOC);
                                         class="badge
                                                <?= $statusClass ?>
                                                px-3
-                                               py-2"
-                                    >
+                                               py-2">
 
                                         <?= htmlspecialchars(
                                             ucfirst(
@@ -303,21 +285,16 @@ $orders = $stmt->fetchAll(PDO::FETCH_ASSOC);
 
 
                             <div class="row g-3">
-
-                                <!-- TOTAL -->
-
                                 <div class="col-md-4">
 
                                     <div
                                         class="bg-light
                                                rounded-3
                                                p-3
-                                               h-100"
-                                    >
+                                               h-100">
 
                                         <small
-                                            class="text-muted"
-                                        >
+                                            class="text-muted">
 
                                             Total Amount
 
@@ -328,13 +305,12 @@ $orders = $stmt->fetchAll(PDO::FETCH_ASSOC);
                                             class="fw-bold
                                                    text-primary
                                                    mb-0
-                                                   mt-1"
-                                        >
+                                                   mt-1">
 
                                             ₹<?= number_format(
-                                                $order['total_amount'],
-                                                2
-                                            ) ?>
+                                                    $order['total_amount'],
+                                                    2
+                                                ) ?>
 
                                         </h5>
 
@@ -342,42 +318,37 @@ $orders = $stmt->fetchAll(PDO::FETCH_ASSOC);
 
                                 </div>
 
-
-
-                                <!-- PAYMENT -->
-
                                 <div class="col-md-4">
 
                                     <div
                                         class="bg-light
                                                rounded-3
                                                p-3
-                                               h-100"
-                                    >
+                                               h-100">
 
                                         <small
-                                            class="text-muted"
-                                        >
+                                            class="text-muted">
 
                                             Payment Method
 
                                         </small>
 
 
-                                        <h6
-                                            class="fw-bold
-                                                   mb-0
-                                                   mt-2"
-                                        >
+                                        <h6 class="fw-bold mb-0 mt-2">
 
-                                            <i
-                                                class="fa-solid
-                                                       fa-money-bill-wave
-                                                       text-success
-                                                       me-1"
-                                            ></i>
+                                            <?php if ($order['payment_method'] === 'stripe'): ?>
 
-                                            Cash on Delivery
+                                                <i class="fa-brands fa-stripe text-primary me-1"></i>
+
+                                                Stripe
+
+                                            <?php else: ?>
+
+                                                <i class="fa-solid fa-money-bill-wave text-success me-1"></i>
+
+                                                Cash on Delivery
+
+                                            <?php endif; ?>
 
                                         </h6>
 
@@ -395,12 +366,10 @@ $orders = $stmt->fetchAll(PDO::FETCH_ASSOC);
                                         class="bg-light
                                                rounded-3
                                                p-3
-                                               h-100"
-                                    >
+                                               h-100">
 
                                         <small
-                                            class="text-muted"
-                                        >
+                                            class="text-muted">
 
                                             Payment Status
 
@@ -423,14 +392,12 @@ $orders = $stmt->fetchAll(PDO::FETCH_ASSOC);
 
                                             $paymentClass =
                                                 'bg-warning text-dark';
-
                                         } elseif (
                                             $paymentStatus === 'paid'
                                         ) {
 
                                             $paymentClass =
                                                 'bg-success';
-
                                         }
 
                                         ?>
@@ -442,8 +409,7 @@ $orders = $stmt->fetchAll(PDO::FETCH_ASSOC);
                                                 class="badge
                                                        <?= $paymentClass ?>
                                                        px-3
-                                                       py-2"
-                                            >
+                                                       py-2">
 
                                                 <?= htmlspecialchars(
                                                     ucfirst(
@@ -468,14 +434,12 @@ $orders = $stmt->fetchAll(PDO::FETCH_ASSOC);
                                     href="order-details.php?id=<?= (int)$order['id'] ?>"
                                     class="btn btn-outline-primary
                                            rounded-pill
-                                           px-4"
-                                >
+                                           px-4">
 
                                     <i
                                         class="fa-solid
                                                fa-eye
-                                               me-2"
-                                    ></i>
+                                               me-2"></i>
 
                                     View Order
 

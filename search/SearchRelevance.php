@@ -3,10 +3,10 @@
 class RelevanceScorer
 {
     /**
-     * Score and sort matching products.
+     * 
      *
-     * @param array $products Products returned by SearchMatcher.
-     * @param array $words Search words from SearchQuery.
+     * @param array $products 
+     * @param array $words 
      * @return array
      */
     public function score(array $products, array $words): array
@@ -24,7 +24,6 @@ class RelevanceScorer
 
         unset($product);
 
-        // Highest score first.
         usort($products, function ($a, $b) {
             return $b['relevance_score'] <=> $a['relevance_score'];
         });
@@ -32,10 +31,6 @@ class RelevanceScorer
         return $products;
     }
 
-
-    /**
-     * Calculate relevance score for one product.
-     */
     private function calculateScore(array $product, array $words): int
     {
         $score = 0;
@@ -47,10 +42,7 @@ class RelevanceScorer
                 continue;
             }
 
-            /*
-             * Product title
-             */
-
+    
             $title = strtolower($product['title'] ?? '');
 
             if ($title === $word) {
@@ -58,11 +50,6 @@ class RelevanceScorer
             } elseif (str_contains($title, $word)) {
                 $score += 80;
             }
-
-
-            /*
-             * Brand
-             */
 
             $brand = strtolower($product['brand_name'] ?? '');
 
@@ -72,11 +59,6 @@ class RelevanceScorer
                 $score += 60;
             }
 
-
-            /*
-             * SKU
-             */
-
             $sku = strtolower($product['sku'] ?? '');
 
             if ($sku === $word) {
@@ -84,11 +66,6 @@ class RelevanceScorer
             } elseif (str_contains($sku, $word)) {
                 $score += 50;
             }
-
-
-            /*
-             * Category
-             */
 
             $category = strtolower($product['category_name'] ?? '');
 
@@ -99,9 +76,6 @@ class RelevanceScorer
             }
 
 
-            /*
-             * Description
-             */
 
             $description = strtolower($product['description'] ?? '');
 

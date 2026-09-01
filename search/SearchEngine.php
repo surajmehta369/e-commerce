@@ -16,7 +16,7 @@ class SearchEngine
 
 
     /**
-     * Search products.
+     * 
      *
      * @param string $query
      * @param int $limit
