@@ -14,7 +14,6 @@ if ($productId <= 0) {
 
     header("Location: index.php");
     exit;
-
 }
 
 
@@ -69,7 +68,7 @@ if (!$product) {
     include "components/header.php";
     include "components/sidebar.php";
 
-    ?>
+?>
 
     <main class="container-fluid" style="margin-top:100px;">
 
@@ -79,8 +78,7 @@ if (!$product) {
 
                 <i
                     class="fa-solid fa-box-open text-muted"
-                    style="font-size:60px;"
-                ></i>
+                    style="font-size:60px;"></i>
 
             </div>
 
@@ -97,8 +95,7 @@ if (!$product) {
 
                 <a
                     href="index.php"
-                    class="btn btn-primary rounded-pill px-4"
-                >
+                    class="btn btn-primary rounded-pill px-4">
                     <i class="fa-solid fa-arrow-left me-2"></i>
                     Back to Shop
                 </a>
@@ -109,7 +106,7 @@ if (!$product) {
 
     </main>
 
-    <?php
+<?php
 
     include "components/footer.php";
 
@@ -146,17 +143,14 @@ if ($stock <= 0) {
 
     $stockText = "Out of Stock";
     $stockClass = "text-danger";
-
 } elseif ($stock <= 5) {
 
     $stockText = "Only {$stock} left in stock";
     $stockClass = "text-warning";
-
 } else {
 
     $stockText = "In Stock";
     $stockClass = "text-success";
-
 }
 
 
@@ -189,8 +183,7 @@ include "components/sidebar.php";
 
                 <li
                     class="breadcrumb-item active"
-                    aria-current="page"
-                >
+                    aria-current="page">
 
                     <?= htmlspecialchars($title); ?>
 
@@ -219,8 +212,7 @@ include "components/sidebar.php";
                                align-items-center
                                bg-light
                                rounded-4
-                               p-4"
-                    >
+                               p-4">
 
                         <img
                             src="<?= htmlspecialchars($image); ?>"
@@ -230,8 +222,7 @@ include "components/sidebar.php";
                                 max-height:500px;
                                 width:100%;
                                 object-fit:contain;
-                            "
-                        >
+                            ">
 
                     </div>
 
@@ -239,8 +230,6 @@ include "components/sidebar.php";
 
 
                 <div class="col-lg-6 col-md-6">
-
-                    <!-- BRAND -->
 
                     <div class="mb-2">
 
@@ -252,17 +241,11 @@ include "components/sidebar.php";
 
                     </div>
 
-
-                    <!-- TITLE -->
-
                     <h1 class="fw-bold mb-3">
 
                         <?= htmlspecialchars($title); ?>
 
                     </h1>
-
-
-                    <!-- SKU -->
 
                     <p class="text-muted mb-3">
 
@@ -272,9 +255,6 @@ include "components/sidebar.php";
                         </strong>
 
                     </p>
-
-
-                    <!-- CATEGORY -->
 
                     <p class="mb-3">
 
@@ -296,8 +276,7 @@ include "components/sidebar.php";
                         <span
                             class="fs-2
                                    fw-bold
-                                   text-primary"
-                        >
+                                   text-primary">
 
                             ₹<?= number_format($price, 2); ?>
 
@@ -309,8 +288,7 @@ include "components/sidebar.php";
                             <span
                                 class="text-muted
                                        text-decoration-line-through
-                                       ms-2"
-                            >
+                                       ms-2">
 
                                 ₹<?= number_format($originalPrice, 2); ?>
 
@@ -324,8 +302,7 @@ include "components/sidebar.php";
                             <span
                                 class="badge
                                        bg-danger
-                                       ms-2"
-                            >
+                                       ms-2">
 
                                 <?= number_format($discount, 0); ?>% OFF
 
@@ -340,8 +317,7 @@ include "components/sidebar.php";
                         <strong class="<?= $stockClass; ?>">
 
                             <i
-                                class="fa-solid fa-circle-check me-1"
-                            ></i>
+                                class="fa-solid fa-circle-check me-1"></i>
 
                             <?= htmlspecialchars($stockText); ?>
 
@@ -371,104 +347,39 @@ include "components/sidebar.php";
                     <?php endif; ?>
 
 
+                  
                     <?php if ($stock > 0): ?>
 
-                        <div class="mb-4">
-
-                            <label
-                                class="fw-semibold d-block mb-2"
-                            >
-
-                                Quantity
-
-                            </label>
-
-
-                            <div
-                                class="d-flex
-                                       align-items-center
-                                       gap-2"
-                            >
-
-                                <button
-                                    type="button"
-                                    id="detailQuantityMinus"
-                                    class="btn
-                                           btn-outline-secondary
-                                           rounded-circle"
-                                    style="
-                                        width:40px;
-                                        height:40px;
-                                    "
-                                >
-                                    −
-                                </button>
-
-
-                                <input
-                                    type="number"
-                                    id="detailQuantity"
-                                    value="1"
-                                    min="1"
-                                    max="<?= $stock; ?>"
-                                    class="form-control
-                                           text-center
-                                           fw-bold"
-                                    style="width:70px;"
-                                >
-
-
-                                <button
-                                    type="button"
-                                    id="detailQuantityPlus"
-                                    class="btn
-                                           btn-outline-primary
-                                           rounded-circle"
-                                    style="
-                                        width:40px;
-                                        height:40px;
-                                    "
-                                >
-                                    +
-                                </button>
-
-                            </div>
-
-                        </div>
-
                         <button
-                            type="button"
-                            class="shop-btn add-to-cart"
-                            data-id="<?= $product['id']; ?>"
-                            data-title="<?= htmlspecialchars($title); ?>"
-                            data-price="<?= $price; ?>"
-                            data-image="<?= htmlspecialchars($image); ?>"
-                        >
+    type="button"
+    class="shop-btn add-to-cart"
+    data-id="<?= (int)$product['id']; ?>"
+    data-title="<?= htmlspecialchars($title, ENT_QUOTES, 'UTF-8'); ?>"
+    data-price="<?= htmlspecialchars($price, ENT_QUOTES, 'UTF-8'); ?>"
+    data-image="<?= htmlspecialchars($image, ENT_QUOTES, 'UTF-8'); ?>"
+    data-stock="<?= (int)$stock; ?>"
+>
+    <i
+        class="fa-solid fa-cart-plus me-2"
+    ></i>
 
-                            <i
-                                class="fa-solid
-                                       fa-cart-plus
-                                       me-2"
-                            ></i>
-
-                            Add to Cart
-
-                        </button>
+    Add to Cart
+</button>
 
                     <?php else: ?>
 
                         <button
                             type="button"
-                            class="btn btn-secondary
-                                   rounded-pill px-4"
-                            disabled
-                        >
+                            class="btn btn-secondary rounded-pill px-4"
+                            disabled>
 
                             Out of Stock
 
                         </button>
 
                     <?php endif; ?>
+                
+
 
                 </div>
 
@@ -478,45 +389,176 @@ include "components/sidebar.php";
 
     </div>
 
-   <!-- =====================================================
-     RELATED PRODUCTS
-===================================================== -->
-
-<section class="container-fluid my-5">
-
-    <div class="d-flex justify-content-between align-items-center mb-4">
-        <h3 class="fw-bold mb-0">Related Products</h3>
-
-        <a
-            href="related-products.php?id=<?= (int)$product['id']; ?>"
-            class="btn btn-outline-primary rounded-pill"
-        >
-            View All
-        </a>
-    </div>
-
+    <section class="container-fluid my-5">
+        <div class="d-flex justify-content-between align-items-center mb-4">
+            <h3 class="fw-bold mb-0"> Related Products </h3> <a href="related-products.php?id=<?= (int)$product['id']; ?>" class="btn btn-outline-primary rounded-pill"> Add Filter </a>
+        </div>
+        <div id="relatedProducts" class="row g-4" data-product-id="<?= (int)$product['id']; ?>">
+            <div class="col-12 text-center py-5">
+                <div class="spinner-border text-primary" role="status"></div>
+                <p class="mt-2 text-muted"> Loading related products... </p>
+            </div>
+        </div>
+    </section>
+</main>
     <div
-        id="relatedProducts"
-        class="row g-4"
-        data-product-id="<?= (int)$product['id']; ?>"
-    >
+        class="modal fade"
+        id="quantityModal"
+        tabindex="-1"
+        aria-hidden="true">
 
-        <div class="col-12 text-center py-5">
+        <div class="modal-dialog modal-dialog-centered">
+
             <div
-                class="spinner-border text-primary"
-                role="status"
-            ></div>
+                class="modal-content
+                   border-0
+                   rounded-4
+                   shadow">
 
-            <p class="mt-2 text-muted">
-                Loading related products...
-            </p>
+                <div class="modal-header border-0">
+
+                    <h5 class="modal-title fw-bold">
+                        Add to Cart
+                    </h5>
+
+                    <button
+                        type="button"
+                        class="btn-close"
+                        data-bs-dismiss="modal"
+                        aria-label="Close"></button>
+
+                </div>
+
+
+                <div class="modal-body text-center px-4">
+
+
+                    <img
+                        id="modalProductImage"
+                        src=""
+                        alt=""
+                        style="
+                        width:120px;
+                        height:120px;
+                        object-fit:cover;
+                        border-radius:12px;
+                    "
+                        class="mb-3">
+
+
+                    <h5
+                        id="modalProductTitle"
+                        class="fw-bold mb-2"></h5>
+
+
+                    <p
+                        id="modalProductPrice"
+                        class="text-primary fw-bold fs-5"></p>
+
+                    <div class="mt-4">
+
+                        <label
+                            class="fw-semibold d-block mb-2">
+                            Quantity
+                        </label>
+
+
+                        <div
+                            class="d-flex
+                               justify-content-center
+                               align-items-center
+                               gap-3">
+
+                            <button
+                                type="button"
+                                id="quantityMinus"
+                                class="btn
+                                   btn-outline-secondary
+                                   rounded-circle"
+                                style="
+                                width:40px;
+                                height:40px;
+                            ">
+                                −
+                            </button>
+
+
+                            <input
+                                type="number"
+                                id="quantityInput"
+                                value="1"
+                                min="1"
+                                class="form-control
+                                   text-center
+                                   fw-bold"
+                                style="width:70px;">
+
+
+                            <button
+                                type="button"
+                                id="quantityPlus"
+                                class="btn
+                                   btn-outline-primary
+                                   rounded-circle"
+                                style="
+                                width:40px;
+                                height:40px;
+                            ">
+                                +
+                            </button>
+
+                        </div>
+
+                    </div>
+
+                </div>
+
+
+                <div
+                    class="modal-footer
+                       border-0
+                       justify-content-center
+                       pb-4">
+
+                    <button
+                        type="button"
+                        class="btn
+                           btn-secondary
+                           rounded-pill
+                           px-4"
+                        data-bs-dismiss="modal">
+                        Cancel
+                    </button>
+
+
+                    <button
+                        type="button"
+                        id="confirmAddToCart"
+                        class="btn
+                           btn-primary
+                           rounded-pill
+                           px-4">
+
+                        <i
+                            class="fa-solid
+                               fa-cart-plus
+                               me-2"></i>
+
+                        Add to Cart
+
+                    </button>
+
+                </div>
+
+            </div>
+
         </div>
 
     </div>
+   
 
-</section>
 
-</main>
+
 
 
 

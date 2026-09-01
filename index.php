@@ -141,8 +141,8 @@ include "components/sidebar.php";
 
 
 
-// Electronics products
-$electronicsStmt = $db->prepare("
+    // Electronics products
+    $electronicsStmt = $db->prepare("
     SELECT
         id,
         title,
@@ -159,12 +159,12 @@ $electronicsStmt = $db->prepare("
     LIMIT 4
 ");
 
-$electronicsStmt->execute();
-$electronicsProducts = $electronicsStmt->fetchAll(PDO::FETCH_ASSOC);
+    $electronicsStmt->execute();
+    $electronicsProducts = $electronicsStmt->fetchAll(PDO::FETCH_ASSOC);
 
 
-// Smartphone products
-$smartphoneStmt = $db->prepare("
+    // Smartphone products
+    $smartphoneStmt = $db->prepare("
     SELECT
         id,
         title,
@@ -181,12 +181,12 @@ $smartphoneStmt = $db->prepare("
     LIMIT 4
 ");
 
-$smartphoneStmt->execute();
-$smartphoneProducts = $smartphoneStmt->fetchAll(PDO::FETCH_ASSOC);
+    $smartphoneStmt->execute();
+    $smartphoneProducts = $smartphoneStmt->fetchAll(PDO::FETCH_ASSOC);
 
 
-// General shopping deals
-$dealsStmt = $db->prepare("
+    // General shopping deals
+    $dealsStmt = $db->prepare("
     SELECT
         id,
         title,
@@ -202,10 +202,10 @@ $dealsStmt = $db->prepare("
     LIMIT 4
 ");
 
-$dealsStmt->execute();
-$dealProducts = $dealsStmt->fetchAll(PDO::FETCH_ASSOC);
+    $dealsStmt->execute();
+    $dealProducts = $dealsStmt->fetchAll(PDO::FETCH_ASSOC);
 
-?>
+    ?>
 
 
 
@@ -214,12 +214,12 @@ $dealProducts = $dealsStmt->fetchAll(PDO::FETCH_ASSOC);
         class="container-fluid"
         style="display: none;">
     </div>
-
     <div class="shop-cards-section" id="defaultProducts">
 
         <div class="container-fluid">
 
             <div class="row g-4 px-2">
+
                 <?php foreach ($cards as $card): ?>
 
                     <div class="col-lg-4 col-md-6 col-sm-12">
@@ -246,12 +246,11 @@ $dealProducts = $dealsStmt->fetchAll(PDO::FETCH_ASSOC);
                                 <a
                                     href="product-details.php?id=<?= (int)$card['id']; ?>"
                                     class="text-decoration-none text-dark">
-
                                     <?= htmlspecialchars($card['title']); ?>
-
                                 </a>
 
                             </h4>
+
 
                             <p>
                                 <?= htmlspecialchars($card['description']); ?>
@@ -263,8 +262,9 @@ $dealProducts = $dealsStmt->fetchAll(PDO::FETCH_ASSOC);
                                 <div class="d-flex align-items-center gap-2 flex-wrap">
 
                                     <h5 class="mb-0 fw-bold">
-                                        ₹<?= number_format($card['price'], 2); ?>
+                                        ₹<?= number_format((float)$card['price'], 2); ?>
                                     </h5>
+
 
                                     <?php if (
                                         !empty($card['original_price']) &&
@@ -272,7 +272,7 @@ $dealProducts = $dealsStmt->fetchAll(PDO::FETCH_ASSOC);
                                     ): ?>
 
                                         <span class="text-muted text-decoration-line-through">
-                                            ₹<?= number_format($card['original_price'], 2); ?>
+                                            ₹<?= number_format((float)$card['original_price'], 2); ?>
                                         </span>
 
                                     <?php endif; ?>
@@ -283,25 +283,21 @@ $dealProducts = $dealsStmt->fetchAll(PDO::FETCH_ASSOC);
                                 <?php if ((float)$card['discount'] > 0): ?>
 
                                     <span class="badge bg-success mt-2">
-                                        <?= number_format($card['discount'], 0); ?>% OFF
+                                        <?= number_format((float)$card['discount'], 0); ?>% OFF
                                     </span>
 
                                 <?php endif; ?>
 
                             </div>
 
+
                             <button
                                 type="button"
                                 class="shop-btn add-to-cart"
-
                                 <?= ((int)$card['stock'] <= 0) ? 'disabled' : ''; ?>
-
-                                data-id="<?= $card['id']; ?>"
-
+                                data-id="<?= (int)$card['id']; ?>"
                                 data-title="<?= htmlspecialchars($card['title']); ?>"
-
-                                data-price="<?= $card['price']; ?>"
-
+                                data-price="<?= htmlspecialchars($card['price']); ?>"
                                 data-image="<?= htmlspecialchars($card['image']); ?>">
                                 <i class="fa-solid fa-cart-plus me-2"></i>
                                 Add to Cart
@@ -311,10 +307,9 @@ $dealProducts = $dealsStmt->fetchAll(PDO::FETCH_ASSOC);
 
                     </div>
 
-            </div>
+                <?php endforeach; ?>
 
-        <?php endforeach; ?>
-
+            </div> <!-- ✅ ROW CLOSES AFTER FOREACH -->
 
         </div>
 
@@ -427,71 +422,69 @@ $dealProducts = $dealsStmt->fetchAll(PDO::FETCH_ASSOC);
     <div class="container-fluid">
         <div class="row g-3">
 
-<div class="col-lg-4 col-md-6 col-sm-12">
+            <div class="col-lg-4 col-md-6 col-sm-12">
 
-    <div class="deal-card p-3">
+                <div class="deal-card p-3">
 
-        <h4>Continue Shopping Deals</h4>
+                    <h4>Continue Shopping Deals</h4>
 
-        <div class="row">
+                    <div class="row">
 
-            <?php if (empty($dealProducts)): ?>
+                        <?php if (empty($dealProducts)): ?>
 
-                <div class="col-12">
-                    <p class="text-muted">
-                        No deals available.
-                    </p>
-                </div>
+                            <div class="col-12">
+                                <p class="text-muted">
+                                    No deals available.
+                                </p>
+                            </div>
 
-            <?php else: ?>
+                        <?php else: ?>
 
-                <?php foreach ($dealProducts as $product): ?>
+                            <?php foreach ($dealProducts as $product): ?>
 
-                    <div class="col-6 mb-3">
+                                <div class="col-6 mb-3">
 
-                        <a
-                            href="product-details.php?id=<?= (int)$product['id']; ?>"
-                            class="text-decoration-none text-dark"
-                        >
+                                    <a
+                                        href="product-details.php?id=<?= (int)$product['id']; ?>"
+                                        class="text-decoration-none text-dark">
 
-                            <img
-                                src="<?= htmlspecialchars($product['image']); ?>"
-                                class="img-fluid"
-                                alt="<?= htmlspecialchars($product['title']); ?>"
-                            >
+                                        <img
+                                            src="<?= htmlspecialchars($product['image']); ?>"
+                                            class="img-fluid"
+                                            alt="<?= htmlspecialchars($product['title']); ?>">
 
-                            <p class="mt-2 mb-1">
-                                <?= htmlspecialchars($product['title']); ?>
-                            </p>
+                                        <p class="mt-2 mb-1">
+                                            <?= htmlspecialchars($product['title']); ?>
+                                        </p>
 
-                            <?php if ((float)$product['discount'] > 0): ?>
+                                        <?php if ((float)$product['discount'] > 0): ?>
 
-                                <small class="text-success fw-semibold">
-                                    <?= number_format(
-                                        (float)$product['discount'],
-                                        0
-                                    ); ?>% off
-                                </small>
+                                            <small class="text-success fw-semibold">
+                                                <?= number_format(
+                                                    (float)$product['discount'],
+                                                    0
+                                                ); ?>% off
+                                            </small>
 
-                            <?php endif; ?>
+                                        <?php endif; ?>
 
-                        </a>
+                                    </a>
+
+                                </div>
+
+                            <?php endforeach; ?>
+
+                        <?php endif; ?>
 
                     </div>
 
-                <?php endforeach; ?>
+                    <a href="related-products.php">
+                        See more deals
+                    </a>
 
-            <?php endif; ?>
+                </div>
 
-        </div>
-
-        <a href="related-products.php">
-            See more deals
-        </a>
-
-    </div>
-
-</div>
+            </div>
 
 
             <div class="col-lg-4 col-md-6 col-sm-12">
@@ -531,86 +524,84 @@ $dealProducts = $dealsStmt->fetchAll(PDO::FETCH_ASSOC);
 
             </div>
 
-<div class="col-lg-4 col-md-6 col-sm-12">
+            <div class="col-lg-4 col-md-6 col-sm-12">
 
-    <div class="deal-card p-3">
+                <div class="deal-card p-3">
 
-        <h4>Smartphones Curated For You</h4>
+                    <h4>Smartphones Curated For You</h4>
 
-        <div class="row">
+                    <div class="row">
 
-            <?php if (empty($smartphoneProducts)): ?>
+                        <?php if (empty($smartphoneProducts)): ?>
 
-                <div class="col-12">
+                            <div class="col-12">
 
-                    <p class="text-muted">
-                        No smartphones available.
-                    </p>
+                                <p class="text-muted">
+                                    No smartphones available.
+                                </p>
 
-                </div>
+                            </div>
 
-            <?php else: ?>
+                        <?php else: ?>
 
-                <?php foreach ($smartphoneProducts as $product): ?>
+                            <?php foreach ($smartphoneProducts as $product): ?>
 
-                    <div class="col-6 mb-3">
+                                <div class="col-6 mb-3">
 
-                        <a
-                            href="product-details.php?id=<?= (int)$product['id']; ?>"
-                            class="text-decoration-none text-dark"
-                        >
+                                    <a
+                                        href="product-details.php?id=<?= (int)$product['id']; ?>"
+                                        class="text-decoration-none text-dark">
 
-                            <img
-                                src="<?= htmlspecialchars($product['image']); ?>"
-                                class="img-fluid"
-                                alt="<?= htmlspecialchars($product['title']); ?>"
-                            >
+                                        <img
+                                            src="<?= htmlspecialchars($product['image']); ?>"
+                                            class="img-fluid"
+                                            alt="<?= htmlspecialchars($product['title']); ?>">
 
-                            <p class="mt-2 mb-1 text-dark">
+                                        <p class="mt-2 mb-1 text-dark">
 
-                                <?= htmlspecialchars($product['title']); ?>
+                                            <?= htmlspecialchars($product['title']); ?>
 
-                            </p>
+                                        </p>
 
-                            <strong class="text-dark">
+                                        <strong class="text-dark">
 
-                                ₹<?= number_format(
-                                    (float)$product['price'],
-                                    2
-                                ); ?>
+                                            ₹<?= number_format(
+                                                    (float)$product['price'],
+                                                    2
+                                                ); ?>
 
-                            </strong>
+                                        </strong>
 
-                            <?php if ((float)$product['discount'] > 0): ?>
+                                        <?php if ((float)$product['discount'] > 0): ?>
 
-                                <div class="text-success fw-semibold">
+                                            <div class="text-success fw-semibold">
 
-                                    <?= number_format(
-                                        (float)$product['discount'],
-                                        0
-                                    ); ?>% off
+                                                <?= number_format(
+                                                    (float)$product['discount'],
+                                                    0
+                                                ); ?>% off
+
+                                            </div>
+
+                                        <?php endif; ?>
+
+                                    </a>
 
                                 </div>
 
-                            <?php endif; ?>
+                            <?php endforeach; ?>
 
-                        </a>
+                        <?php endif; ?>
 
                     </div>
 
-                <?php endforeach; ?>
+                    <a href="related-products.php?category_id=4">
+                        See all offers
+                    </a>
 
-            <?php endif; ?>
+                </div>
 
-        </div>
-
-        <a href="related-products.php?category_id=4">
-            See all offers
-        </a>
-
-    </div>
-
-</div>
+            </div>
 
         </div>
     </div>
@@ -662,36 +653,73 @@ $dealProducts = $dealsStmt->fetchAll(PDO::FETCH_ASSOC);
 
 
             <div class="col-lg-4 col-md-6 col-sm-12">
+
                 <div class="deal-card p-3">
 
-                    <h4>Electronics & Photo recommendations for you</h4>
+                    <h4>Electronics & Photo Recommendations</h4>
 
                     <div class="row">
 
-                        <div class="col-6">
-                            <img src="assets/uploads/image7.jpg" class="img-fluid" alt="Product">
-                        </div>
+                        <?php if (empty($recommendationProducts)): ?>
 
-                        <div class="col-6">
-                            <img src="assets/uploads/image8.jpg" class="img-fluid" alt="Product">
-                        </div>
+                            <div class="col-12">
+                                <p class="text-muted">
+                                    No recommendations available.
+                                </p>
+                            </div>
 
-                        <div class="col-6">
-                            <img src="assets/uploads/image.jpg" class="img-fluid" alt="Product">
-                        </div>
+                        <?php else: ?>
 
-                        <div class="col-6">
-                            <img src="assets/uploads/image9.jpg" class="img-fluid" alt="Product">
-                        </div>
+                            <?php foreach (array_slice($recommendationProducts, 0, 4) as $product): ?>
+
+                                <div class="col-6 mb-3">
+
+                                    <a
+                                        href="product-details.php?id=<?= (int)$product['id']; ?>"
+                                        class="text-decoration-none text-dark">
+
+                                        <img
+                                            src="<?= htmlspecialchars($product['image']); ?>"
+                                            class="img-fluid"
+                                            alt="<?= htmlspecialchars($product['title']); ?>">
+
+                                        <p class="mt-2 mb-1">
+                                            <?= htmlspecialchars($product['title']); ?>
+                                        </p>
+
+                                        <strong>
+                                            ₹<?= number_format((float)$product['price'], 2); ?>
+                                        </strong>
+
+                                    </a>
+
+                                    <button
+                                        type="button"
+                                        class="shop-btn add-to-cart mt-2"
+                                        <?= ((int)$product['stock'] <= 0) ? 'disabled' : ''; ?>
+                                        data-id="<?= (int)$product['id']; ?>"
+                                        data-title="<?= htmlspecialchars($product['title']); ?>"
+                                        data-price="<?= htmlspecialchars($product['price']); ?>"
+                                        data-image="<?= htmlspecialchars($product['image']); ?>">
+                                        <i class="fa-solid fa-cart-plus me-2"></i>
+                                        Add to Cart
+                                    </button>
+
+                                </div>
+
+                            <?php endforeach; ?>
+
+                        <?php endif; ?>
 
                     </div>
 
-                    <a href="#">See more deals</a>
+                    <a href="related-products.php">
+                        See more deals
+                    </a>
 
                 </div>
+
             </div>
-
-
             <div class="col-lg-4 col-md-6 col-sm-12">
                 <div class="deal-card p-3">
 

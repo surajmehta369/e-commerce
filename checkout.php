@@ -19,7 +19,6 @@ if (
 $database = new Database();
 $db = $database->connect();
 
-
 if ($_SERVER['REQUEST_METHOD'] === 'POST') {
 
     $shippingName =
@@ -56,17 +55,18 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
     ) {
 
         die("Please fill all delivery information.");
-
     }
 
+    $allowedPaymentMethods = [
+        'cash_on_delivery',
+        'stripe',
+        'paypal'
+    ];
 
-    if ($paymentMethod !== 'cash_on_delivery') {
+    if (!in_array($paymentMethod, $allowedPaymentMethods, true)) {
 
         die("Invalid payment method.");
-
     }
-
-
     $cart = json_decode(
         $cartData,
         true
@@ -79,15 +79,11 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
     ) {
 
         die("Your cart is empty.");
-
     }
-
-
     try {
 
+
         $db->beginTransaction();
-
-
         $totalAmount = 0;
 
         $orderItems = [];
@@ -109,7 +105,6 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
                 throw new Exception(
                     "Invalid cart item."
                 );
-
             }
 
             $productSql = "
@@ -124,19 +119,15 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
                   AND status = 1
                 LIMIT 1
             ";
-
             $productStmt =
                 $db->prepare($productSql);
+
 
             $productStmt->execute([
                 'id' => $productId
             ]);
-
-
             $product =
-                $productStmt->fetch(
-                    PDO::FETCH_ASSOC
-                );
+                $productStmt->fetch(PDO::FETCH_ASSOC);
 
 
             if (!$product) {
@@ -144,56 +135,55 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
                 throw new Exception(
                     "Product not found."
                 );
-
             }
 
-
-            if ($quantity > (int) $product['stock']) {
+            if (
+                $quantity >
+                (int) $product['stock']
+            ) {
 
                 throw new Exception(
                     "Not enough stock for: "
-                    . $product['title']
+                        . $product['title']
                 );
-
             }
-
-
             $price =
                 (float) $product['price'];
-
-
             $subtotal =
                 $price * $quantity;
 
 
             $totalAmount += $subtotal;
-
-
             $orderItems[] = [
 
                 'product_id' =>
-                    $product['id'],
+                $product['id'],
 
                 'product_name' =>
-                    $product['title'],
+                $product['title'],
 
                 'product_image' =>
-                    $product['image'],
+                $product['image'],
 
                 'price' =>
-                    $price,
+                $price,
 
                 'quantity' =>
-                    $quantity,
+                $quantity,
 
                 'subtotal' =>
-                    $subtotal
+                $subtotal
 
             ];
-
         }
 
+        if ($paymentMethod === 'cash_on_delivery') {
 
+            $orderStatus = 'confirmed';
+        } else {
+
+            $orderStatus = 'pending';
+        }
         $orderSql = "
 
             INSERT INTO orders (
@@ -231,52 +221,46 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
             )
 
         ";
-
-
         $orderStmt =
             $db->prepare($orderSql);
-
-
         $orderStmt->execute([
 
             'user_id' =>
-                $_SESSION['user_id'],
+            $_SESSION['user_id'],
 
             'total_amount' =>
-                $totalAmount,
+            $totalAmount,
 
             'payment_method' =>
-                'cash_on_delivery',
+            $paymentMethod,
 
             'payment_status' =>
-                'pending',
+            'pending',
 
             'order_status' =>
-                'confirmed',
+            $orderStatus,
 
             'shipping_name' =>
-                $shippingName,
+            $shippingName,
 
             'shipping_phone' =>
-                $shippingPhone,
+            $shippingPhone,
 
             'shipping_address' =>
-                $shippingAddress,
+            $shippingAddress,
 
             'shipping_city' =>
-                $shippingCity,
+            $shippingCity,
 
             'shipping_state' =>
-                $shippingState,
+            $shippingState,
 
             'shipping_pincode' =>
-                $shippingPincode
+            $shippingPincode
 
         ]);
-
         $orderId =
             $db->lastInsertId();
-
         $itemSql = "
 
             INSERT INTO order_items (
@@ -304,8 +288,6 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
             )
 
         ";
-
-
         $itemStmt =
             $db->prepare($itemSql);
 
@@ -315,100 +297,163 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
             $itemStmt->execute([
 
                 'order_id' =>
-                    $orderId,
+                $orderId,
 
                 'product_id' =>
-                    $item['product_id'],
+                $item['product_id'],
 
                 'product_name' =>
-                    $item['product_name'],
+                $item['product_name'],
 
                 'product_image' =>
-                    $item['product_image'],
+                $item['product_image'],
 
                 'price' =>
-                    $item['price'],
+                $item['price'],
 
                 'quantity' =>
-                    $item['quantity'],
+                $item['quantity'],
 
                 'subtotal' =>
-                    $item['subtotal']
+                $item['subtotal']
 
             ]);
-
         }
+        if ($paymentMethod === 'cash_on_delivery') {
+
+            foreach ($orderItems as $item) {
+
+                $stockSql = "
+
+                    UPDATE products
+
+                    SET stock = stock - :quantity
+
+                    WHERE id = :id
+                      AND stock >= :quantity
+
+                ";
+                $stockStmt =
+                    $db->prepare($stockSql);
 
 
-        // =============================================
-        // UPDATE STOCK
-        // =============================================
+                $stockStmt->execute([
 
-        foreach ($orderItems as $item) {
-
-            $stockSql = "
-
-                UPDATE products
-
-                SET stock = stock - :quantity
-
-                WHERE id = :id
-
-            ";
-
-            $stockStmt =
-                $db->prepare($stockSql);
-
-            $stockStmt->execute([
-
-                'quantity' =>
+                    'quantity' =>
                     $item['quantity'],
 
-                'id' =>
+                    'id' =>
                     $item['product_id']
 
-            ]);
+                ]);
+                if ($stockStmt->rowCount() !== 1) {
 
+                    throw new Exception(
+                        "Unable to update stock for product."
+                    );
+                }
+            }
+            $db->commit();
+
+            $_SESSION['last_order_id'] =
+                $orderId;
+            header(
+                "Location: order-confirmation.php"
+            );
+            exit;
         }
 
-        $db->commit();
+        if ($paymentMethod === 'stripe') {
 
+            require_once __DIR__ . '/config/stripe.php';
+            $stripeLineItems = [];
+            foreach ($orderItems as $item) {
 
-        $_SESSION['last_order_id'] =
-            $orderId;
+                $stripeLineItems[] = [
 
-        header(
-            "Location: order-confirmation.php"
-        );
+                    'price_data' => [
 
-        exit;
+                        'currency' => 'inr',
 
+                        'product_data' => [
 
+                            'name' =>
+                            $item['product_name']
+
+                        ],
+
+                        'unit_amount' =>
+                        (int) round(
+                            $item['price'] * 100
+                        )
+
+                    ],
+
+                    'quantity' =>
+                    $item['quantity']
+
+                ];
+            }
+
+            $checkoutSession =
+                \Stripe\Checkout\Session::create([
+
+                    'mode' =>
+                    'payment',
+
+                    'line_items' =>
+                    $stripeLineItems,
+
+                    'success_url' =>
+                    'http://localhost/e-commerce/stripe-success.php?session_id={CHECKOUT_SESSION_ID}',
+
+                    'cancel_url' =>
+                    'http://localhost/e-commerce/stripe-cancel.php?order_id='
+                        . $orderId,
+
+                    'customer_email' =>
+                    $_SESSION['user_email'] ?? null,
+
+                    'metadata' => [
+
+                        'order_id' =>
+                        (string) $orderId,
+
+                        'user_id' =>
+                        (string) $_SESSION['user_id']
+
+                    ]
+
+                ]);
+            $_SESSION['stripe_order_id'] =
+                $orderId;
+
+            $_SESSION['stripe_session_id'] =
+                $checkoutSession->id;
+
+            $db->commit();
+            header(
+                "Location: "
+                    . $checkoutSession->url
+            );
+
+            exit;
+        }
     } catch (Exception $e) {
-
 
         if ($db->inTransaction()) {
 
             $db->rollBack();
-
         }
-
-
-        die(
-            "Order could not be placed: "
-            . htmlspecialchars($e->getMessage())
-        );
-
+        die("Order could not be placed: "
+            . htmlspecialchars(
+                $e->getMessage()
+            ));
     }
-
 }
-
 include "components/header.php";
-// include "components/sidebar.php";
 
 ?>
-
-
 <!DOCTYPE html>
 <html lang="en">
 
@@ -419,9 +464,6 @@ include "components/header.php";
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
 
     <title>Checkout</title>
-
-    <?php include "components/header.php"; ?>
-
 </head>
 
 <body>
@@ -494,8 +536,6 @@ include "components/header.php";
 
                         <div class="row">
 
-                            <!-- CITY -->
-
                             <div class="col-md-6 mb-3">
 
                                 <label for="shipping_city" class="form-label fw-semibold">
@@ -506,10 +546,6 @@ include "components/header.php";
                                     required>
 
                             </div>
-
-
-                            <!-- STATE -->
-
                             <div class="col-md-6 mb-3">
 
                                 <label for="shipping_state" class="form-label fw-semibold">
@@ -524,8 +560,6 @@ include "components/header.php";
                         </div>
 
 
-                        <!-- PINCODE -->
-
                         <div class="mb-4">
 
                             <label for="shipping_pincode" class="form-label fw-semibold">
@@ -537,30 +571,27 @@ include "components/header.php";
 
                         </div>
 
-
-                        <!-- ==================================
-                         PAYMENT
-                    =================================== -->
-
                         <h4 class="fw-bold mb-3">
-
                             Payment Method
-
                         </h4>
 
-
-                        <div class="border rounded-3 p-3 mb-4">
+                        <div class="border rounded-3 p-3 mb-3">
 
                             <div class="form-check">
 
-                                <input class="form-check-input" type="radio" name="payment_method" id="cod"
-                                    value="cash_on_delivery" checked>
+                                <input
+                                    class="form-check-input"
+                                    type="radio"
+                                    name="payment_method"
+                                    id="cod"
+                                    value="cash_on_delivery"
+                                    checked>
 
-                                <label class="form-check-label" for="cod">
+                                <label
+                                    class="form-check-label"
+                                    for="cod">
 
-                                    <i class="fa-solid
-                                          fa-money-bill-wave
-                                          text-success me-2"></i>
+                                    <i class="fa-solid fa-money-bill-wave text-success me-2"></i>
 
                                     <strong>
                                         Cash on Delivery
@@ -569,9 +600,7 @@ include "components/header.php";
                                     <br>
 
                                     <small class="text-muted ms-4">
-
                                         Pay when your order is delivered.
-
                                     </small>
 
                                 </label>
@@ -581,16 +610,84 @@ include "components/header.php";
                         </div>
 
 
-                        <!-- PLACE ORDER -->
+                        <div class="border rounded-3 p-3 mb-4">
 
-                        <button type="submit" class="btn btn-primary
-                               rounded-pill
-                               px-4 py-2 w-100">
+                            <div class="form-check">
 
-                            <i class="fa-solid
-                                  fa-check me-2"></i>
+                                <input
+                                    class="form-check-input"
+                                    type="radio"
+                                    name="payment_method"
+                                    id="stripe"
+                                    value="stripe">
 
-                            Place Order
+                                <label
+                                    class="form-check-label"
+                                    for="stripe">
+
+                                    <i class="fa-brands fa-stripe text-primary me-2"></i>
+
+                                    <strong>
+                                        Pay Online with Stripe
+                                    </strong>
+
+                                    <br>
+
+                                    <small class="text-muted ms-4">
+                                        Secure payment using credit/debit card.
+                                    </small>
+
+                                </label>
+
+                            </div>
+
+                        </div>
+
+                        <div class="border rounded-3 p-3 mb-4">
+
+                            <div class="form-check">
+
+                                <input
+                                    class="form-check-input"
+                                    type="radio"
+                                    name="payment_method"
+                                    id="paypal"
+                                    value="paypal">
+
+                                <label
+                                    class="form-check-label"
+                                    for="paypal">
+
+                                    <i class="fa-brands fa-paypal text-primary me-2"></i>
+
+                                    <strong>
+                                        Pay with PayPal
+                                    </strong>
+
+                                    <br>
+
+                                    <small class="text-muted ms-4">
+                                        Secure payment using your PayPal account.
+                                    </small>
+
+                                </label>
+
+                            </div>
+
+                        </div>
+
+                        <div
+                            id="paypal-button-container"
+                            class="mt-3">
+                        </div>
+                        <button
+                            type="submit"
+                            class="btn btn-primary rounded-pill px-4 py-2 w-100"
+                            id="placeOrderButton">
+
+                            <i class="fa-solid fa-lock me-2"></i>
+
+                            Continue to Payment
 
                         </button>
 
@@ -642,6 +739,7 @@ include "components/header.php";
 
     <?php include "components/footer.php"; ?>
 
+    <script src="https://www.paypal.com/sdk/js?client-id=BAAHpGX9MgmkZykVaLi0DkQhyZK9d8yaFvCcjk56dMB-392LSaMvXHC6vJ4CgJ89M0rrRfCQbCN-bsLIDE&currency=USD"></script>
 </body>
 
 </html>

@@ -28,8 +28,7 @@ $productId = isset($_GET['id'])
 
             <a
                 href="index.php"
-                class="btn btn-outline-dark rounded-pill"
-            >
+                class="btn btn-outline-dark rounded-pill">
                 <i class="fa-solid fa-arrow-left me-2"></i>
                 Continue Shopping
             </a>
@@ -51,8 +50,7 @@ $productId = isset($_GET['id'])
 
                         <label
                             for="minPrice"
-                            class="form-label fw-semibold"
-                        >
+                            class="form-label fw-semibold">
                             Min Price
                         </label>
 
@@ -61,8 +59,7 @@ $productId = isset($_GET['id'])
                             id="minPrice"
                             class="form-control"
                             placeholder="₹ Min"
-                            min="0"
-                        >
+                            min="0">
 
                     </div>
 
@@ -73,8 +70,7 @@ $productId = isset($_GET['id'])
 
                         <label
                             for="maxPrice"
-                            class="form-label fw-semibold"
-                        >
+                            class="form-label fw-semibold">
                             Max Price
                         </label>
 
@@ -83,27 +79,22 @@ $productId = isset($_GET['id'])
                             id="maxPrice"
                             class="form-control"
                             placeholder="₹ Max"
-                            min="0"
-                        >
+                            min="0">
 
                     </div>
 
-
-                    <!-- DISCOUNT -->
 
                     <div class="col-lg-2 col-md-4 col-sm-6">
 
                         <label
                             for="minDiscount"
-                            class="form-label fw-semibold"
-                        >
+                            class="form-label fw-semibold">
                             Minimum Discount
                         </label>
 
                         <select
                             id="minDiscount"
-                            class="form-select"
-                        >
+                            class="form-select">
 
                             <option value="">
                                 Any Discount
@@ -133,22 +124,17 @@ $productId = isset($_GET['id'])
 
                     </div>
 
-
-                    <!-- BRAND -->
-
                     <div class="col-lg-2 col-md-4 col-sm-6">
 
                         <label
                             for="brandFilter"
-                            class="form-label fw-semibold"
-                        >
+                            class="form-label fw-semibold">
                             Brand
                         </label>
 
                         <select
                             id="brandFilter"
-                            class="form-select"
-                        >
+                            class="form-select">
 
                             <option value="">
                                 All Brands
@@ -158,22 +144,17 @@ $productId = isset($_GET['id'])
 
                     </div>
 
-
-                    <!-- CATEGORY -->
-
                     <div class="col-lg-2 col-md-4 col-sm-6">
 
                         <label
                             for="categoryFilter"
-                            class="form-label fw-semibold"
-                        >
+                            class="form-label fw-semibold">
                             Category
                         </label>
 
                         <select
                             id="categoryFilter"
-                            class="form-select"
-                        >
+                            class="form-select">
 
                             <option value="">
                                 All Categories
@@ -183,22 +164,17 @@ $productId = isset($_GET['id'])
 
                     </div>
 
-
-                    <!-- SORT -->
-
                     <div class="col-lg-2 col-md-4 col-sm-6">
 
                         <label
                             for="sortProducts"
-                            class="form-label fw-semibold"
-                        >
+                            class="form-label fw-semibold">
                             Sort By
                         </label>
 
                         <select
                             id="sortProducts"
-                            class="form-select"
-                        >
+                            class="form-select">
 
                             <option value="relevance">
                                 Relevance
@@ -238,8 +214,7 @@ $productId = isset($_GET['id'])
                     <button
                         type="button"
                         id="applyFilters"
-                        class="btn btn-primary rounded-pill px-4"
-                    >
+                        class="btn btn-primary rounded-pill px-4">
                         <i class="fa-solid fa-filter me-2"></i>
                         Apply Filters
                     </button>
@@ -248,8 +223,7 @@ $productId = isset($_GET['id'])
                     <button
                         type="button"
                         id="clearFilters"
-                        class="btn btn-outline-secondary rounded-pill px-4"
-                    >
+                        class="btn btn-outline-secondary rounded-pill px-4">
                         <i class="fa-solid fa-rotate-left me-2"></i>
                         Clear
                     </button>
@@ -261,11 +235,10 @@ $productId = isset($_GET['id'])
         </div>
 
 
-        <!-- RESULT INFORMATION -->
+        
 
         <div
-            class="d-flex justify-content-between align-items-center mb-3"
-        >
+            class="d-flex justify-content-between align-items-center mb-3">
 
             <h4 class="fw-bold mb-0">
                 Products
@@ -273,25 +246,19 @@ $productId = isset($_GET['id'])
 
             <span
                 id="productCount"
-                class="text-muted"
-            >
+                class="text-muted">
                 Loading...
             </span>
 
         </div>
 
-
-        <!-- LOADING -->
-
         <div
             id="productsLoading"
-            class="text-center py-5"
-        >
+            class="text-center py-5">
 
             <div
                 class="spinner-border text-primary"
-                role="status"
-            ></div>
+                role="status"></div>
 
             <p class="mt-2 text-muted">
                 Loading products...
@@ -299,26 +266,17 @@ $productId = isset($_GET['id'])
 
         </div>
 
-
-        <!-- PRODUCTS -->
-
         <div
             id="relatedProducts"
-            class="row g-4"
-        ></div>
-
-
-        <!-- NO PRODUCTS -->
+            class="row g-4"></div>
 
         <div
             id="noProducts"
-            class="text-center py-5 d-none"
-        >
+            class="text-center py-5 d-none">
 
             <div
                 class="mb-3"
-                style="font-size:50px;"
-            >
+                style="font-size:50px;">
                 <i class="fa-solid fa-box-open text-muted"></i>
             </div>
 
@@ -333,12 +291,9 @@ $productId = isset($_GET['id'])
         </div>
 
 
-        <!-- PAGINATION -->
-
         <div
             id="pagination"
-            class="d-flex justify-content-center mt-5 mb-5"
-        ></div>
+            class="d-flex justify-content-center mt-5 mb-5"></div>
 
     </div>
 
@@ -346,218 +301,212 @@ $productId = isset($_GET['id'])
 
 
 <script>
+    document.addEventListener("DOMContentLoaded", function() {
 
-document.addEventListener("DOMContentLoaded", function () {
+        const productId = <?= $productId ?>;
 
-    const productId = <?= $productId ?>;
+        const relatedProducts =
+            document.getElementById("relatedProducts");
 
-    const relatedProducts =
-        document.getElementById("relatedProducts");
+        const productsLoading =
+            document.getElementById("productsLoading");
 
-    const productsLoading =
-        document.getElementById("productsLoading");
+        const noProducts =
+            document.getElementById("noProducts");
 
-    const noProducts =
-        document.getElementById("noProducts");
+        const productCount =
+            document.getElementById("productCount");
 
-    const productCount =
-        document.getElementById("productCount");
+        const pagination =
+            document.getElementById("pagination");
 
-    const pagination =
-        document.getElementById("pagination");
+        const minPrice =
+            document.getElementById("minPrice");
 
-    const minPrice =
-        document.getElementById("minPrice");
+        const maxPrice =
+            document.getElementById("maxPrice");
 
-    const maxPrice =
-        document.getElementById("maxPrice");
+        const minDiscount =
+            document.getElementById("minDiscount");
 
-    const minDiscount =
-        document.getElementById("minDiscount");
+        const brandFilter =
+            document.getElementById("brandFilter");
 
-    const brandFilter =
-        document.getElementById("brandFilter");
+        const categoryFilter =
+            document.getElementById("categoryFilter");
 
-    const categoryFilter =
-        document.getElementById("categoryFilter");
+        const sortProducts =
+            document.getElementById("sortProducts");
 
-    const sortProducts =
-        document.getElementById("sortProducts");
+        const applyFilters =
+            document.getElementById("applyFilters");
 
-    const applyFilters =
-        document.getElementById("applyFilters");
-
-    const clearFilters =
-        document.getElementById("clearFilters");
-
-
-    let currentPage = 1;
+        const clearFilters =
+            document.getElementById("clearFilters");
 
 
-    // --------------------------------------------------
-    // LOAD PRODUCTS
-    // --------------------------------------------------
+        let currentPage = 1;
 
-    async function loadProducts(page = 1) {
+        async function loadProducts(page = 1) {
 
-        currentPage = page;
+            currentPage = page;
 
-        productsLoading.classList.remove("d-none");
+            productsLoading.classList.remove("d-none");
 
-        relatedProducts.innerHTML = "";
+            relatedProducts.innerHTML = "";
 
-        noProducts.classList.add("d-none");
+            noProducts.classList.add("d-none");
 
-        pagination.innerHTML = "";
+            pagination.innerHTML = "";
 
 
-        const params = new URLSearchParams();
+            const params = new URLSearchParams();
 
-
-        params.set(
-            "exclude_id",
-            productId
-        );
-
-
-        params.set(
-            "page",
-            page
-        );
-
-
-        params.set(
-            "limit",
-            12
-        );
-
-
-        if (minPrice.value !== "") {
 
             params.set(
-                "min_price",
-                minPrice.value
+                "exclude_id",
+                productId
             );
 
-        }
-
-
-        if (maxPrice.value !== "") {
 
             params.set(
-                "max_price",
-                maxPrice.value
+                "page",
+                page
             );
 
-        }
-
-
-        if (minDiscount.value !== "") {
 
             params.set(
-                "min_discount",
-                minDiscount.value
-            );
-
-        }
-
-
-        if (brandFilter.value !== "") {
-
-            params.set(
-                "brand_id",
-                brandFilter.value
-            );
-
-        }
-
-
-        if (categoryFilter.value !== "") {
-
-            params.set(
-                "category_id",
-                categoryFilter.value
-            );
-
-        }
-
-
-        params.set(
-            "sort",
-            sortProducts.value
-        );
-
-
-        try {
-
-            const response = await fetch(
-                "api/product-filter.php?" +
-                params.toString()
+                "limit",
+                12
             );
 
 
-            if (!response.ok) {
+            if (minPrice.value !== "") {
 
-                throw new Error(
-                    "HTTP error: " +
-                    response.status
+                params.set(
+                    "min_price",
+                    minPrice.value
                 );
 
             }
 
 
-            const data =
-                await response.json();
+            if (maxPrice.value !== "") {
 
-
-            if (!data.success) {
-
-                throw new Error(
-                    data.message ||
-                    "Unable to load products."
+                params.set(
+                    "max_price",
+                    maxPrice.value
                 );
 
             }
 
 
-            productsLoading.classList.add("d-none");
+            if (minDiscount.value !== "") {
+
+                params.set(
+                    "min_discount",
+                    minDiscount.value
+                );
+
+            }
 
 
-            productCount.textContent =
-                data.pagination.total_products +
-                " product(s)";
+            if (brandFilter.value !== "") {
+
+                params.set(
+                    "brand_id",
+                    brandFilter.value
+                );
+
+            }
 
 
-            if (
-                data.products.length === 0
-            ) {
+            if (categoryFilter.value !== "") {
 
-                noProducts.classList.remove(
+                params.set(
+                    "category_id",
+                    categoryFilter.value
+                );
+
+            }
+
+
+            params.set(
+                "sort",
+                sortProducts.value
+            );
+
+
+            try {
+
+                const response = await fetch(
+                    "api/product-filter.php?" +
+                    params.toString()
+                );
+
+
+                if (!response.ok) {
+
+                    throw new Error(
+                        "HTTP error: " +
+                        response.status
+                    );
+
+                }
+
+
+                const data =
+                    await response.json();
+
+
+                if (!data.success) {
+
+                    throw new Error(
+                        data.message ||
+                        "Unable to load products."
+                    );
+
+                }
+
+
+                productsLoading.classList.add("d-none");
+
+
+                productCount.textContent =
+                    data.pagination.total_products +
+                    " product(s)";
+
+
+                if (
+                    data.products.length === 0
+                ) {
+
+                    noProducts.classList.remove(
+                        "d-none"
+                    );
+
+                    return;
+
+                }
+
+
+                renderProducts(
+                    data.products
+                );
+
+
+                renderPagination(
+                    data.pagination
+                );
+
+
+            } catch (error) {
+
+                productsLoading.classList.add(
                     "d-none"
                 );
 
-                return;
-
-            }
-
-
-            renderProducts(
-                data.products
-            );
-
-
-            renderPagination(
-                data.pagination
-            );
-
-
-        } catch (error) {
-
-            productsLoading.classList.add(
-                "d-none"
-            );
-
-            relatedProducts.innerHTML = `
+                relatedProducts.innerHTML = `
 
                 <div class="col-12">
 
@@ -581,33 +530,28 @@ document.addEventListener("DOMContentLoaded", function () {
 
             `;
 
+            }
+
         }
 
-    }
+        function renderProducts(products) {
+
+            let html = "";
 
 
-    // --------------------------------------------------
-    // RENDER PRODUCTS
-    // --------------------------------------------------
+            products.forEach(function(product) {
 
-    function renderProducts(products) {
-
-        let html = "";
+                const price =
+                    Number(product.price);
 
 
-        products.forEach(function (product) {
-
-            const price =
-                Number(product.price);
-
-
-            const originalPrice =
-                product.original_price !== null
-                    ? Number(product.original_price)
-                    : null;
+                const originalPrice =
+                    product.original_price !== null ?
+                    Number(product.original_price) :
+                    null;
 
 
-            html += `
+                html += `
 
                 <div
                     class="
@@ -707,22 +651,15 @@ document.addEventListener("DOMContentLoaded", function () {
                             </div>
 
 
-                            <button
-                                type="button"
-                                class="shop-btn add-to-cart"
-
-                                data-id="${product.id}"
-
-                                data-title="${escapeHtml(
-                                    product.title
-                                )}"
-
-                                data-price="${product.price}"
-
-                                data-image="${escapeHtml(
-                                    product.image
-                                )}"
-                            >
+                     <button
+    type="button"
+    class="shop-btn add-to-cart"
+    data-id="${product.id}"
+    data-title="${escapeHtml(product.title)}"
+    data-price="${product.price}"
+    data-image="${escapeHtml(product.image)}"
+    data-stock="${product.stock}"
+>
 
                                 <i
                                     class="fa-solid
@@ -742,29 +679,29 @@ document.addEventListener("DOMContentLoaded", function () {
 
             `;
 
-        });
+            });
 
 
-        relatedProducts.innerHTML =
-            html;
-
-    }
-
-
-    // --------------------------------------------------
-    // PAGINATION
-    // --------------------------------------------------
-
-    function renderPagination(data) {
-
-        if (data.total_pages <= 1) {
-
-            return;
+            relatedProducts.innerHTML =
+                html;
 
         }
 
 
-        let html = `
+        // --------------------------------------------------
+        // PAGINATION
+        // --------------------------------------------------
+
+        function renderPagination(data) {
+
+            if (data.total_pages <= 1) {
+
+                return;
+
+            }
+
+
+            let html = `
 
             <nav>
 
@@ -773,9 +710,9 @@ document.addEventListener("DOMContentLoaded", function () {
         `;
 
 
-        if (data.has_previous_page) {
+            if (data.has_previous_page) {
 
-            html += `
+                html += `
 
                 <li class="page-item">
 
@@ -790,16 +727,14 @@ document.addEventListener("DOMContentLoaded", function () {
 
             `;
 
-        }
+            }
 
 
-        for (
-            let i = 1;
-            i <= data.total_pages;
-            i++
-        ) {
+            for (
+                let i = 1; i <= data.total_pages; i++
+            ) {
 
-            html += `
+                html += `
 
                 <li
                     class="
@@ -819,12 +754,12 @@ document.addEventListener("DOMContentLoaded", function () {
 
             `;
 
-        }
+            }
 
 
-        if (data.has_next_page) {
+            if (data.has_next_page) {
 
-            html += `
+                html += `
 
                 <li class="page-item">
 
@@ -839,10 +774,10 @@ document.addEventListener("DOMContentLoaded", function () {
 
             `;
 
-        }
+            }
 
 
-        html += `
+            html += `
 
                 </ul>
 
@@ -851,113 +786,112 @@ document.addEventListener("DOMContentLoaded", function () {
         `;
 
 
-        pagination.innerHTML =
-            html;
+            pagination.innerHTML =
+                html;
 
 
-        pagination
-            .querySelectorAll("[data-page]")
-            .forEach(function (button) {
+            pagination
+                .querySelectorAll("[data-page]")
+                .forEach(function(button) {
 
-                button.addEventListener(
-                    "click",
-                    function () {
+                    button.addEventListener(
+                        "click",
+                        function() {
 
-                        loadProducts(
-                            Number(
-                                this.dataset.page
-                            )
-                        );
+                            loadProducts(
+                                Number(
+                                    this.dataset.page
+                                )
+                            );
 
-                    }
-                );
+                        }
+                    );
 
-            });
-
-    }
-
-
-    // --------------------------------------------------
-    // APPLY FILTERS
-    // --------------------------------------------------
-
-    applyFilters.addEventListener(
-        "click",
-        function () {
-
-            loadProducts(1);
+                });
 
         }
-    );
 
 
-    // --------------------------------------------------
-    // SORT
-    // --------------------------------------------------
+        // --------------------------------------------------
+        // APPLY FILTERS
+        // --------------------------------------------------
 
-    sortProducts.addEventListener(
-        "change",
-        function () {
+        applyFilters.addEventListener(
+            "click",
+            function() {
 
-            loadProducts(1);
+                loadProducts(1);
+
+            }
+        );
+
+
+        // --------------------------------------------------
+        // SORT
+        // --------------------------------------------------
+
+        sortProducts.addEventListener(
+            "change",
+            function() {
+
+                loadProducts(1);
+
+            }
+        );
+
+
+        // --------------------------------------------------
+        // CLEAR FILTERS
+        // --------------------------------------------------
+
+        clearFilters.addEventListener(
+            "click",
+            function() {
+
+                minPrice.value = "";
+
+                maxPrice.value = "";
+
+                minDiscount.value = "";
+
+                brandFilter.value = "";
+
+                categoryFilter.value = "";
+
+                sortProducts.value =
+                    "relevance";
+
+
+                loadProducts(1);
+
+            }
+        );
+
+
+        // --------------------------------------------------
+        // ESCAPE HTML
+        // --------------------------------------------------
+
+        function escapeHtml(value) {
+
+            const div =
+                document.createElement("div");
+
+            div.textContent =
+                value ?? "";
+
+            return div.innerHTML;
 
         }
-    );
 
 
-    // --------------------------------------------------
-    // CLEAR FILTERS
-    // --------------------------------------------------
+        // --------------------------------------------------
+        // INITIAL LOAD
+        // --------------------------------------------------
 
-    clearFilters.addEventListener(
-        "click",
-        function () {
+        loadProducts(1);
 
-            minPrice.value = "";
-
-            maxPrice.value = "";
-
-            minDiscount.value = "";
-
-            brandFilter.value = "";
-
-            categoryFilter.value = "";
-
-            sortProducts.value =
-                "relevance";
-
-
-            loadProducts(1);
-
-        }
-    );
-
-
-    // --------------------------------------------------
-    // ESCAPE HTML
-    // --------------------------------------------------
-
-    function escapeHtml(value) {
-
-        const div =
-            document.createElement("div");
-
-        div.textContent =
-            value ?? "";
-
-        return div.innerHTML;
-
-    }
-
-
-    // --------------------------------------------------
-    // INITIAL LOAD
-    // --------------------------------------------------
-
-    loadProducts(1);
-
-});
-
+    });
 </script>
 
 
