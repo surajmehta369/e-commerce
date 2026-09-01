@@ -651,7 +651,7 @@ include "components/header.php";
                                     class="form-check-input"
                                     type="radio"
                                     name="payment_method"
-                                    id="paypal"
+                                    id="paypal-payment"
                                     value="paypal">
 
                                 <label
@@ -736,10 +736,439 @@ include "components/header.php";
 
     </main>
 
+    <script src="https://www.paypal.com/sdk/js?client-id=BAAHpGX9MgmkZykVaLi0DkQhyZK9d8yaFvCcjk56dMB-392LSaMvXHC6vJ4CgJ89M0rrRfCQbCN-bsLIDE&currency=USD"></script>
+
+    <script>
+        document.addEventListener('DOMContentLoaded', function() {
+
+            console.log('PayPal checkout script loaded');
+
+
+            const paypalRadio =
+                document.getElementById('paypal-payment');
+
+            const paypalContainer =
+                document.getElementById(
+                    'paypal-button-container'
+                );
+
+            const placeOrderButton =
+                document.getElementById(
+                    'placeOrderButton'
+                );
+
+
+            // Check required elements
+
+            if (!paypalRadio) {
+
+                console.error(
+                    'PayPal radio button not found.'
+                );
+
+                return;
+
+            }
+
+
+            if (!paypalContainer) {
+
+                console.error(
+                    'PayPal button container not found.'
+                );
+
+                return;
+
+            }
+
+
+            if (!placeOrderButton) {
+
+                console.error(
+                    'Place order button not found.'
+                );
+
+                return;
+
+            }
+
+
+            // Initially hide PayPal button
+
+            paypalContainer.style.display =
+                'none';
+
+
+            // =================================================
+            // PAYMENT METHOD CHANGE
+            // =================================================
+
+            document
+                .querySelectorAll(
+                    'input[name="payment_method"]'
+                )
+                .forEach(function(radio) {
+
+                    radio.addEventListener(
+                        'change',
+                        function() {
+
+                            console.log(
+                                'Payment method:',
+                                this.value
+                            );
+
+
+                            if (
+                                paypalRadio.checked
+                            ) {
+
+                                paypalContainer.style.display =
+                                    'block';
+
+                                placeOrderButton.style.display =
+                                    'none';
+
+                            } else {
+
+                                paypalContainer.style.display =
+                                    'none';
+
+                                placeOrderButton.style.display =
+                                    'block';
+
+                            }
+
+                        }
+                    );
+
+                });
+
+
+            // =================================================
+            // PAYPAL BUTTON
+            // =================================================
+
+            if (
+                typeof paypal === 'undefined'
+            ) {
+
+                console.error(
+                    'PayPal SDK was not loaded.'
+                );
+
+                return;
+
+            }
+
+
+            console.log(
+                'PayPal SDK loaded successfully.'
+            );
+
+            console.log('PayPal object:', paypal);
+            console.log('PayPal Buttons:', paypal.Buttons);
+            console.log('PayPal type:', typeof paypal);
+            console.log('Buttons type:', typeof paypal.Buttons);
+
+            paypal.Buttons({
+
+                createOrder: function(
+                    data,
+                    actions
+                ) {
+
+                    console.log(
+                        'Creating PayPal order...'
+                    );
+                    const cart =
+                        JSON.parse(
+                            localStorage.getItem(
+                                'cart'
+                            ) || '[]'
+                        );
+
+
+                    console.log(
+                        'Cart:',
+                        cart
+                    );
+
+
+                    if (
+                        !cart.length
+                    ) {
+
+                        alert(
+                            'Your cart is empty.'
+                        );
+
+                        throw new Error(
+                            'Cart is empty.'
+                        );
+
+                    }
+
+                    const shipping = {
+
+                        name: document
+                            .getElementById(
+                                'shipping_name'
+                            )
+                            .value
+                            .trim(),
+
+                        phone: document
+                            .getElementById(
+                                'shipping_phone'
+                            )
+                            .value
+                            .trim(),
+
+                        address: document
+                            .getElementById(
+                                'shipping_address'
+                            )
+                            .value
+                            .trim(),
+
+                        city: document
+                            .getElementById(
+                                'shipping_city'
+                            )
+                            .value
+                            .trim(),
+
+                        state: document
+                            .getElementById(
+                                'shipping_state'
+                            )
+                            .value
+                            .trim(),
+
+                        pincode: document
+                            .getElementById(
+                                'shipping_pincode'
+                            )
+                            .value
+                            .trim()
+
+                    };
+
+
+                    console.log(
+                        'Shipping:',
+                        shipping
+                    );
+
+                    if (
+
+                        !shipping.name ||
+
+                        !shipping.phone ||
+
+                        !shipping.address ||
+
+                        !shipping.city ||
+
+                        !shipping.state ||
+
+                        !shipping.pincode
+
+                    ) {
+
+                        alert(
+                            'Please fill all delivery information.'
+                        );
+
+                        throw new Error(
+                            'Shipping information is incomplete.'
+                        );
+
+                    }
+
+                    return fetch(
+                            'create-order.php', {
+
+                                method: 'POST',
+
+                                headers: {
+
+                                    'Content-Type': 'application/json'
+
+                                },
+
+                                body: JSON.stringify({
+
+                                    cart: cart,
+
+                                    shipping: shipping
+
+                                })
+
+                            }
+
+                        )
+
+                        .then(function(
+                            response
+                        ) {
+
+                            console.log(
+                                'create-order.php status:',
+                                response.status
+                            );
+
+
+                            return response.json();
+
+                        })
+
+                        .then(function(
+                            orderData
+                        ) {
+
+                            console.log(
+                                'PayPal Create Order Response:',
+                                orderData
+                            );
+
+
+                            if (
+                                !orderData.success
+                            ) {
+
+                                throw new Error(
+                                    orderData.message ||
+                                    'Unable to create PayPal order.'
+                                );
+
+                            }
+
+
+                            return orderData
+                                .paypal_order_id;
+
+                        });
+
+                },
+
+                onApprove: function(
+                    data,
+                    actions
+                ) {
+
+                    console.log(
+                        'PayPal Approved:',
+                        data
+                    );
+
+
+                    return fetch(
+                            'capture-order.php', {
+
+                                method: 'POST',
+
+                                headers: {
+
+                                    'Content-Type': 'application/json'
+
+                                },
+
+                                body: JSON.stringify({
+
+                                    orderID: data.orderID
+
+                                })
+
+                            }
+
+                        )
+
+                        .then(function(
+                            response
+                        ) {
+
+                            console.log(
+                                'capture-order.php status:',
+                                response.status
+                            );
+
+
+                            return response.json();
+
+                        })
+
+                        .then(function(
+                            result
+                        ) {
+
+                            console.log(
+                                'PayPal Capture Result:',
+                                result
+                            );
+
+
+                            if (
+                                !result.success
+                            ) {
+
+                                throw new Error(
+                                    result.message ||
+                                    'Payment capture failed.'
+                                );
+
+                            }
+
+                            window.location.href =
+                                'order-confirmation.php';
+
+                        });
+
+                },
+
+                onCancel: function(
+                    data
+                ) {
+
+                    console.log(
+                        'PayPal checkout cancelled:',
+                        data
+                    );
+
+                    alert(
+                        'Payment cancelled.'
+                    );
+
+                },
+
+onError: function(error) {
+
+    console.error('========== PAYPAL ERROR ==========');
+    console.error(error);
+    console.error('===================================');
+
+    alert(
+        'PayPal Error: ' +
+        (error.message || 'Unknown error')
+    );
+
+}
+
+            }).render(
+                '#paypal-button-container'
+            );
+
+
+            console.log(
+                'PayPal Buttons initialized.'
+            );
+
+        });
+    </script>
+
 
     <?php include "components/footer.php"; ?>
-
-    <script src="https://www.paypal.com/sdk/js?client-id=BAAHpGX9MgmkZykVaLi0DkQhyZK9d8yaFvCcjk56dMB-392LSaMvXHC6vJ4CgJ89M0rrRfCQbCN-bsLIDE&currency=USD"></script>
 </body>
 
 </html>
