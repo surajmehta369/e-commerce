@@ -3,7 +3,7 @@
 session_start();
 
 require_once __DIR__ . '/paypal-api.php';
-require_once __DIR__ . '/connection/dbconnect.php';
+require_once __DIR__ . '/../connection/dbconnect.php';
 
 header('Content-Type: application/json');
 
