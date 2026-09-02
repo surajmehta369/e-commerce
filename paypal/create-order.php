@@ -3,32 +3,23 @@
 session_start();
 
 require_once __DIR__ . '/paypal-api.php';
-require_once __DIR__ . '/connection/dbconnect.php';
+require_once __DIR__ . '/../connection/dbconnect.php';
 
 header('Content-Type: application/json');
 
 
 try {
 
-    // =================================================
-    // CHECK LOGIN
-    // =================================================
-
     if (
         !isset($_SESSION['user_id']) ||
         $_SESSION['logged_in'] !== true
-    ) {
+    ) { 
 
         throw new Exception(
             'User is not logged in.'
         );
 
     }
-
-
-    // =================================================
-    // READ REQUEST
-    // =================================================
 
     $input = json_decode(
         file_get_contents('php://input'),
@@ -62,11 +53,6 @@ try {
         );
 
     }
-
-
-    // =================================================
-    // VALIDATE SHIPPING
-    // =================================================
 
     $shippingName =
         trim($shipping['name'] ?? '');
@@ -102,11 +88,6 @@ try {
 
     }
 
-
-    // =================================================
-    // DATABASE
-    // =================================================
-
     $database =
         new Database();
 
@@ -116,10 +97,6 @@ try {
 
     $db->beginTransaction();
 
-
-    // =================================================
-    // CALCULATE CART FROM DATABASE
-    // =================================================
 
     $totalINR = 0;
 
@@ -145,11 +122,6 @@ try {
             );
 
         }
-
-
-        // ---------------------------------------------
-        // GET PRODUCT
-        // ---------------------------------------------
 
         $productStmt =
             $db->prepare("
@@ -196,10 +168,6 @@ try {
         }
 
 
-        // ---------------------------------------------
-        // CHECK STOCK
-        // ---------------------------------------------
-
         if (
             $quantity >
             (int) $product['stock']
@@ -211,11 +179,6 @@ try {
             );
 
         }
-
-
-        // ---------------------------------------------
-        // PRICE
-        // ---------------------------------------------
 
         $price =
             (float) $product['price'];
@@ -253,26 +216,9 @@ try {
 
     }
 
-
-    // =================================================
-    // INR → USD
-    // =================================================
-
-    /*
-     * Temporary exchange rate for testing.
-     *
-     * ₹84 = $1
-     *
-     * We can replace this later with a live
-     * exchange-rate API.
-     */
-
     $usdRate = 84;
-
-
     $totalUSD =
         $totalINR / $usdRate;
-
 
     $paypalAmount =
         number_format(
@@ -281,11 +227,6 @@ try {
             '.',
             ''
         );
-
-
-    // =================================================
-    // CREATE LOCAL ORDER
-    // =================================================
 
     $orderSql = "
 
@@ -324,7 +265,6 @@ try {
         )
 
     ";
-
 
     $orderStmt =
         $db->prepare($orderSql);
@@ -370,11 +310,6 @@ try {
 
     $localOrderId =
         $db->lastInsertId();
-
-
-    // =================================================
-    // CREATE ORDER ITEMS
-    // =================================================
 
     $itemStmt =
         $db->prepare("
@@ -436,10 +371,6 @@ try {
     }
 
 
-    // =================================================
-    // CREATE PAYPAL ORDER
-    // =================================================
-
     $paypalData = [
 
         'intent' =>
@@ -476,11 +407,6 @@ try {
             $paypalData
         );
 
-
-    // =================================================
-    // CHECK PAYPAL ORDER ID
-    // =================================================
-
     if (
         !isset($paypalOrder['id']) ||
         empty($paypalOrder['id'])
@@ -495,11 +421,6 @@ try {
 
     $paypalOrderId =
         $paypalOrder['id'];
-
-
-    // =================================================
-    // SAVE PAYPAL ORDER ID
-    // =================================================
 
     $updateStmt =
         $db->prepare("
@@ -530,17 +451,7 @@ try {
 
     ]);
 
-
-    // =================================================
-    // COMMIT
-    // =================================================
-
     $db->commit();
-
-
-    // =================================================
-    // SAVE SESSION
-    // =================================================
 
     $_SESSION['paypal_order_id'] =
         $paypalOrderId;
@@ -553,11 +464,6 @@ try {
 
     $_SESSION['paypal_total_usd'] =
         $paypalAmount;
-
-
-    // =================================================
-    // RESPONSE
-    // =================================================
 
     echo json_encode([
 

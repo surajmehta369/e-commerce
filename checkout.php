@@ -454,6 +454,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
 include "components/header.php";
 
 ?>
+
 <!DOCTYPE html>
 <html lang="en">
 
@@ -680,6 +681,7 @@ include "components/header.php";
                             id="paypal-button-container"
                             class="mt-3">
                         </div>
+
                         <button
                             type="submit"
                             class="btn btn-primary rounded-pill px-4 py-2 w-100"
@@ -758,7 +760,7 @@ include "components/header.php";
                 );
 
 
-            // Check required elements
+
 
             if (!paypalRadio) {
 
@@ -792,16 +794,8 @@ include "components/header.php";
 
             }
 
-
-            // Initially hide PayPal button
-
             paypalContainer.style.display =
                 'none';
-
-
-            // =================================================
-            // PAYMENT METHOD CHANGE
-            // =================================================
 
             document
                 .querySelectorAll(
@@ -844,10 +838,6 @@ include "components/header.php";
 
                 });
 
-
-            // =================================================
-            // PAYPAL BUTTON
-            // =================================================
 
             if (
                 typeof paypal === 'undefined'
@@ -988,55 +978,65 @@ include "components/header.php";
                     }
 
                     return fetch(
-                            'create-order.php', {
-
+                            'paypal/create-order.php', {
                                 method: 'POST',
 
                                 headers: {
-
                                     'Content-Type': 'application/json'
-
                                 },
 
                                 body: JSON.stringify({
-
                                     cart: cart,
-
                                     shipping: shipping
-
                                 })
-
                             }
-
                         )
-
-                        .then(function(
-                            response
-                        ) {
+                        .then(function(response) {
 
                             console.log(
                                 'create-order.php status:',
                                 response.status
                             );
 
+                            return response.text()
+                                .then(function(text) {
 
-                            return response.json();
+                                    console.log(
+                                        'RAW create-order.php RESPONSE:',
+                                        text
+                                    );
+
+                                    if (!response.ok) {
+                                        throw new Error(
+                                            'create-order.php failed with HTTP ' +
+                                            response.status +
+                                            ': ' +
+                                            text
+                                        );
+                                    }
+
+                                    try {
+                                        return JSON.parse(text);
+                                    } catch (error) {
+
+                                        throw new Error(
+                                            'Invalid JSON returned by create-order.php: ' +
+                                            text
+                                        );
+
+                                    }
+
+                                });
 
                         })
-
-                        .then(function(
-                            orderData
-                        ) {
+                        .then(function(orderData) {
 
                             console.log(
                                 'PayPal Create Order Response:',
                                 orderData
                             );
 
-
-                            if (
-                                !orderData.success
-                            ) {
+                            if (!orderData.success) {
 
                                 throw new Error(
                                     orderData.message ||
@@ -1045,11 +1045,26 @@ include "components/header.php";
 
                             }
 
+                            if (
+                                !orderData.order ||
+                                !orderData.order.id
+                            ) {
 
-                            return orderData
-                                .paypal_order_id;
+                                throw new Error(
+                                    'PayPal order ID is missing.'
+                                );
+
+                            }
+
+                            console.log(
+                                'PayPal Order ID:',
+                                orderData.order.id
+                            );
+
+                            return orderData.order.id;
 
                         });
+
 
                 },
 
@@ -1065,65 +1080,74 @@ include "components/header.php";
 
 
                     return fetch(
-                            'capture-order.php', {
-
+                            'paypal/capture-order.php', {
                                 method: 'POST',
 
                                 headers: {
-
                                     'Content-Type': 'application/json'
-
                                 },
 
                                 body: JSON.stringify({
-
                                     orderID: data.orderID
-
                                 })
-
                             }
-
                         )
-
-                        .then(function(
-                            response
-                        ) {
+                        .then(function(response) {
 
                             console.log(
                                 'capture-order.php status:',
                                 response.status
                             );
 
+                            return response.text()
+                                .then(function(text) {
 
-                            return response.json();
+                                    console.log(
+                                        'RAW capture-order.php RESPONSE:',
+                                        text
+                                    );
 
+                                    if (!response.ok) {
+                                        throw new Error(
+                                            'capture-order.php failed with HTTP ' +
+                                            response.status +
+                                            ': ' +
+                                            text
+                                        );
+                                    }
+
+                                    try {
+                                        return JSON.parse(text);
+
+                                    } catch (error) {
+
+                                        throw new Error(
+                                            'Invalid JSON returned by capture-order.php: ' +
+                                            text
+                                        );
+                                    }
+                                });
                         })
-
-                        .then(function(
-                            result
-                        ) {
+                        .then(function(result) {
 
                             console.log(
                                 'PayPal Capture Result:',
                                 result
                             );
 
-
-                            if (
-                                !result.success
-                            ) {
+                            if (!result.success) {
 
                                 throw new Error(
                                     result.message ||
                                     'Payment capture failed.'
                                 );
-
                             }
 
                             window.location.href =
                                 'order-confirmation.php';
 
                         });
+
 
                 },
 
@@ -1142,18 +1166,18 @@ include "components/header.php";
 
                 },
 
-onError: function(error) {
+                onError: function(error) {
 
-    console.error('========== PAYPAL ERROR ==========');
-    console.error(error);
-    console.error('===================================');
+                    console.error('========== PAYPAL ERROR ==========');
+                    console.error(error);
+                    console.error('===================================');
 
-    alert(
-        'PayPal Error: ' +
-        (error.message || 'Unknown error')
-    );
+                    alert(
+                        'PayPal Error: ' +
+                        (error.message || 'Unknown error')
+                    );
 
-}
+                }
 
             }).render(
                 '#paypal-button-container'

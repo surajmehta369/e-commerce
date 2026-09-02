@@ -1,134 +1,255 @@
+<?php
+if (session_status() === PHP_SESSION_NONE) {
+  session_start();
+}
 
+$isLoggedIn = isset($_SESSION['user_id']);
+?>
 
 <!doctype html>
 <html lang="en" data-bs-theme="light">
 
 <head>
-  <title>E-commerce</title>
-  <!-- Required meta tags -->
-  <meta charset="utf-8" />
-  <meta name="viewport" content="width=device-width, initial-scale=1" />
 
-  <!-- Bootstrap CSS v5.3.8 -->
-  <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.8/dist/css/bootstrap.min.css" rel="stylesheet">
+  <title>MyShop.in</title>
+
+  <meta charset="utf-8">
+
+  <meta
+    name="viewport"
+    content="width=device-width, initial-scale=1">
+
+  <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.8/dist/css/bootstrap.min.css"
+    rel="stylesheet">
+  <linkrel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.7.2/css/all.min.css">
+
   <link rel="stylesheet" href="assets/css/style.css">
-
-  <link rel="stylesheet"
-      href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.7.2/css/all.min.css">
-
-  <script src="https://cdn.jsdelivr.net/npm/bootstrap@5.3.8/dist/js/bootstrap.bundle.min.js"
-    integrity="sha384-FKyoEForCGlyvwx9Hj09JcYn3nv7wiPVlz7YYwJrWVcXK/BmnVDxM+D2scQbITxI"
-    crossorigin="anonymous"></script>
-
+  <script
+    src="https://cdn.jsdelivr.net/npm/bootstrap@5.3.8/dist/js/bootstrap.bundle.min.js"
+    integrity="sha384-FKyoEForCGlyvwx9Hj09JcYn3nv7wiPVlz7YYwJrVcXK/BmnVDxM+D2scQbITxI"
+    crossorigin="anonymous">
+  </script>
 
 </head>
 
 <body>
+
   <header>
-    <nav class="navbar navbar-expand-lg fixed-top navbar-dark" style="background-color:rgb(35, 47, 62);">
-      <a class="navbar-brand" href="index.php">Myshop.in</a>
-      <button class="navbar-toggler" type="button" data-toggle="collapse" data-target="#navbarSupportedContent"
-        aria-controls="navbarSupportedContent" aria-expanded="false" aria-label="Toggle navigation">
-        <span class="navbar-toggler-icon"></span>
-      </button>
 
-      <div class="collapse navbar-collapse" id="navbarSupportedContent">
-        <ul class="navbar-nav mr-auto">
-          <li class="nav-item active">
-            <a class="nav-link" href="#" id="allMenuBtn"> <i class="fa-solid fa-bars">&nbsp;All</i></a>
-          </li>
+    <nav class="navbar navbar-expand-lg navbar-dark myshop-navbar fixed-top">
 
-          <li class="nav-item">
-            <a class="nav-link" href="#">sell</a>
-          </li>
-          <li class="nav-item">
-            <a class="nav-link" href="#">Best seller</a>
-          </li>
-          <li class="nav-item">
-            <a class="nav-link" href="#todayDeals"  >Today deals</a>
-          </li>
-          <li class="nav-item">
-            <a class="nav-link" href="#">Mobile</a>
-          </li>
+      <div class="container-fluid px-3 px-lg-4">
+        <a
+          class="navbar-brand myshop-logo"
+          href="index.php">
+          MyShop<span>.in</span>
+        </a>
+        <button
+          class="navbar-toggler"
+          type="button"
+          data-bs-toggle="collapse"
+          data-bs-target="#mainNavbar"
+          aria-controls="mainNavbar"
+          aria-expanded="false"
+          aria-label="Toggle navigation">
 
-  <form
-    class="d-flex my-2 my-lg-0"
-    id="searchForm"
-    action="search.php"
-    method="GET"
->
-    <input
-        class="form-control me-2"
-        type="search"
-        id="searchInput"
-        name="q"
-        placeholder="Search"
-        aria-label="Search"
-        autocomplete="off"
-    >
+          <span class="navbar-toggler-icon"></span>
 
-    <button
-        class="btn btn-outline-light"
-        type="submit"
-    >
-        Search
-    </button>
-</form>
+        </button>
+        <div
+          class="collapse navbar-collapse"
+          id="mainNavbar">
+
+          <ul class="navbar-nav me-lg-3 mb-2 mb-lg-0">
+
+            <li class="nav-item">
+
+              <a
+                class="nav-link"
+                href="#"
+                id="allMenuBtn">
+                <i class="fa-solid fa-bars me-1"></i>
+                All
+              </a>
+
+            </li>
 
 
-        </ul>
+            <li class="nav-item">
+
+              <a
+                class="nav-link"
+                href="#">
+                Sell
+              </a>
+
+            </li>
+
+
+            <li class="nav-item">
+
+              <a
+                class="nav-link"
+                href="#">
+                Best Sellers
+              </a>
+
+            </li>
+
+
+            <li class="nav-item">
+
+              <a
+                class="nav-link"
+                href="#todayDeals">
+                Today's Deals
+              </a>
+
+            </li>
+
+
+            <li class="nav-item">
+
+              <a
+                class="nav-link"
+                href="#">
+                Mobiles
+              </a>
+
+            </li>
+
+          </ul>
+      
+          <form
+            class="d-flex flex-grow-1 myshop-search mb-3 mb-lg-0"
+            id="searchForm"
+            action="search.php"
+            method="GET">
+
+            <input
+              class="form-control"
+              type="search"
+              id="searchInput"
+              name="q"
+              placeholder="Search products..."
+              aria-label="Search"
+              autocomplete="off">
+
+
+            <button
+              class="btn search-btn"
+              type="submit"
+              aria-label="Search">
+
+              <i class="fa-solid fa-magnifying-glass"></i>
+
+            </button>
+
+          </form>
+
+          <div class="myshop-actions ms-lg-3">
+
+
+            <?php if ($isLoggedIn): ?>
+              <a
+                href="account.php"
+                class="header-action">
+
+                <i class="fa-solid fa-user"></i>
+
+                <span>
+                  Account
+                </span>
+
+              </a>
+              <a
+                href="orders.php"
+                class="header-action">
+
+                <i class="fa-solid fa-box"></i>
+
+                <span>
+                  My Orders
+                </span>
+
+              </a>
+              <a
+                href="cart.php"
+                class="header-action cart-action"
+                title="View Cart">
+
+                <i class="fa-solid fa-cart-shopping"></i>
+
+                <span>
+                  Cart
+                </span>
+
+
+                <span
+                  id="cart-count"
+                  class="cart-count">
+                  0
+                </span>
+
+              </a>
+
+              <a
+                href="outh/logout.php"
+                class="logout-btn"
+                title="Logout"
+                aria-label="Logout">
+
+                <i class="fa-solid fa-right-from-bracket"></i>
+
+              </a>
+
+
+            <?php else: ?>
+              <a
+                href="outh/login.php"
+                class="header-action">
+
+                <i class="fa-solid fa-user"></i>
+
+                <span>
+                  Sign In
+                </span>
+
+              </a>
+              <a
+                href="outh/register.php"
+                class="signup-btn">
+                Sign Up
+              </a>
+              <a
+                href="cart.php"
+                class="header-action cart-action"
+                title="View Cart">
+
+                <i class="fa-solid fa-cart-shopping"></i>
+
+                <span>
+                  Cart
+                </span>
+
+
+                <span
+                  id="cart-count"
+                  class="cart-count">
+                  0
+                </span>
+
+              </a>
+
+
+            <?php endif; ?>
+
+          </div>
+
+        </div>
+
       </div>
-<?php if (isset($_SESSION['user_id'])): ?>
 
-    <a href="outh/logout.php"
-       class="btn btn-danger"
-       title="Logout"
-       aria-label="Logout">
-        <i class="fa-solid fa-right-from-bracket"></i>
-    </a>
-
-<?php else: ?>
-
-    <!-- Sign Up -->
-     
-<a
-    href="orders.php"
-    class="btn btn-light rounded-pill"
->
-    <i class="fa-solid fa-box me-2"></i>
-    My Orders
-</a>
-
-&nbsp;
-    <a href="outh/register.php"
-       class="btn btn-light"
-       title="Sign Up"
-       aria-label="Sign Up">
-        <i class="fa-solid fa-user-plus"></i>
-    </a>
-&nbsp;
- 
-<a href="cart.php"
-   class="btn btn-light position-relative"
-   title="View Cart"
-   aria-label="View Cart">
-
-    <i class="fa-solid fa-cart-plus"></i>
-
-    <span
-        id="cart-count"
-        class="position-absolute top-0 start-100
-               translate-middle badge rounded-pill
-               bg-danger"
-        style="font-size: 10px;"
-    >
-        0
-    </span>
-
-</a>
-
-
-
-<?php endif; ?>
     </nav>
+
   </header>
