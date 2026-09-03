@@ -21,14 +21,13 @@ $isLoggedIn = isset($_SESSION['user_id']);
 
   <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.8/dist/css/bootstrap.min.css"
     rel="stylesheet">
-  <linkrel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.7.2/css/all.min.css">
+  <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.7.2/css/all.min.css">
 
-  <link rel="stylesheet" href="assets/css/style.css">
-  <script
-    src="https://cdn.jsdelivr.net/npm/bootstrap@5.3.8/dist/js/bootstrap.bundle.min.js"
-    integrity="sha384-FKyoEForCGlyvwx9Hj09JcYn3nv7wiPVlz7YYwJrVcXK/BmnVDxM+D2scQbITxI"
-    crossorigin="anonymous">
-  </script>
+    <link rel="stylesheet" href="assets/css/style.css">
+   <script src="https://cdn.jsdelivr.net/npm/bootstrap@5.3.8/dist/js/bootstrap.bundle.min.js"></script>
+
+   <script src="https://cdn.jsdelivr.net/npm/sweetalert2@11"></script>
+
 
 </head>
 
@@ -119,11 +118,11 @@ $isLoggedIn = isset($_SESSION['user_id']);
             </li>
 
           </ul>
-      
+
           <form
             class="d-flex flex-grow-1 myshop-search mb-3 mb-lg-0"
             id="searchForm"
-            action="search.php"
+            action="/e-commerce/api/search.php"
             method="GET">
 
             <input
@@ -131,7 +130,7 @@ $isLoggedIn = isset($_SESSION['user_id']);
               type="search"
               id="searchInput"
               name="q"
-              placeholder="Search products..."
+              placeholder="Search"
               aria-label="Search"
               autocomplete="off">
 
@@ -159,17 +158,6 @@ $isLoggedIn = isset($_SESSION['user_id']);
 
                 <span>
                   Account
-                </span>
-
-              </a>
-              <a
-                href="orders.php"
-                class="header-action">
-
-                <i class="fa-solid fa-box"></i>
-
-                <span>
-                  My Orders
                 </span>
 
               </a>

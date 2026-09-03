@@ -336,7 +336,13 @@ $orders = $stmt->fetchAll(PDO::FETCH_ASSOC);
 
                                         <h6 class="fw-bold mb-0 mt-2">
 
-                                            <?php if ($order['payment_method'] === 'stripe'): ?>
+                                        <?php if ($order['payment_method'] === 'paypal'): ?>
+
+                                                <i class="fa-brands fa-paypal text-primary me-1"></i>
+
+                                                PayPal
+
+                                            <?php elseif ($order['payment_method'] === 'stripe'): ?>
 
                                                 <i class="fa-brands fa-stripe text-primary me-1"></i>
 
