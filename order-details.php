@@ -613,7 +613,11 @@ $orderItems = $itemStmt->fetchAll(PDO::FETCH_ASSOC);
 
                         <strong>
 
-                            <?php if ($order['payment_method'] === 'stripe'): ?>
+                        <?php if ($order['payment_method'] === 'paypal'): ?>
+
+                            PayPal
+
+                              <?php elseif ($order['payment_method'] === 'stripe'): ?>
 
                                 Stripe
 

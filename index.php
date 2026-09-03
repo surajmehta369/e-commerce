@@ -8,11 +8,6 @@ require_once "connection/dbconnect.php";
 $database = new Database();
 $db = $database->connect();
 
-
-// ======================================================
-// HOMEPAGE BANNERS
-// ======================================================
-
 $banners = [
     [
         'image' => 'assets/uploads/main.jpg',
@@ -30,11 +25,6 @@ $banners = [
         'link'  => '#'
     ]
 ];
-
-
-// ======================================================
-// FEATURED PRODUCTS
-// ======================================================
 
 $productsStmt = $db->prepare("
     SELECT
@@ -61,11 +51,6 @@ $productsStmt->execute();
 
 $products = $productsStmt->fetchAll(PDO::FETCH_ASSOC);
 
-
-// ======================================================
-// RECOMMENDATIONS
-// ======================================================
-
 $recommendationStmt = $db->prepare("
     SELECT
         id,
@@ -87,12 +72,6 @@ $recommendationStmt->execute();
 
 $recommendationProducts =
     $recommendationStmt->fetchAll(PDO::FETCH_ASSOC);
-
-
-// ======================================================
-// SMARTPHONES
-// category_id = 4
-// ======================================================
 
 $smartphoneStmt = $db->prepare("
     SELECT
@@ -116,11 +95,6 @@ $smartphoneStmt->execute();
 $smartphoneProducts =
     $smartphoneStmt->fetchAll(PDO::FETCH_ASSOC);
 
-
-// ======================================================
-// BEST DEALS
-// ======================================================
-
 $dealsStmt = $db->prepare("
     SELECT
         id,
@@ -141,11 +115,6 @@ $dealsStmt->execute();
 
 $dealProducts =
     $dealsStmt->fetchAll(PDO::FETCH_ASSOC);
-
-
-// ======================================================
-// TODAY'S DEALS
-// ======================================================
 
 $todayDealsStmt = $db->prepare("
     SELECT
@@ -172,19 +141,13 @@ $todayDeals =
 
 <main class="homepage">
 
-
-    <!-- ==================================================
-         HERO BANNER
-    =================================================== -->
-
     <section class="hero-section">
 
         <div
             id="mainBannerCarousel"
             class="carousel slide hero-carousel"
             data-bs-ride="carousel"
-            data-bs-interval="3500"
-        >
+            data-bs-interval="3500">
 
             <div class="carousel-inner">
 
@@ -192,16 +155,14 @@ $todayDeals =
 
                     <div
                         class="carousel-item
-                        <?= $index === 0 ? 'active' : ''; ?>"
-                    >
+                        <?= $index === 0 ? 'active' : ''; ?>">
 
                         <a href="<?= htmlspecialchars($banner['link']); ?>">
 
                             <img
                                 src="<?= htmlspecialchars($banner['image']); ?>"
                                 class="d-block w-100 main-banner"
-                                alt="<?= htmlspecialchars($banner['alt']); ?>"
-                            >
+                                alt="<?= htmlspecialchars($banner['alt']); ?>">
 
                         </a>
 
@@ -218,8 +179,7 @@ $todayDeals =
                     class="carousel-control-prev"
                     type="button"
                     data-bs-target="#mainBannerCarousel"
-                    data-bs-slide="prev"
-                >
+                    data-bs-slide="prev">
 
                     <span class="carousel-control-prev-icon"></span>
 
@@ -234,8 +194,7 @@ $todayDeals =
                     class="carousel-control-next"
                     type="button"
                     data-bs-target="#mainBannerCarousel"
-                    data-bs-slide="next"
-                >
+                    data-bs-slide="next">
 
                     <span class="carousel-control-next-icon"></span>
 
@@ -251,16 +210,15 @@ $todayDeals =
 
     </section>
 
-
-
-    <!-- ==================================================
-         FEATURED PRODUCTS
-    =================================================== -->
+    <section
+        id="searchResults"
+        class="featured-section"
+        style="display: none;">
+    </section>
 
     <section
         class="featured-section"
-        id="defaultProducts"
-    >
+        id="defaultProducts">
 
         <div class="container-fluid homepage-container">
 
@@ -316,14 +274,12 @@ $todayDeals =
                                 <div class="shop-card-image">
 
                                     <a
-                                        href="product-details.php?id=<?= (int)$product['id']; ?>"
-                                    >
+                                        href="product-details.php?id=<?= (int)$product['id']; ?>">
 
                                         <img
                                             src="<?= htmlspecialchars($product['image']); ?>"
                                             alt="<?= htmlspecialchars($product['title']); ?>"
-                                            loading="lazy"
-                                        >
+                                            loading="lazy">
 
                                     </a>
 
@@ -351,8 +307,7 @@ $todayDeals =
                                     <h3>
 
                                         <a
-                                            href="product-details.php?id=<?= (int)$product['id']; ?>"
-                                        >
+                                            href="product-details.php?id=<?= (int)$product['id']; ?>">
                                             <?= htmlspecialchars($product['title']); ?>
                                         </a>
 
@@ -373,9 +328,9 @@ $todayDeals =
                                         <span class="product-price">
 
                                             ₹<?= number_format(
-                                                (float)$product['price'],
-                                                2
-                                            ); ?>
+                                                    (float)$product['price'],
+                                                    2
+                                                ); ?>
 
                                         </span>
 
@@ -389,9 +344,9 @@ $todayDeals =
                                             <span class="product-original-price">
 
                                                 ₹<?= number_format(
-                                                    (float)$product['original_price'],
-                                                    2
-                                                ); ?>
+                                                        (float)$product['original_price'],
+                                                        2
+                                                    ); ?>
 
                                             </span>
 
@@ -405,8 +360,7 @@ $todayDeals =
                                         <button
                                             type="button"
                                             class="shop-btn disabled"
-                                            disabled
-                                        >
+                                            disabled>
                                             Out of Stock
                                         </button>
 
@@ -418,8 +372,7 @@ $todayDeals =
                                             data-id="<?= (int)$product['id']; ?>"
                                             data-title="<?= htmlspecialchars($product['title']); ?>"
                                             data-price="<?= htmlspecialchars($product['price']); ?>"
-                                            data-image="<?= htmlspecialchars($product['image']); ?>"
-                                        >
+                                            data-image="<?= htmlspecialchars($product['image']); ?>">
 
                                             <i class="fa-solid fa-cart-plus"></i>
 
@@ -444,12 +397,6 @@ $todayDeals =
         </div>
 
     </section>
-
-
-
-    <!-- ==================================================
-         THREE RECOMMENDATION CARDS
-    =================================================== -->
 
     <section class="recommendation-section">
 
@@ -491,16 +438,14 @@ $todayDeals =
 
                                     <a
                                         href="product-details.php?id=<?= (int)$product['id']; ?>"
-                                        class="mini-product"
-                                    >
+                                        class="mini-product">
 
                                         <div class="mini-product-image">
 
                                             <img
                                                 src="<?= htmlspecialchars($product['image']); ?>"
                                                 alt="<?= htmlspecialchars($product['title']); ?>"
-                                                loading="lazy"
-                                            >
+                                                loading="lazy">
 
                                         </div>
 
@@ -516,9 +461,9 @@ $todayDeals =
 
                                             <strong>
                                                 ₹<?= number_format(
-                                                    (float)$product['price'],
-                                                    2
-                                                ); ?>
+                                                        (float)$product['price'],
+                                                        2
+                                                    ); ?>
                                             </strong>
 
 
@@ -547,10 +492,6 @@ $todayDeals =
 
                 </div>
 
-
-
-                <!-- RECOMMENDATIONS -->
-
                 <div class="col-lg-4 col-md-6">
 
                     <div class="deal-card">
@@ -574,16 +515,14 @@ $todayDeals =
 
                                 <a
                                     href="product-details.php?id=<?= (int)$product['id']; ?>"
-                                    class="mini-product"
-                                >
+                                    class="mini-product">
 
                                     <div class="mini-product-image">
 
                                         <img
                                             src="<?= htmlspecialchars($product['image']); ?>"
                                             alt="<?= htmlspecialchars($product['title']); ?>"
-                                            loading="lazy"
-                                        >
+                                            loading="lazy">
 
                                     </div>
 
@@ -599,9 +538,9 @@ $todayDeals =
 
                                         <strong>
                                             ₹<?= number_format(
-                                                (float)$product['price'],
-                                                2
-                                            ); ?>
+                                                    (float)$product['price'],
+                                                    2
+                                                ); ?>
                                         </strong>
 
                                     </div>
@@ -615,11 +554,6 @@ $todayDeals =
                     </div>
 
                 </div>
-
-
-
-                <!-- SMARTPHONES -->
-
                 <div class="col-lg-4 col-md-6">
 
                     <div class="deal-card">
@@ -651,16 +585,14 @@ $todayDeals =
 
                                     <a
                                         href="product-details.php?id=<?= (int)$product['id']; ?>"
-                                        class="mini-product"
-                                    >
+                                        class="mini-product">
 
                                         <div class="mini-product-image">
 
                                             <img
                                                 src="<?= htmlspecialchars($product['image']); ?>"
                                                 alt="<?= htmlspecialchars($product['title']); ?>"
-                                                loading="lazy"
-                                            >
+                                                loading="lazy">
 
                                         </div>
 
@@ -676,9 +608,9 @@ $todayDeals =
 
                                             <strong>
                                                 ₹<?= number_format(
-                                                    (float)$product['price'],
-                                                    2
-                                                ); ?>
+                                                        (float)$product['price'],
+                                                        2
+                                                    ); ?>
                                             </strong>
 
 
@@ -712,17 +644,9 @@ $todayDeals =
         </div>
 
     </section>
-
-
-
-    <!-- ==================================================
-         TODAY'S DEALS
-    =================================================== -->
-
     <section
         class="today-deals-section"
-        id="todayDeals"
-    >
+        id="todayDeals">
 
         <div class="container-fluid homepage-container">
 
@@ -774,7 +698,8 @@ $todayDeals =
                     <div
                         id="productCarousel"
                         class="carousel slide"
-                    >
+                        data-bs-ride="carousel"
+                        data-bs-interval="3500">
 
                         <div class="carousel-inner">
 
@@ -783,8 +708,7 @@ $todayDeals =
 
                                 <div
                                     class="carousel-item
-                                    <?= $slideIndex === 0 ? 'active' : ''; ?>"
-                                >
+                                    <?= $slideIndex === 0 ? 'active' : ''; ?>">
 
                                     <div class="row g-3">
 
@@ -792,29 +716,25 @@ $todayDeals =
                                         <?php foreach ($slideProducts as $product): ?>
 
                                             <div
-                                                class="col-xl-3 col-lg-3 col-md-4 col-sm-6"
-                                            >
+                                                class="col-xl-3 col-lg-3 col-md-4 col-sm-6">
 
                                                 <article class="today-product">
 
                                                     <a
                                                         href="product-details.php?id=<?= (int)$product['id']; ?>"
-                                                        class="today-product-image"
-                                                    >
+                                                        class="today-product-image">
 
                                                         <img
                                                             src="<?= htmlspecialchars($product['image']); ?>"
                                                             alt="<?= htmlspecialchars($product['title']); ?>"
-                                                            loading="lazy"
-                                                        >
+                                                            loading="lazy">
 
                                                     </a>
 
 
                                                     <a
                                                         href="product-details.php?id=<?= (int)$product['id']; ?>"
-                                                        class="today-product-title"
-                                                    >
+                                                        class="today-product-title">
 
                                                         <?= htmlspecialchars(
                                                             $product['title']
@@ -826,9 +746,9 @@ $todayDeals =
                                                     <div class="today-product-price">
 
                                                         ₹<?= number_format(
-                                                            (float)$product['price'],
-                                                            2
-                                                        ); ?>
+                                                                (float)$product['price'],
+                                                                2
+                                                            ); ?>
 
 
                                                         <?php if (
@@ -840,9 +760,9 @@ $todayDeals =
                                                             <span>
 
                                                                 ₹<?= number_format(
-                                                                    (float)$product['original_price'],
-                                                                    2
-                                                                ); ?>
+                                                                        (float)$product['original_price'],
+                                                                        2
+                                                                    ); ?>
 
                                                             </span>
 
@@ -871,8 +791,7 @@ $todayDeals =
                                                         data-id="<?= (int)$product['id']; ?>"
                                                         data-title="<?= htmlspecialchars($product['title']); ?>"
                                                         data-price="<?= htmlspecialchars($product['price']); ?>"
-                                                        data-image="<?= htmlspecialchars($product['image']); ?>"
-                                                    >
+                                                        data-image="<?= htmlspecialchars($product['image']); ?>">
 
                                                         <i class="fa-solid fa-cart-plus"></i>
 
@@ -901,8 +820,7 @@ $todayDeals =
                                 class="carousel-control-prev deals-control"
                                 type="button"
                                 data-bs-target="#productCarousel"
-                                data-bs-slide="prev"
-                            >
+                                data-bs-slide="prev">
 
                                 <span class="carousel-control-prev-icon"></span>
 
@@ -917,8 +835,7 @@ $todayDeals =
                                 class="carousel-control-next deals-control"
                                 type="button"
                                 data-bs-target="#productCarousel"
-                                data-bs-slide="next"
-                            >
+                                data-bs-slide="next">
 
                                 <span class="carousel-control-next-icon"></span>
 
@@ -940,18 +857,11 @@ $todayDeals =
 
     </section>
 
-
-
-    <!-- ==================================================
-         ADD TO CART MODAL
-    =================================================== -->
-
     <div
         class="modal fade"
         id="quantityModal"
         tabindex="-1"
-        aria-hidden="true"
-    >
+        aria-hidden="true">
 
         <div class="modal-dialog modal-dialog-centered">
 
@@ -968,8 +878,7 @@ $todayDeals =
                         type="button"
                         class="btn-close"
                         data-bs-dismiss="modal"
-                        aria-label="Close"
-                    ></button>
+                        aria-label="Close"></button>
 
                 </div>
 
@@ -981,40 +890,34 @@ $todayDeals =
                         id="modalProductImage"
                         src=""
                         alt=""
-                        class="modal-product-image mb-3"
-                    >
+                        class="modal-product-image mb-3">
 
 
                     <h5
                         id="modalProductTitle"
-                        class="fw-bold mb-2"
-                    ></h5>
+                        class="fw-bold mb-2"></h5>
 
 
                     <p
                         id="modalProductPrice"
-                        class="text-primary fw-bold fs-5"
-                    ></p>
+                        class="text-primary fw-bold fs-5"></p>
 
 
                     <div class="mt-4">
 
                         <label
-                            class="fw-semibold d-block mb-2"
-                        >
+                            class="fw-semibold d-block mb-2">
                             Quantity
                         </label>
 
 
                         <div
-                            class="d-flex justify-content-center align-items-center gap-3"
-                        >
+                            class="d-flex justify-content-center align-items-center gap-3">
 
                             <button
                                 type="button"
                                 id="quantityMinus"
-                                class="btn btn-outline-secondary rounded-circle quantity-button"
-                            >
+                                class="btn btn-outline-secondary rounded-circle quantity-button">
                                 −
                             </button>
 
@@ -1024,15 +927,13 @@ $todayDeals =
                                 id="quantityInput"
                                 value="1"
                                 min="1"
-                                class="form-control text-center fw-bold quantity-input"
-                            >
+                                class="form-control text-center fw-bold quantity-input">
 
 
                             <button
                                 type="button"
                                 id="quantityPlus"
-                                class="btn btn-outline-primary rounded-circle quantity-button"
-                            >
+                                class="btn btn-outline-primary rounded-circle quantity-button">
                                 +
                             </button>
 
@@ -1044,14 +945,12 @@ $todayDeals =
 
 
                 <div
-                    class="modal-footer border-0 justify-content-center pb-4"
-                >
+                    class="modal-footer border-0 justify-content-center pb-4">
 
                     <button
                         type="button"
                         class="btn btn-secondary rounded-pill px-4"
-                        data-bs-dismiss="modal"
-                    >
+                        data-bs-dismiss="modal">
                         Cancel
                     </button>
 
@@ -1059,8 +958,7 @@ $todayDeals =
                     <button
                         type="button"
                         id="confirmAddToCart"
-                        class="btn btn-primary rounded-pill px-4"
-                    >
+                        class="btn btn-primary rounded-pill px-4">
 
                         <i class="fa-solid fa-cart-plus me-2"></i>
 
