@@ -1,13 +1,42 @@
 <?php
 
-require_once "components/header.php";
-require_once "components/sidebar.php";
+require_once "connection/dbconnect.php";
+
+$database = new Database();
+$db = $database->connect();
+
+$brandSql = "
+    SELECT id, name
+    FROM brands
+    WHERE status = 1
+    ORDER BY name ASC
+";
+
+$brandStmt = $db->prepare($brandSql);
+$brandStmt->execute();
+
+$brands = $brandStmt->fetchAll(PDO::FETCH_ASSOC);
+
+$categorySql = "
+    SELECT id, name
+    FROM categories
+    WHERE status = 1
+    ORDER BY name ASC
+";
+
+$categoryStmt = $db->prepare($categorySql);
+$categoryStmt->execute();
+
+$categories = $categoryStmt->fetchAll(PDO::FETCH_ASSOC);
 
 $productId = isset($_GET['id'])
     ? (int) $_GET['id']
     : 0;
 
+require_once "components/header.php";
+require_once "components/sidebar.php";
 ?>
+
 
 <main class="pt-5">
 
@@ -123,7 +152,6 @@ $productId = isset($_GET['id'])
                         </select>
 
                     </div>
-
                     <div class="col-lg-2 col-md-4 col-sm-6">
 
                         <label
@@ -140,9 +168,18 @@ $productId = isset($_GET['id'])
                                 All Brands
                             </option>
 
+                            <?php foreach ($brands as $brand): ?>
+
+                                <option value="<?= (int) $brand['id']; ?>">
+                                    <?= htmlspecialchars($brand['name']); ?>
+                                </option>
+
+                            <?php endforeach; ?>
+
                         </select>
 
                     </div>
+
 
                     <div class="col-lg-2 col-md-4 col-sm-6">
 
@@ -160,9 +197,18 @@ $productId = isset($_GET['id'])
                                 All Categories
                             </option>
 
+                            <?php foreach ($categories as $category): ?>
+
+                                <option value="<?= (int) $category['id']; ?>">
+                                    <?= htmlspecialchars($category['name']); ?>
+                                </option>
+
+                            <?php endforeach; ?>
+
                         </select>
 
                     </div>
+
 
                     <div class="col-lg-2 col-md-4 col-sm-6">
 
@@ -235,7 +281,7 @@ $productId = isset($_GET['id'])
         </div>
 
 
-        
+
 
         <div
             class="d-flex justify-content-between align-items-center mb-3">
@@ -687,11 +733,6 @@ $productId = isset($_GET['id'])
 
         }
 
-
-        // --------------------------------------------------
-        // PAGINATION
-        // --------------------------------------------------
-
         function renderPagination(data) {
 
             if (data.total_pages <= 1) {
@@ -811,11 +852,6 @@ $productId = isset($_GET['id'])
 
         }
 
-
-        // --------------------------------------------------
-        // APPLY FILTERS
-        // --------------------------------------------------
-
         applyFilters.addEventListener(
             "click",
             function() {
@@ -824,11 +860,6 @@ $productId = isset($_GET['id'])
 
             }
         );
-
-
-        // --------------------------------------------------
-        // SORT
-        // --------------------------------------------------
 
         sortProducts.addEventListener(
             "change",
@@ -839,10 +870,6 @@ $productId = isset($_GET['id'])
             }
         );
 
-
-        // --------------------------------------------------
-        // CLEAR FILTERS
-        // --------------------------------------------------
 
         clearFilters.addEventListener(
             "click",
@@ -867,11 +894,6 @@ $productId = isset($_GET['id'])
             }
         );
 
-
-        // --------------------------------------------------
-        // ESCAPE HTML
-        // --------------------------------------------------
-
         function escapeHtml(value) {
 
             const div =
@@ -883,17 +905,10 @@ $productId = isset($_GET['id'])
             return div.innerHTML;
 
         }
-
-
-        // --------------------------------------------------
-        // INITIAL LOAD
-        // --------------------------------------------------
-
         loadProducts(1);
 
     });
 </script>
-
 
 <?php
 

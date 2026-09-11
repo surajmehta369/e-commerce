@@ -1,7 +1,6 @@
 <?php
 
 session_start();
-
 require_once "connection/dbconnect.php";
 
 if (
@@ -11,12 +10,8 @@ if (
     header("Location: outh/login.php");
     exit;
 }
-
-
 $database = new Database();
 $db = $database->connect();
-
-
 $sql = "
     SELECT
         id,
@@ -336,7 +331,7 @@ $orders = $stmt->fetchAll(PDO::FETCH_ASSOC);
 
                                         <h6 class="fw-bold mb-0 mt-2">
 
-                                        <?php if ($order['payment_method'] === 'paypal'): ?>
+                                            <?php if ($order['payment_method'] === 'paypal'): ?>
 
                                                 <i class="fa-brands fa-paypal text-primary me-1"></i>
 
@@ -347,7 +342,7 @@ $orders = $stmt->fetchAll(PDO::FETCH_ASSOC);
                                                 <i class="fa-brands fa-stripe text-primary me-1"></i>
 
                                                 Stripe
-                                             <?php elseif ($order['payment_method'] === 'razorpay'): ?>
+                                            <?php elseif ($order['payment_method'] === 'razorpay'): ?>
 
                                                 <i class="fa-brands fa-razorpay text-primary me-1"></i>
 
@@ -366,10 +361,6 @@ $orders = $stmt->fetchAll(PDO::FETCH_ASSOC);
                                     </div>
 
                                 </div>
-
-
-
-                                <!-- PAYMENT STATUS -->
 
                                 <div class="col-md-4">
 
@@ -465,13 +456,8 @@ $orders = $stmt->fetchAll(PDO::FETCH_ASSOC);
                 </div>
 
             <?php endforeach; ?>
-
         </div>
-
-
     <?php endif; ?>
 
 </main>
-
-
 <?php include "components/footer.php"; ?>
