@@ -2251,4 +2251,1074 @@ document.addEventListener("DOMContentLoaded", function () {
 
 });
 
+document.addEventListener('DOMContentLoaded', function () {
 
+    console.log('PayPal checkout script loaded');
+
+
+    const paypalRadio =
+        document.getElementById('paypal-payment');
+
+    const paypalContainer =
+        document.getElementById(
+            'paypal-button-container'
+        );
+
+    const placeOrderButton =
+        document.getElementById(
+            'placeOrderButton'
+        );
+
+
+
+
+    if (!paypalRadio) {
+
+        console.error(
+            'PayPal radio button not found.'
+        );
+
+        return;
+
+    }
+
+
+    if (!paypalContainer) {
+
+        console.error(
+            'PayPal button container not found.'
+        );
+
+        return;
+
+    }
+
+
+    if (!placeOrderButton) {
+
+        console.error(
+            'Place order button not found.'
+        );
+
+        return;
+
+    }
+
+    paypalContainer.style.display =
+        'none';
+
+    document
+        .querySelectorAll(
+            'input[name="payment_method"]'
+        )
+        .forEach(function (radio) {
+
+            radio.addEventListener(
+                'change',
+                function () {
+
+                    console.log(
+                        'Payment method:',
+                        this.value
+                    );
+
+
+                    if (
+                        paypalRadio.checked
+                    ) {
+
+                        paypalContainer.style.display =
+                            'block';
+
+                        placeOrderButton.style.display =
+                            'none';
+
+                    } else {
+
+                        paypalContainer.style.display =
+                            'none';
+
+                        placeOrderButton.style.display =
+                            'block';
+
+                    }
+
+                }
+            );
+
+        });
+
+
+    if (
+        typeof paypal === 'undefined'
+    ) {
+
+        console.error(
+            'PayPal SDK was not loaded.'
+        );
+
+        return;
+
+    }
+
+
+    console.log(
+        'PayPal SDK loaded successfully.'
+    );
+
+    console.log('PayPal object:', paypal);
+    console.log('PayPal Buttons:', paypal.Buttons);
+    console.log('PayPal type:', typeof paypal);
+    console.log('Buttons type:', typeof paypal.Buttons);
+
+    paypal.Buttons({
+
+        createOrder: function (
+            data,
+            actions
+        ) {
+
+            console.log(
+                'Creating PayPal order...'
+            );
+            const cart =
+                JSON.parse(
+                    localStorage.getItem(
+                        'cart'
+                    ) || '[]'
+                );
+
+
+            console.log(
+                'Cart:',
+                cart
+            );
+
+
+            if (
+                !cart.length
+            ) {
+
+                alert(
+                    'Your cart is empty.'
+                );
+
+                throw new Error(
+                    'Cart is empty.'
+                );
+
+            }
+
+            const shipping = {
+
+                name: document
+                    .getElementById(
+                        'shipping_name'
+                    )
+                    .value
+                    .trim(),
+
+                phone: document
+                    .getElementById(
+                        'shipping_phone'
+                    )
+                    .value
+                    .trim(),
+
+                address: document
+                    .getElementById(
+                        'shipping_address'
+                    )
+                    .value
+                    .trim(),
+
+                city: document
+                    .getElementById(
+                        'shipping_city'
+                    )
+                    .value
+                    .trim(),
+
+                state: document
+                    .getElementById(
+                        'shipping_state'
+                    )
+                    .value
+                    .trim(),
+
+                pincode: document
+                    .getElementById(
+                        'shipping_pincode'
+                    )
+                    .value
+                    .trim()
+
+            };
+
+
+            console.log(
+                'Shipping:',
+                shipping
+            );
+
+            if (
+
+                !shipping.name ||
+
+                !shipping.phone ||
+
+                !shipping.address ||
+
+                !shipping.city ||
+
+                !shipping.state ||
+
+                !shipping.pincode
+
+            ) {
+
+                alert(
+                    'Please fill all delivery information.'
+                );
+
+                throw new Error(
+                    'Shipping information is incomplete.'
+                );
+
+            }
+
+            return fetch(
+                'paypal/create-order.php', {
+                method: 'POST',
+
+                headers: {
+                    'Content-Type': 'application/json'
+                },
+
+                body: JSON.stringify({
+                    cart: cart,
+                    shipping: shipping
+                })
+            }
+            )
+                .then(function (response) {
+
+                    console.log(
+                        'create-order.php status:',
+                        response.status
+                    );
+
+                    return response.text()
+                        .then(function (text) {
+
+                            console.log(
+                                'RAW create-order.php RESPONSE:',
+                                text
+                            );
+
+                            if (!response.ok) {
+                                throw new Error(
+                                    'create-order.php failed with HTTP ' +
+                                    response.status +
+                                    ': ' +
+                                    text
+                                );
+                            }
+
+                            try {
+                                return JSON.parse(text);
+                            } catch (error) {
+
+                                throw new Error(
+                                    'Invalid JSON returned by create-order.php: ' +
+                                    text
+                                );
+
+                            }
+
+                        });
+
+                })
+                .then(function (orderData) {
+
+                    console.log(
+                        'PayPal Create Order Response:',
+                        orderData
+                    );
+
+                    if (!orderData.success) {
+
+                        throw new Error(
+                            orderData.message ||
+                            'Unable to create PayPal order.'
+                        );
+
+                    }
+
+                    if (
+                        !orderData.order ||
+                        !orderData.order.id
+                    ) {
+
+                        throw new Error(
+                            'PayPal order ID is missing.'
+                        );
+
+                    }
+
+                    console.log(
+                        'PayPal Order ID:',
+                        orderData.order.id
+                    );
+
+                    return orderData.order.id;
+
+                });
+
+
+        },
+
+        onApprove: function (
+            data,
+            actions
+        ) {
+
+            console.log(
+                'PayPal Approved:',
+                data
+            );
+
+
+            return fetch(
+                'paypal/capture-order.php', {
+                method: 'POST',
+
+                headers: {
+                    'Content-Type': 'application/json'
+                },
+
+                body: JSON.stringify({
+                    orderID: data.orderID
+                })
+            }
+            )
+                .then(function (response) {
+
+                    console.log(
+                        'capture-order.php status:',
+                        response.status
+                    );
+
+                    return response.text()
+                        .then(function (text) {
+
+                            console.log(
+                                'RAW capture-order.php RESPONSE:',
+                                text
+                            );
+
+                            if (!response.ok) {
+                                throw new Error(
+                                    'capture-order.php failed with HTTP ' +
+                                    response.status +
+                                    ': ' +
+                                    text
+                                );
+                            }
+
+                            try {
+                                return JSON.parse(text);
+
+                            } catch (error) {
+
+                                throw new Error(
+                                    'Invalid JSON returned by capture-order.php: ' +
+                                    text
+                                );
+                            }
+                        });
+                })
+                .then(function (result) {
+
+                    console.log(
+                        'PayPal Capture Result:',
+                        result
+                    );
+
+                    if (!result.success) {
+
+                        throw new Error(
+                            result.message ||
+                            'Payment capture failed.'
+                        );
+                    }
+
+                    window.location.href =
+                        'order-confirmation.php';
+
+                });
+
+
+        },
+
+        onCancel: function (
+            data
+        ) {
+
+            console.log(
+                'PayPal checkout cancelled:',
+                data
+            );
+
+            alert(
+                'Payment cancelled.'
+            );
+
+        },
+
+        onError: function (error) {
+
+            console.error('========== PAYPAL ERROR ==========');
+            console.error(error);
+            console.error('===================================');
+
+            alert(
+                'PayPal Error: ' +
+                (error.message || 'Unknown error')
+            );
+
+        }
+
+    }).render(
+        '#paypal-button-container'
+    );
+
+
+    console.log(
+        'PayPal Buttons initialized.'
+    );
+
+});
+
+
+document.addEventListener('DOMContentLoaded', function () {
+
+    console.log('Razorpay checkout script loaded.');
+
+    const razorpayRadio =
+        document.getElementById('razorpay-payment');
+
+    const checkoutForm =
+        document.getElementById('checkoutForm');
+
+    const placeOrderButton =
+        document.getElementById('placeOrderButton');
+
+    if (!razorpayRadio) {
+
+        console.log(
+            'Razorpay payment option not found. Skipping Razorpay.'
+        );
+
+        return;
+    }
+
+
+    if (!checkoutForm) {
+
+        console.error(
+            'Checkout form not found.'
+        );
+
+        return;
+    }
+
+
+    if (!placeOrderButton) {
+
+        console.error(
+            'Place order button not found.'
+        );
+
+        return;
+    }
+    function loadRazorpaySDK() {
+
+        return new Promise(function (resolve, reject) {
+
+            if (
+                typeof Razorpay !== 'undefined'
+            ) {
+
+                console.log(
+                    'Razorpay SDK already loaded.'
+                );
+
+                resolve();
+
+                return;
+            }
+
+
+            const script =
+                document.createElement('script');
+
+            script.src =
+                'https://checkout.razorpay.com/v1/checkout.js';
+
+            script.onload = function () {
+
+                console.log(
+                    'Razorpay SDK loaded successfully.'
+                );
+
+                resolve();
+
+            };
+
+
+            script.onerror = function () {
+
+                console.error(
+                    'Unable to load Razorpay SDK.'
+                );
+
+                reject(
+                    new Error(
+                        'Unable to load Razorpay SDK.'
+                    )
+                );
+
+            };
+
+
+            document.head.appendChild(script);
+
+        });
+
+    }
+
+
+    document.querySelectorAll('input[name="payment_method"]').forEach(function (radio) {
+
+            radio.addEventListener(
+                'change',
+                function () {
+
+                    console.log(
+                        'Payment method selected:',
+                        this.value
+                    );
+
+                }
+            );
+
+        });
+
+    checkoutForm.addEventListener(
+        'submit',
+        async function (event) {
+
+            if (!razorpayRadio.checked) {
+
+                return;
+
+            }
+
+            event.preventDefault();
+
+
+            console.log(
+                'Razorpay payment selected.'
+            );
+
+            placeOrderButton.disabled =
+                true;
+
+            placeOrderButton.innerHTML =
+                '<i class="fa-solid fa-spinner fa-spin me-2"></i>' +
+                'Processing...';
+
+
+            try {
+
+            
+                await loadRazorpaySDK();
+
+                const cart =
+                    JSON.parse(
+                        localStorage.getItem('cart')
+                        || '[]'
+                    );
+
+
+                console.log(
+                    'Razorpay Cart:',
+                    cart
+                );
+
+
+                if (
+                    !Array.isArray(cart) ||
+                    cart.length === 0
+                ) {
+
+                    throw new Error(
+                        'Your cart is empty.'
+                    );
+
+                }
+
+                const shipping = {
+
+                    name:
+                        document
+                            .getElementById(
+                                'shipping_name'
+                            )
+                            .value
+                            .trim(),
+
+                    phone:
+                        document
+                            .getElementById(
+                                'shipping_phone'
+                            )
+                            .value
+                            .trim(),
+
+                    address:
+                        document
+                            .getElementById(
+                                'shipping_address'
+                            )
+                            .value
+                            .trim(),
+
+                    city:
+                        document
+                            .getElementById(
+                                'shipping_city'
+                            )
+                            .value
+                            .trim(),
+
+                    state:
+                        document
+                            .getElementById(
+                                'shipping_state'
+                            )
+                            .value
+                            .trim(),
+
+                    pincode:
+                        document
+                            .getElementById(
+                                'shipping_pincode'
+                            )
+                            .value
+                            .trim()
+
+                };
+
+
+                console.log(
+                    'Razorpay Shipping:',
+                    shipping
+                );
+
+                if (
+
+                    !shipping.name ||
+                    !shipping.phone ||
+                    !shipping.address ||
+                    !shipping.city ||
+                    !shipping.state ||
+                    !shipping.pincode
+
+                ) {
+
+                    throw new Error(
+                        'Please complete all delivery information.'
+                    );
+
+                }
+
+                console.log(
+                    'Calling razorpay/create-order.php...'
+                );
+
+
+                const response =
+                    await fetch(
+                        'razorpay/create-order.php',
+                        {
+                            method: 'POST',
+
+                            headers: {
+                                'Content-Type':
+                                    'application/json'
+                            },
+
+                            body: JSON.stringify({
+
+                                cart:
+                                    cart,
+
+                                shipping:
+                                    shipping
+
+                            })
+
+                        }
+                    );
+
+
+                console.log(
+                    'Razorpay create-order status:',
+                    response.status
+                );
+
+
+                const text =
+                    await response.text();
+
+
+                console.log(
+                    'RAW Razorpay response:',
+                    text
+                );
+
+
+                if (!response.ok) {
+
+                    throw new Error(
+                        'Razorpay create-order.php failed: '
+                        + text
+                    );
+
+                }
+
+
+                let orderData;
+
+
+                try {
+
+                    orderData =
+                        JSON.parse(text);
+
+                } catch (error) {
+
+                    throw new Error(
+                        'Invalid JSON returned by Razorpay create-order.php.'
+                    );
+
+                }
+
+
+                console.log(
+                    'Razorpay Create Order Response:',
+                    orderData
+                );
+
+                if (!orderData.success) {
+
+                    throw new Error(
+                        orderData.message ||
+                        'Unable to create Razorpay order.'
+                    );
+
+                }
+
+
+                if (
+                    !orderData.razorpay_order_id
+                ) {
+
+                    throw new Error(
+                        'Razorpay Order ID is missing.'
+                    );
+
+                }
+
+
+                if (
+                    !orderData.key_id
+                ) {
+
+                    throw new Error(
+                        'Razorpay Key ID is missing.'
+                    );
+
+                }
+
+
+                console.log(
+                    'Razorpay Order ID:',
+                    orderData.razorpay_order_id
+                );
+                const options = {
+
+                    key:
+                        orderData.key_id,
+
+                    amount:
+                        orderData.amount,
+
+                    currency:
+                        orderData.currency,
+
+                    name:
+                        'MyShop.in',
+
+                    description:
+                        'E-commerce Order',
+
+                    order_id:
+                        orderData.razorpay_order_id,
+
+                    prefill: {
+
+                        name:
+                            shipping.name,
+
+                        contact:
+                            shipping.phone
+
+                    },
+
+                    notes: {
+
+                        local_order_id:
+                            String(
+                                orderData.local_order_id
+                            )
+
+                    },
+                    handler:
+                        async function (
+                            razorpayResponse
+                        ) {
+
+                            console.log(
+                                'Razorpay Payment Success:',
+                                razorpayResponse
+                            );
+
+
+                            try {
+                                const verifyResponse =
+                                    await fetch(
+                                        'razorpay/verify-payment.php',
+                                        {
+                                            method: 'POST',
+
+                                            headers: {
+
+                                                'Content-Type':
+                                                    'application/json'
+
+                                            },
+
+                                            body:
+                                                JSON.stringify({
+
+                                                    razorpay_order_id:
+                                                        razorpayResponse
+                                                            .razorpay_order_id,
+
+                                                    razorpay_payment_id:
+                                                        razorpayResponse
+                                                            .razorpay_payment_id,
+
+                                                    razorpay_signature:
+                                                        razorpayResponse
+                                                            .razorpay_signature
+
+                                                })
+
+                                        }
+                                    );
+
+
+                                const verifyText =
+                                    await verifyResponse.text();
+
+
+                                console.log(
+                                    'RAW Razorpay verification response:',
+                                    verifyText
+                                );
+
+
+                                if (
+                                    !verifyResponse.ok
+                                ) {
+
+                                    throw new Error(
+                                        'Payment verification failed: '
+                                        + verifyText
+                                    );
+
+                                }
+
+
+                                let verifyData;
+
+
+                                try {
+
+                                    verifyData =
+                                        JSON.parse(
+                                            verifyText
+                                        );
+
+                                } catch (error) {
+
+                                    throw new Error(
+                                        'Invalid JSON from verify-payment.php.'
+                                    );
+
+                                }
+
+
+                                console.log(
+                                    'Razorpay Verification Result:',
+                                    verifyData
+                                );
+
+
+                                if (
+                                    !verifyData.success
+                                ) {
+
+                                    throw new Error(
+                                        verifyData.message ||
+                                        'Payment verification failed.'
+                                    );
+
+                                }
+
+                                window.location.href =
+                                    'order-confirmation.php';
+
+                            } catch (error) {
+
+                                console.error(
+                                    'Razorpay verification error:',
+                                    error
+                                );
+
+
+                                alert(
+                                    error.message ||
+                                    'Payment verification failed.'
+                                );
+
+
+                                placeOrderButton.disabled =
+                                    false;
+
+                                placeOrderButton.innerHTML =
+                                    '<i class="fa-solid fa-lock me-2"></i>' +
+                                    'Continue to Payment';
+
+                            }
+
+                        },
+                    modal: {
+
+                        ondismiss:
+                            function () {
+
+                                console.log(
+                                    'Razorpay checkout closed.'
+                                );
+
+
+                                placeOrderButton.disabled =
+                                    false;
+
+                                placeOrderButton.innerHTML =
+                                    '<i class="fa-solid fa-lock me-2"></i>' +
+                                    'Continue to Payment';
+
+                            }
+
+                    }
+
+                };
+
+                console.log(
+                    'Opening Razorpay Checkout...'
+                );
+
+
+                const razorpay =
+                    new Razorpay(options);
+
+
+                razorpay.on(
+                    'payment.failed',
+                    function (response) {
+
+                        console.error(
+                            'Razorpay Payment Failed:',
+                            response
+                        );
+
+
+                        alert(
+                            response.error &&
+                                response.error.description
+                                ? response.error.description
+                                : 'Payment failed.'
+                        );
+
+
+                        placeOrderButton.disabled =
+                            false;
+
+                        placeOrderButton.innerHTML =
+                            '<i class="fa-solid fa-lock me-2"></i>' +
+                            'Continue to Payment';
+
+                    }
+                );
+
+
+                razorpay.open();
+
+
+            } catch (error) {
+
+                console.error(
+                    '========== RAZORPAY ERROR =========='
+                );
+
+                console.error(error);
+
+                console.error(
+                    '===================================='
+                );
+
+
+                alert(
+                    error.message ||
+                    'Unable to start Razorpay payment.'
+                );
+
+
+                placeOrderButton.disabled =
+                    false;
+
+                placeOrderButton.innerHTML =
+                    '<i class="fa-solid fa-lock me-2"></i>' +
+                    'Continue to Payment';
+
+            }
+
+        });
+
+});
