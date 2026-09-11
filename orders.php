@@ -347,6 +347,11 @@ $orders = $stmt->fetchAll(PDO::FETCH_ASSOC);
                                                 <i class="fa-brands fa-stripe text-primary me-1"></i>
 
                                                 Stripe
+                                             <?php elseif ($order['payment_method'] === 'razorpay'): ?>
+
+                                                <i class="fa-brands fa-razorpay text-primary me-1"></i>
+
+                                                Razorpay
 
                                             <?php else: ?>
 

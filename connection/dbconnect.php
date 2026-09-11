@@ -1,15 +1,16 @@
     <?php
 
-    class Database 
+    class Database
     {
         private $host = 'localhost';
         private $dbname = 'e-commerce';
         private $username = 'root';
         private $password = '';
 
-        public function connect (){
+        public function connect()
+        {
 
-        try {
+            try {
 
                 $conn = new PDO(
                     "mysql:host={$this->host};dbname={$this->dbname};charset=utf8mb4",
@@ -28,14 +29,11 @@
                 );
 
                 return $conn;
-
             } catch (PDOException $e) {
 
                 die("Database connection failed.");
             }
-
         }
-
     }
 
 
