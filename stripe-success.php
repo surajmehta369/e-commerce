@@ -5,7 +5,6 @@ session_start();
 require_once "connection/dbconnect.php";
 require_once __DIR__ . '/config/stripe.php';
 
-
 if (
     !isset($_SESSION['user_id']) ||
     $_SESSION['logged_in'] !== true
@@ -13,7 +12,6 @@ if (
 
     header("Location: outh/login.php");
     exit;
-
 }
 
 $sessionId =
@@ -23,10 +21,7 @@ $sessionId =
 if ($sessionId === '') {
 
     die("Invalid Stripe payment session.");
-
 }
-
-
 try {
 
     $checkoutSession =
@@ -39,10 +34,7 @@ try {
         !== 'paid'
     ) {
 
-        die(
-            "Payment was not completed."
-        );
-
+        die("Payment was not completed.");
     }
 
     $orderId =
@@ -52,13 +44,8 @@ try {
 
     if (!$orderId) {
 
-        die(
-            "Order information was not found."
-        );
-
+        die("Order information was not found.");
     }
-
-
     $orderId =
         (int) $orderId;
 
@@ -89,8 +76,6 @@ try {
         LIMIT 1
 
     ";
-
-
     $orderStmt =
         $db->prepare($orderSql);
 
@@ -98,10 +83,10 @@ try {
     $orderStmt->execute([
 
         'order_id' =>
-            $orderId,
+        $orderId,
 
         'user_id' =>
-            $_SESSION['user_id']
+        $_SESSION['user_id']
 
     ]);
 
@@ -117,7 +102,6 @@ try {
         throw new Exception(
             "Order not found."
         );
-
     }
 
     if (
@@ -125,7 +109,7 @@ try {
         !== 'paid'
     ) {
 
-    
+
         $itemSql = "
 
             SELECT
@@ -146,7 +130,7 @@ try {
         $itemStmt->execute([
 
             'order_id' =>
-                $orderId
+            $orderId
 
         ]);
 
@@ -178,10 +162,10 @@ try {
             $stockStmt->execute([
 
                 'quantity' =>
-                    (int) $item['quantity'],
+                (int) $item['quantity'],
 
                 'id' =>
-                    (int) $item['product_id']
+                (int) $item['product_id']
 
             ]);
 
@@ -194,9 +178,7 @@ try {
                 throw new Exception(
                     "Unable to update product stock."
                 );
-
             }
-
         }
 
         $updateSql = "
@@ -219,10 +201,9 @@ try {
         $updateStmt->execute([
 
             'order_id' =>
-                $orderId
+            $orderId
 
         ]);
-
     }
     $db->commit();
 
@@ -243,8 +224,6 @@ try {
     );
 
     exit;
-
-
 } catch (Exception $e) {
 
     if (
@@ -253,15 +232,11 @@ try {
     ) {
 
         $db->rollBack();
-
     }
 
 
-    die(
-        "Payment verification failed: "
+    die("Payment verification failed: "
         . htmlspecialchars(
             $e->getMessage()
-        )
-    );
-
+        ));
 }
