@@ -161,41 +161,7 @@ include "components/sidebar.php";
 ?>
 
 <main class="container-fluid" style="margin-top:100px;">
-    <div class="container-fluid mb-4">
-
-        <nav aria-label="breadcrumb">
-
-            <ol class="breadcrumb">
-
-                <li class="breadcrumb-item">
-
-                    <a href="index.php">
-                        Home
-                    </a>
-
-                </li>
-
-                <li class="breadcrumb-item">
-
-                    <?= htmlspecialchars($categoryName); ?>
-
-                </li>
-
-                <li
-                    class="breadcrumb-item active"
-                    aria-current="page">
-
-                    <?= htmlspecialchars($title); ?>
-
-                </li>
-
-            </ol>
-
-        </nav>
-
-    </div>
-
-
+ 
     <div class="container-fluid">
 
         <div class="card border-0 shadow-sm rounded-4 p-4">

@@ -86,8 +86,7 @@ require_once __DIR__ . '/components/header.php';
                                     src="<?= htmlspecialchars($product['image']) ?>"
                                     class="card-img-top"
                                     style="height: 220px; object-fit: cover;"
-                                    alt="<?= htmlspecialchars($product['title']) ?>"
-                                >
+                                    alt="<?= htmlspecialchars($product['title']) ?>">
 
                             <?php endif; ?>
 

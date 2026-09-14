@@ -14,7 +14,6 @@ if ($orderId <= 0) {
 
     header("Location: checkout.php");
     exit;
-
 }
 
 if (
@@ -24,7 +23,6 @@ if (
 
     header("Location: outh/login.php");
     exit;
-
 }
 
 $database =
@@ -56,10 +54,10 @@ $stmt =
 $stmt->execute([
 
     'order_id' =>
-        $orderId,
+    $orderId,
 
     'user_id' =>
-        $_SESSION['user_id']
+    $_SESSION['user_id']
 
 ]);
 
@@ -91,96 +89,98 @@ unset(
 
 <body>
 
-<?php include "components/header.php"; ?>
+    <?php include "components/header.php"; ?>
 
-<?php include "components/sidebar.php"; ?>
+    <?php include "components/sidebar.php"; ?>
 
 
-<main class="container py-5">
+    <main class="container py-5">
 
-    <div class="row justify-content-center">
+        <div class="row justify-content-center">
 
-        <div class="col-md-7">
+            <div class="col-md-7">
 
-            <div
-                class="card border-0
+                <div
+                    class="card border-0
                        shadow-sm
                        rounded-4
                        text-center
                        p-5">
 
-                <div class="mb-4">
+                    <div class="mb-4">
 
-                    <div
-                        class="bg-warning
+                        <div
+                            class="bg-warning
                                bg-opacity-10
                                rounded-circle
                                d-inline-flex
                                align-items-center
                                justify-content-center"
-                        style="
+                            style="
                             width:110px;
                             height:110px;
                         ">
 
-                        <i
-                            class="fa-solid
+                            <i
+                                class="fa-solid
                                    fa-xmark
                                    text-warning"
-                            style="
+                                style="
                                 font-size:55px;
                             ">
-                        </i>
+                            </i>
+
+                        </div>
 
                     </div>
 
-                </div>
+
+                    <h2 class="fw-bold">
+
+                        Payment Cancelled
+
+                    </h2>
 
 
-                <h2 class="fw-bold">
+                    <p class="text-muted mt-3">
 
-                    Payment Cancelled
+                        Your Stripe payment was cancelled.
 
-                </h2>
+                        Your order has not been confirmed.
 
-
-                <p class="text-muted mt-3">
-
-                    Your Stripe payment was cancelled.
-
-                    Your order has not been confirmed.
-
-                </p>
+                    </p>
 
 
-                <div class="mt-4">
+                    <div class="mt-4">
 
-                    <a
-                        href="checkout.php"
-                        class="btn btn-primary
+                        <a
+                            href="checkout.php"
+                            class="btn btn-primary
                                rounded-pill
                                px-4">
 
-                        <i
-                            class="fa-solid
+                            <i
+                                class="fa-solid
                                    fa-credit-card
                                    me-2">
-                        </i>
+                            </i>
 
-                        Try Payment Again
+                            Try Payment Again
 
-                    </a>
+                        </a>
 
 
-                    <a
-                        href="index.php"
-                        class="btn btn-outline-secondary
+                        <a
+                            href="index.php"
+                            class="btn btn-outline-secondary
                                rounded-pill
                                px-4 ms-2">
 
-                        Continue Shopping
+                            Continue Shopping
 
-                    </a>
+                        </a>
+
+                    </div>
 
                 </div>
 
@@ -188,12 +188,10 @@ unset(
 
         </div>
 
-    </div>
-
-</main>
+    </main>
 
 
-<?php include "components/footer.php"; ?>
+    <?php include "components/footer.php"; ?>
 
 </body>
 
