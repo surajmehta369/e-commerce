@@ -9,17 +9,8 @@ require_once "../connection/dbconnect.php";
 
 try {
 
-    // --------------------------------------------------
-    // DATABASE CONNECTION
-    // --------------------------------------------------
-
     $database = new Database();
     $db = $database->connect();
-
-
-    // --------------------------------------------------
-    // GET FILTER VALUES
-    // --------------------------------------------------
 
     $categoryId = isset($_GET['category_id'])
         ? trim($_GET['category_id'])
@@ -48,12 +39,6 @@ try {
     $excludeId = isset($_GET['exclude_id'])
         ? trim($_GET['exclude_id'])
         : '';
-
-
-    // --------------------------------------------------
-    // PAGINATION
-    // --------------------------------------------------
-
     $page = isset($_GET['page'])
         ? (int) $_GET['page']
         : 1;
@@ -75,22 +60,11 @@ try {
     }
 
     $offset = ($page - 1) * $limit;
-
-
-    // --------------------------------------------------
-    // BASE QUERY
-    // --------------------------------------------------
-
     $where = [
         "status = 1"
     ];
 
     $params = [];
-
-
-    // --------------------------------------------------
-    // CATEGORY FILTER
-    // --------------------------------------------------
 
     if ($categoryId !== '' && ctype_digit($categoryId)) {
 
@@ -123,22 +97,12 @@ try {
         $params[':min_price'] = (float) $minPrice;
     }
 
-
-    // --------------------------------------------------
-    // MAXIMUM PRICE
-    // --------------------------------------------------
-
     if ($maxPrice !== '' && is_numeric($maxPrice)) {
 
         $where[] = "price <= :max_price";
 
         $params[':max_price'] = (float) $maxPrice;
     }
-
-
-    // --------------------------------------------------
-    // MINIMUM DISCOUNT
-    // --------------------------------------------------
 
     if ($minDiscount !== '' && is_numeric($minDiscount)) {
 
@@ -147,18 +111,7 @@ try {
         $params[':min_discount'] = (float) $minDiscount;
     }
 
-
-    // --------------------------------------------------
-    // WHERE CLAUSE
-    // --------------------------------------------------
-
     $whereSql = implode(" AND ", $where);
-
-
-    // --------------------------------------------------
-    // SORTING
-    // --------------------------------------------------
-
     switch ($sort) {
 
         case 'price_low':
@@ -186,12 +139,6 @@ try {
             $orderBy = "id DESC";
             break;
     }
-
-
-    // --------------------------------------------------
-    // COUNT TOTAL PRODUCTS
-    // --------------------------------------------------
-
     $countSql = "
         SELECT COUNT(*) 
         FROM products
@@ -222,11 +169,6 @@ try {
 
     $totalProducts = (int) $countStmt->fetchColumn();
 
-
-    // --------------------------------------------------
-    // FETCH PRODUCTS
-    // --------------------------------------------------
-
     $sql = "
         SELECT
             id,
@@ -252,12 +194,6 @@ try {
     ";
 
     $stmt = $db->prepare($sql);
-
-
-    // --------------------------------------------------
-    // BIND FILTER PARAMETERS
-    // --------------------------------------------------
-
     foreach ($params as $key => $value) {
 
         if (is_int($value)) {
@@ -276,11 +212,6 @@ try {
         }
     }
 
-
-    // --------------------------------------------------
-    // BIND PAGINATION
-    // --------------------------------------------------
-
     $stmt->bindValue(
         ':limit',
         $limit,
@@ -298,18 +229,9 @@ try {
 
     $products = $stmt->fetchAll(PDO::FETCH_ASSOC);
 
-
-    // --------------------------------------------------
-    // PAGINATION INFORMATION
-    // --------------------------------------------------
-
     $totalPages = $totalProducts > 0
         ? (int) ceil($totalProducts / $limit)
         : 0;
-
-    // --------------------------------------------------
-    // RESPONSE
-    // --------------------------------------------------
 
     echo json_encode([
 
