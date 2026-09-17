@@ -32,6 +32,9 @@ $categories = $categoryStmt->fetchAll(PDO::FETCH_ASSOC);
 $productId = isset($_GET['id'])
     ? (int) $_GET['id']
     : 0;
+$categoryId = isset($_GET['category_id'])
+    ? (int) $_GET['category_id']
+    : 0;
 
 require_once "components/header.php";
 require_once "components/sidebar.php";
@@ -350,6 +353,7 @@ require_once "components/sidebar.php";
     document.addEventListener("DOMContentLoaded", function() {
 
         const productId = <?= $productId ?>;
+        const categoryId = <?= $categoryId ?>;
 
         const relatedProducts =
             document.getElementById("relatedProducts");
@@ -392,6 +396,10 @@ require_once "components/sidebar.php";
 
 
         let currentPage = 1;
+
+        if (categoryId > 0) {
+            categoryFilter.value = categoryId;
+        }
 
         async function loadProducts(page = 1) {
 

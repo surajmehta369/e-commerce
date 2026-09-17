@@ -94,9 +94,6 @@ $isLoggedIn = isset($_SESSION['user_id']);
               </a>
 
             </li>
-
-
-
             <li class="nav-item">
 
               <a
@@ -106,17 +103,18 @@ $isLoggedIn = isset($_SESSION['user_id']);
               </a>
 
             </li>
-
-
             <li class="nav-item">
 
               <a
                 class="nav-link"
-                href="#">
+                href="related-products.php?category_id=4">
+
                 Mobiles
+
               </a>
 
             </li>
+
 
           </ul>
 

@@ -1,5 +1,7 @@
+```php
 <?php
 session_start();
+
 require_once "../connection/dbconnect.php";
 
 $database = new Database();
@@ -8,26 +10,46 @@ $db = $database->connect();
 $message = "";
 $messageType = "";
 
+if ($_SERVER['REQUEST_METHOD'] === 'POST') {
 
-if($_SERVER['REQUEST_METHOD']==='POST'){
-        $email = trim($_POST['email'] ?? "");
-        $password = $_POST['password'] ?? "";
+    $email = trim($_POST['email'] ?? "");
+    $password = $_POST['password'] ?? "";
+
+    if ($email === "" || $password === "") {
+
+        $message = "Email and Password is required";
+        $messageType = "danger";
+
+    } elseif (!filter_var($email, FILTER_VALIDATE_EMAIL)) {
+
+        $message = "Please enter a valid email";
+        $messageType = "danger";
+
+    } else {
+
+        $sql = "
+            SELECT
+                id,
+                name,
+                email,
+                password,
+                role,
+                status
+            FROM users
+            WHERE email = :email
+            LIMIT 1
+        ";
+
+        $stmt = $db->prepare($sql);
+
+        $stmt->execute([
+            "email" => $email
+        ]);
+
+        $user = $stmt->fetch(PDO::FETCH_ASSOC);
 
 
-        if($email === "" || $password === ""){
-            $message = "Email and Password is required";
-            $messageType = "danger";
-        }elseif(!filter_var($email,FILTER_VALIDATE_EMAIL)){
-            $message = "Please enter a valid email";
-            $messageType = "danger";
-        }else{
-            $sql = "select id,name,email,password,role,status from users where email = :email LIMIT 1";
-            $sql = $db->prepare($sql);
-            $sql->execute(["email"=> $email]);
-
-            $user = $sql->fetch();
-
-                    if (!$user) {
+        if (!$user) {
 
             $message = "Invalid email or password.";
             $messageType = "danger";
@@ -45,69 +67,123 @@ if($_SERVER['REQUEST_METHOD']==='POST'){
         } else {
 
         
+            if ($user['role'] === 'vendor') {
+
+                $sql = "
+                    SELECT verification_status
+                    FROM vendor_profiles
+                    WHERE user_id = :user_id
+                    LIMIT 1
+                ";
+
+                $vendorStmt = $db->prepare($sql);
+
+                $vendorStmt->execute([
+                    "user_id" => $user['id']
+                ]);
+
+                $vendorProfile =
+                    $vendorStmt->fetch(PDO::FETCH_ASSOC);
+
+                if (!$vendorProfile) {
+
+                    $message =
+                        "Vendor profile not found. Please contact the administrator.";
+
+                    $messageType = "danger";
+
+                } elseif ($vendorProfile['verification_status'] === 'pending') {
+
+                    $message =
+                        "Your vendor account is pending verification. Please wait for administrator approval.";
+
+                    $messageType = "warning";    
+
+                } elseif ($vendorProfile['verification_status'] === 'rejected') {
+
+                    $message =
+                        "Your vendor account has been rejected. Please contact the administrator.";
+
+                    $messageType = "danger";
+
+                } elseif ($vendorProfile['verification_status'] === 'approved') {
+
+                    session_regenerate_id(true);
+
+                    $_SESSION['user_id'] = $user['id'];
+                    $_SESSION['user_name'] = $user['name'];
+                    $_SESSION['user_email'] = $user['email'];
+                    $_SESSION['user_role'] = $user['role'];
+                    $_SESSION['logged_in'] = true;
+
+                    $sql = "
+                        UPDATE users
+                        SET last_login_at = NOW()
+                        WHERE id = :id
+                    ";
+
+                    $stmt = $db->prepare($sql);
+
+                    $stmt->execute([
+                        "id" => $user['id']
+                    ]);
+
+                    header("Location: ../vendors/index.php");
+                    exit;
+                }
+
+            } else {
+
+
             session_regenerate_id(true);
 
-            $_SESSION['user_id'] = $user['id'];
-            $_SESSION['user_name'] = $user['name'];
-            $_SESSION['user_email'] = $user['email'];
-            $_SESSION['user_role'] = $user['role'];
-            $_SESSION['logged_in'] = true;
+                $_SESSION['user_id'] = $user['id'];
+                $_SESSION['user_name'] = $user['name'];
+                $_SESSION['user_email'] = $user['email'];
+                $_SESSION['user_role'] = $user['role'];
+                $_SESSION['logged_in'] = true;
 
-            $sql = "
-                UPDATE users
-                SET last_login_at = NOW()
-                WHERE id = :id
-            ";
-            $stmt = $db->prepare($sql);
+                $sql = "
+                    UPDATE users
+                    SET last_login_at = NOW()
+                    WHERE id = :id
+                ";
 
-            $stmt->execute([
-                "id" => $user['id']
-            ]);
+                $stmt = $db->prepare($sql);
 
-        
-            if ($user['role'] === 'admin') {
+                $stmt->execute([
+                    "id" => $user['id']
+                ]);
 
-                header("Location: ../admin/index.php");
+                if ($user['role'] === 'admin') {
+
+                    header("Location: ../admin/index.php");
+                    exit;
+                }
+
+                if (isset($_SESSION['checkout_redirect'])) {
+
+                    $redirectPage =
+                        $_SESSION['checkout_redirect'];
+
+                    unset($_SESSION['checkout_redirect']);
+
+                    if ($redirectPage === 'checkout.php') {
+
+                        header("Location: ../checkout.php");
+                        exit;
+                    }
+                }
+                header("Location: ../index.php");
                 exit;
-
-            } elseif ($user['role'] === 'vendor') {
-
-                header("Location: ../vendor/index.php");
-                exit;
-
-           } else {
-
-    if (isset($_SESSION['checkout_redirect'])) {
-
-        $redirectPage =
-            $_SESSION['checkout_redirect'];
-
-
-
-        unset($_SESSION['checkout_redirect']);
-
-
-    
-
-        if ($redirectPage === 'checkout.php') {
-
-            header("Location: ../checkout.php");
-            exit;
-
+            }
         }
-
     }
-
-    header("Location: ../index.php");
-    exit;
-}
-
-        }
-        }
-
 }
 
 ?>
+```
+
 
 <!DOCTYPE html>
 <html lang="en">
