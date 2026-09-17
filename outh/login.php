@@ -1,7 +1,24 @@
-```php
 <?php
+
 session_start();
 
+if (
+    isset($_SESSION['logged_in']) &&
+    $_SESSION['logged_in'] === true
+) {
+
+    if ($_SESSION['user_role'] === 'vendor') {
+
+        header("Location: vendors/index.php");
+        exit;
+    }
+
+    if ($_SESSION['user_role'] === 'admin') {
+
+        header("Location: admin/index.php");
+        exit;
+    }
+}
 require_once "../connection/dbconnect.php";
 
 $database = new Database();
@@ -48,7 +65,6 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
 
         $user = $stmt->fetch(PDO::FETCH_ASSOC);
 
-
         if (!$user) {
 
             $message = "Invalid email or password.";
@@ -66,7 +82,6 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
 
         } else {
 
-        
             if ($user['role'] === 'vendor') {
 
                 $sql = "
@@ -82,28 +97,21 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
                     "user_id" => $user['id']
                 ]);
 
-                $vendorProfile =
-                    $vendorStmt->fetch(PDO::FETCH_ASSOC);
+                $vendorProfile = $vendorStmt->fetch(PDO::FETCH_ASSOC);
 
                 if (!$vendorProfile) {
 
-                    $message =
-                        "Vendor profile not found. Please contact the administrator.";
-
+                    $message = "Vendor profile not found. Please contact the administrator.";
                     $messageType = "danger";
 
                 } elseif ($vendorProfile['verification_status'] === 'pending') {
 
-                    $message =
-                        "Your vendor account is pending verification. Please wait for administrator approval.";
-
-                    $messageType = "warning";    
+                    $message = "Your vendor account is pending verification. Please wait for administrator approval.";
+                    $messageType = "warning";
 
                 } elseif ($vendorProfile['verification_status'] === 'rejected') {
 
-                    $message =
-                        "Your vendor account has been rejected. Please contact the administrator.";
-
+                    $message = "Your vendor account has been rejected. Please contact the administrator.";
                     $messageType = "danger";
 
                 } elseif ($vendorProfile['verification_status'] === 'approved') {
@@ -134,15 +142,13 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
 
             } else {
 
-
-            session_regenerate_id(true);
+                session_regenerate_id(true);
 
                 $_SESSION['user_id'] = $user['id'];
                 $_SESSION['user_name'] = $user['name'];
                 $_SESSION['user_email'] = $user['email'];
                 $_SESSION['user_role'] = $user['role'];
                 $_SESSION['logged_in'] = true;
-
                 $sql = "
                     UPDATE users
                     SET last_login_at = NOW()
@@ -161,29 +167,30 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
                     exit;
                 }
 
-                if (isset($_SESSION['checkout_redirect'])) {
+                if ($user['role'] === 'customer') {
 
-                    $redirectPage =
-                        $_SESSION['checkout_redirect'];
+                    if (isset($_SESSION['checkout_redirect'])) {
 
-                    unset($_SESSION['checkout_redirect']);
+                        $redirectPage = $_SESSION['checkout_redirect'];
 
-                    if ($redirectPage === 'checkout.php') {
+                        unset($_SESSION['checkout_redirect']);
 
-                        header("Location: ../checkout.php");
-                        exit;
+                        if ($redirectPage === 'checkout.php') {
+
+                            header("Location: ../checkout.php");
+                            exit;
+                        }
                     }
+
+                    header("Location: ../index.php");
+                    exit;
                 }
-                header("Location: ../index.php");
-                exit;
             }
         }
     }
 }
 
 ?>
-```
-
 
 <!DOCTYPE html>
 <html lang="en">
