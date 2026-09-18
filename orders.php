@@ -2,6 +2,7 @@
 
 session_start();
 require_once "connection/dbconnect.php";
+require_once "customer-auth.php";
 
 if (
     !isset($_SESSION['user_id']) ||
