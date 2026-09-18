@@ -1,6 +1,48 @@
 <?php
-
 require_once "auth.php";
+require_once "../connection/dbconnect.php";
+
+
+/**
+ * @var array{
+ *     store_name: string,
+ *     business_name: ?string,
+ *     verification_status: string
+ * } $vendor
+ */
+
+$database = new Database();
+$db = $database->connect();
+
+$vendorId = (int) $_SESSION['user_id'];
+$productCountStmt = $db->prepare("
+    SELECT COUNT(*)
+    FROM products
+    WHERE vendor_id = :vendor_id
+");
+
+$productCountStmt->execute([
+    ':vendor_id' => $vendorId
+]);
+
+$productCount = (int) $productCountStmt->fetchColumn();
+
+$orderCountStmt = $db->prepare("
+    SELECT COUNT(DISTINCT o.id)
+    FROM orders o
+    INNER JOIN order_items oi
+        ON oi.order_id = o.id
+    INNER JOIN products p
+        ON p.id = oi.product_id
+    WHERE p.vendor_id = :vendor_id
+");
+
+$orderCountStmt->execute([
+    ':vendor_id' => $vendorId
+]);
+
+$orderCount = (int) $orderCountStmt->fetchColumn();
+
 
 ?>
 <!DOCTYPE html>
@@ -76,7 +118,7 @@ require_once "auth.php";
                     <li class="nav-item mt-3">
 
                         <a
-                            href="../auth/logout.php"
+                            href="../outh/logout.php"
                             class="nav-link text-danger">
                             Logout
                         </a>
@@ -150,9 +192,7 @@ require_once "auth.php";
                                     Products
                                 </h6>
 
-                                <h2>
-                                    0
-                                </h2>
+                                <h2><?= $productCount; ?></h2>
 
                                 <a
                                     href="products.php"
@@ -177,9 +217,7 @@ require_once "auth.php";
                                     Orders
                                 </h6>
 
-                                <h2>
-                                    0
-                                </h2>
+                                     <h2><?= $orderCount; ?></h2>
 
                                 <a
                                     href="orders.php"
@@ -210,7 +248,7 @@ require_once "auth.php";
 
                                 <a
                                     href="profile.php"
-                                    class="btn btn-outline-primary btn-sm">
+                                    class="nav-link text-white">
                                     Store Profile
                                 </a>
 
