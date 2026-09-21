@@ -2,7 +2,7 @@
 
 include "components/header.php";
 include "components/sidebar.php";
-
+require_once "customer-auth.php";
 ?>
 
 <main class="container py-5">
