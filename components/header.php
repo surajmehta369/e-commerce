@@ -78,7 +78,7 @@ $isLoggedIn = isset($_SESSION['user_id']);
 
               <a
                 class="nav-link"
-                href="#">
+                href="outh/vendor-register.php">
                 Sell
               </a>
 
