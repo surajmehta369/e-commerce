@@ -473,6 +473,10 @@ function stockBadge($stock)
                 </p>
 
             </div>
+            <a href="product-add.php" class="btn btn-primary">
+                <i class="bi bi-plus-circle me-1"></i>
+                Add Product
+            </a>
 
         </div>
         <?php if ($message !== ""): ?>
@@ -922,6 +926,14 @@ function stockBadge($stock)
                                         </td>
                                         <td>
                                             <div class="action-buttons">
+                                                 <a
+                                                    href="product-edit.php?id=<?php echo (int) $product['id']; ?>"
+                                                    class="btn btn-sm btn-outline-warning"
+                                                    title="Edit Product">
+                                                    Edit
+                                                </a>
+
+    
                                                 <button
                                                     type="button"
                                                     class="btn btn-sm btn-outline-primary"

@@ -1,3 +1,6 @@
 /assets/uploads
 /config
 /vendor
+shopify/access.json
+shopify/config.php
+shopify/shopify_keys.php
