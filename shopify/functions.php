@@ -67,9 +67,9 @@ function generateShopifyAccessToken()
 
         throw new Exception(
             'Shopify token API returned HTTP ' .
-            $httpCode .
-            ': ' .
-            $response
+                $httpCode .
+                ': ' .
+                $response
         );
     }
 
@@ -87,19 +87,15 @@ function generateShopifyAccessToken()
 
         $data['expires_at'] =
             time() + (int) $data['expires_in'];
-
     } else {
 
-        /*
-        | Fallback if Shopify doesn't return expires_in
-        */
         $data['expires_at'] =
             time() + (23 * 60 * 60);
     }
     $json = json_encode(
         $data,
         JSON_PRETTY_PRINT |
-        JSON_UNESCAPED_SLASHES
+            JSON_UNESCAPED_SLASHES
     );
 
     if (
@@ -182,10 +178,10 @@ function shopifyGraphQL(
     curl_setopt_array($curl, [
 
         CURLOPT_URL =>
-            SHOPIFY_GRAPHQL_URL,
+        SHOPIFY_GRAPHQL_URL,
 
         CURLOPT_RETURNTRANSFER =>
-            true,
+        true,
 
         CURLOPT_ENCODING => '',
 
@@ -194,16 +190,16 @@ function shopifyGraphQL(
         CURLOPT_TIMEOUT => 30,
 
         CURLOPT_FOLLOWLOCATION =>
-            true,
+        true,
 
         CURLOPT_HTTP_VERSION =>
-            CURL_HTTP_VERSION_1_1,
+        CURL_HTTP_VERSION_1_1,
 
         CURLOPT_CUSTOMREQUEST =>
-            'POST',
+        'POST',
 
         CURLOPT_POSTFIELDS =>
-            json_encode($payload),
+        json_encode($payload),
 
         CURLOPT_HTTPHEADER => [
 
@@ -230,7 +226,7 @@ function shopifyGraphQL(
 
         throw new Exception(
             'Shopify API request failed: ' .
-            $error
+                $error
         );
     }
 
@@ -255,10 +251,10 @@ function shopifyGraphQL(
     return [
 
         'http_code' =>
-            $httpCode,
+        $httpCode,
 
         'data' =>
-            $data
+        $data
     ];
 }
 
@@ -295,9 +291,7 @@ GRAPHQL;
     return shopifyGraphQL($query, $variables);
 }
 
-/**
- * Get Shopify product's first/default variant and inventory information.
- */
+
 function getShopifyProductInventoryInfo($shopifyProductId)
 {
     $query = <<<'GRAPHQL'
@@ -323,11 +317,6 @@ GRAPHQL;
     $response = shopifyGraphQL($query, [
         'id' => $shopifyProductId
     ]);
-
-    /*
-     * shopifyGraphQL() returns the Shopify response
-     * inside ['data']['data'].
-     */
     $shopifyData = $response['data']['data'] ?? [];
 
     if (
@@ -369,9 +358,6 @@ GRAPHQL;
     ];
 }
 
-/**
- * Get the Shopify location used for inventory.
- */
 function getShopifyLocationId()
 {
     $query = <<<'GRAPHQL'
@@ -410,15 +396,9 @@ GRAPHQL;
     ];
 }
 
-
-/**
- * Update Shopify inventory quantity.
- */
 function updateShopifyInventory($shopifyProductId, $newQuantity)
 {
     $newQuantity = (int) $newQuantity;
-
-    // Get current Shopify inventory information.
     $inventoryInfo = getShopifyProductInventoryInfo($shopifyProductId);
 
     if (!$inventoryInfo['success']) {
@@ -428,7 +408,6 @@ function updateShopifyInventory($shopifyProductId, $newQuantity)
     $inventoryItemId = $inventoryInfo['data']['inventory_item_id'];
     $currentQuantity = $inventoryInfo['data']['inventory_quantity'];
 
-    // No update required.
     if ($currentQuantity === $newQuantity) {
         return [
             'success' => true,
@@ -440,8 +419,6 @@ function updateShopifyInventory($shopifyProductId, $newQuantity)
             ]
         ];
     }
-
-    // Get Shopify location.
     $locationInfo = getShopifyLocationId();
 
     if (!$locationInfo['success']) {
@@ -449,12 +426,6 @@ function updateShopifyInventory($shopifyProductId, $newQuantity)
     }
 
     $locationId = $locationInfo['location_id'];
-
-    /*
-     * Shopify requires an idempotency key.
-     *
-     * Use a unique key for every inventory operation.
-     */
     $idempotencyKey = 'inventory-' .
         preg_replace('/[^a-zA-Z0-9_-]/', '-', $shopifyProductId) .
         '-' .
@@ -507,7 +478,6 @@ GRAPHQL;
 
     $response = shopifyGraphQL($query, $variables);
 
-    // Check GraphQL errors.
     if (!empty($response['errors'])) {
         return [
             'success' => false,
@@ -515,8 +485,6 @@ GRAPHQL;
             'errors' => $response['errors']
         ];
     }
-
-    // Check Shopify user errors.
     $userErrors =
         $response['data']['inventorySetQuantities']['userErrors'] ?? [];
 
@@ -538,7 +506,7 @@ GRAPHQL;
             'location_id' => $locationId,
             'changed' => true,
             'shopify_response' =>
-                $response['data']['inventorySetQuantities']['inventoryAdjustmentGroup']
+            $response['data']['inventorySetQuantities']['inventoryAdjustmentGroup']
                 ?? null
         ]
     ];
@@ -550,9 +518,7 @@ function updateShopifyProductVariant(
     $originalPrice,
     $sku
 ) {
-    /*
-     * First get the Shopify product's default variant.
-     */
+
     $query = <<<'GRAPHQL'
 query GetProductVariant($id: ID!) {
     product(id: $id) {
@@ -585,10 +551,6 @@ GRAPHQL;
     $variantId =
         $shopifyData['product']['variants']['nodes'][0]['id'];
 
-
-    /*
-     * Update price, original price and SKU.
-     */
     $mutation = <<<'GRAPHQL'
 mutation UpdateProductVariant(
     $productId: ID!
@@ -624,9 +586,9 @@ GRAPHQL;
                 'id' => $variantId,
                 'price' => number_format((float) $price, 2, '.', ''),
                 'compareAtPrice' =>
-                    !empty($originalPrice)
-                        ? number_format((float) $originalPrice, 2, '.', '')
-                        : null,
+                !empty($originalPrice)
+                    ? number_format((float) $originalPrice, 2, '.', '')
+                    : null,
                 'inventoryItem' => [
                     'sku' => $sku
                 ]
@@ -668,7 +630,7 @@ GRAPHQL;
         'success' => true,
         'message' => 'Shopify price, original price and SKU updated.',
         'data' =>
-            $response['data']['data']['productVariantsBulkUpdate']['productVariants']
+        $response['data']['data']['productVariantsBulkUpdate']['productVariants']
             ?? []
     ];
 }
