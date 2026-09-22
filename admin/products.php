@@ -2,12 +2,14 @@
 
 require_once "auth.php";
 require_once "../connection/dbconnect.php";
+require_once "../shopify/functions.php";
 
 $database = new Database();
 $db = $database->connect();
 
 $message = "";
 $messageType = "success";
+
 
 if ($_SERVER['REQUEST_METHOD'] === 'POST') {
 
@@ -21,69 +23,39 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
     } else {
 
         try {
+            $productStmt = $db->prepare("
+                SELECT
+                    id,
+                    title,
+                    image,
+                    status,
+                    shopify_product_id
+                FROM products
+                WHERE id = :id
+                LIMIT 1
+            ");
 
-            if ($action === 'approve') {
+            $productStmt->execute([
+                ':id' => $productId
+            ]);
 
-                $sql = "UPDATE products
+            $product = $productStmt->fetch(PDO::FETCH_ASSOC);
+
+            if (!$product) {
+
+                $message = "Product not found.";
+                $messageType = "danger";
+            } else {
+
+                $shopifyProductId =
+                    trim($product['shopify_product_id'] ?? '');
+                if ($action === 'approve') {
+
+                    $sql = "
+                        UPDATE products
                         SET status = 1
-                        WHERE id = :id";
-
-                $stmt = $db->prepare($sql);
-
-                $stmt->execute([
-                    ':id' => $productId
-                ]);
-
-                $message = "Product approved successfully.";
-            } elseif ($action === 'activate') {
-
-                $sql = "UPDATE products
-                        SET status = 1
-                        WHERE id = :id";
-
-                $stmt = $db->prepare($sql);
-
-                $stmt->execute([
-                    ':id' => $productId
-                ]);
-
-                $message = "Product activated successfully.";
-            } elseif ($action === 'deactivate') {
-
-                $sql = "UPDATE products
-                        SET status = 0
-                        WHERE id = :id";
-
-                $stmt = $db->prepare($sql);
-
-                $stmt->execute([
-                    ':id' => $productId
-                ]);
-
-                $message = "Product deactivated successfully.";
-            } elseif ($action === 'delete') {
-
-                $sql = "SELECT image
-                        FROM products
                         WHERE id = :id
-                        LIMIT 1";
-
-                $stmt = $db->prepare($sql);
-
-                $stmt->execute([
-                    ':id' => $productId
-                ]);
-
-                $product = $stmt->fetch(PDO::FETCH_ASSOC);
-
-                if (!$product) {
-
-                    $message = "Product not found.";
-                    $messageType = "danger";
-                } else {
-
-                    $sql = "DELETE FROM products
-                            WHERE id = :id";
+                    ";
 
                     $stmt = $db->prepare($sql);
 
@@ -91,24 +63,238 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
                         ':id' => $productId
                     ]);
 
-                    if (!empty($product['image'])) {
+                    if ($shopifyProductId !== '') {
 
-                        $imagePath = "../" . ltrim(
-                            $product['image'],
-                            "/"
-                        );
+                        $shopifyResult =
+                            updateShopifyProduct(
+                                $shopifyProductId,
+                                [
+                                    'title' => $product['title'],
+                                    'status' => 1
+                                ]
+                            );
 
-                        if (file_exists($imagePath)) {
-                            @unlink($imagePath);
+                        if (!empty($shopifyResult['success'])) {
+
+                            $syncStmt = $db->prepare("
+                                UPDATE products
+                                SET
+                                    shopify_status = 'ACTIVE',
+                                    shopify_synced_at = NOW()
+                                WHERE id = :id
+                            ");
+
+                            $syncStmt->execute([
+                                ':id' => $productId
+                            ]);
+
+                            $message =
+                                "Product approved and activated on Shopify.";
+
+                            $messageType = "success";
+                        } else {
+
+                            $message =
+                                "Product approved locally, but Shopify activation failed.";
+
+                            $messageType = "warning";
+                        }
+                    } else {
+
+                        $message =
+                            "Product approved successfully. No Shopify product linked.";
+
+                        $messageType = "warning";
+                    }
+                } elseif ($action === 'activate') {
+
+                    $sql = "
+                        UPDATE products
+                        SET status = 1
+                        WHERE id = :id
+                    ";
+
+                    $stmt = $db->prepare($sql);
+
+                    $stmt->execute([
+                        ':id' => $productId
+                    ]);
+
+                    if ($shopifyProductId !== '') {
+
+                        $shopifyResult =
+                            updateShopifyProduct(
+                                $shopifyProductId,
+                                [
+                                    'title' => $product['title'],
+                                    'status' => 1
+                                ]
+                            );
+
+                        if (!empty($shopifyResult['success'])) {
+
+                            $syncStmt = $db->prepare("
+                                UPDATE products
+                                SET
+                                    shopify_status = 'ACTIVE',
+                                    shopify_synced_at = NOW()
+                                WHERE id = :id
+                            ");
+
+                            $syncStmt->execute([
+                                ':id' => $productId
+                            ]);
+
+                            $message =
+                                "Product activated successfully on Shopify.";
+
+                            $messageType = "success";
+                        } else {
+
+                            $message =
+                                "Product activated locally, but Shopify activation failed.";
+
+                            $messageType = "warning";
+                        }
+                    } else {
+
+                        $message =
+                            "Product activated successfully. No Shopify product linked.";
+
+                        $messageType = "warning";
+                    }
+                } elseif ($action === 'deactivate') {
+
+                    $sql = "
+                        UPDATE products
+                        SET status = 0
+                        WHERE id = :id
+                    ";
+
+                    $stmt = $db->prepare($sql);
+
+                    $stmt->execute([
+                        ':id' => $productId
+                    ]);
+
+                    if ($shopifyProductId !== '') {
+
+                        $shopifyResult =
+                            updateShopifyProduct(
+                                $shopifyProductId,
+                                [
+                                    'title' => $product['title'],
+                                    'status' => 0
+                                ]
+                            );
+
+                        if (!empty($shopifyResult['success'])) {
+
+                            $syncStmt = $db->prepare("
+                                UPDATE products
+                                SET
+                                    shopify_status = 'ARCHIVED',
+                                    shopify_synced_at = NOW()
+                                WHERE id = :id
+                            ");
+
+                            $syncStmt->execute([
+                                ':id' => $productId
+                            ]);
+
+                            $message =
+                                "Product deactivated and archived on Shopify.";
+
+                            $messageType = "success";
+                        } else {
+
+                            $message =
+                                "Product deactivated locally, but Shopify archive failed.";
+
+                            $messageType = "warning";
+                        }
+                    } else {
+
+                        $message =
+                            "Product deactivated successfully. No Shopify product linked.";
+
+                        $messageType = "warning";
+                    }
+                } elseif ($action === 'delete') {
+
+                    $shopifySuccess = true;
+
+                    if ($shopifyProductId !== '') {
+
+                        $shopifyResult =
+                            updateShopifyProduct(
+                                $shopifyProductId,
+                                [
+                                    'title' => $product['title'],
+                                    'status' => 0
+                                ]
+                            );
+
+                        if (empty($shopifyResult['success'])) {
+
+                            $shopifySuccess = false;
                         }
                     }
 
-                    $message = "Product deleted successfully.";
+                    if (!$shopifySuccess) {
+
+                        $message =
+                            "Product was not deleted because Shopify archive failed.";
+
+                        $messageType = "danger";
+                    } else {
+
+                        $sql = "
+                            DELETE FROM products
+                            WHERE id = :id
+                        ";
+
+                        $stmt = $db->prepare($sql);
+
+                        $stmt->execute([
+                            ':id' => $productId
+                        ]);
+
+                        if (!empty($product['image'])) {
+
+                            $imagePath =
+                                "../" .
+                                ltrim(
+                                    $product['image'],
+                                    "/"
+                                );
+
+                            if (
+                                file_exists($imagePath) &&
+                                is_file($imagePath)
+                            ) {
+
+                                @unlink($imagePath);
+                            }
+                        }
+
+
+                        $message =
+                            "Product deleted successfully and archived on Shopify.";
+
+                        $messageType = "success";
+                    }
+                } else {
+
+                    $message = "Invalid product action.";
+                    $messageType = "danger";
                 }
             }
         } catch (PDOException $e) {
 
-            $message = "Something went wrong. Please try again.";
+            $message =
+                "Something went wrong. Please try again.";
+
             $messageType = "danger";
         }
     }
@@ -926,14 +1112,14 @@ function stockBadge($stock)
                                         </td>
                                         <td>
                                             <div class="action-buttons">
-                                                 <a
+                                                <a
                                                     href="product-edit.php?id=<?php echo (int) $product['id']; ?>"
                                                     class="btn btn-sm btn-outline-warning"
                                                     title="Edit Product">
                                                     Edit
                                                 </a>
 
-    
+
                                                 <button
                                                     type="button"
                                                     class="btn btn-sm btn-outline-primary"
