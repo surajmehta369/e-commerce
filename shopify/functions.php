@@ -41,7 +41,7 @@ function generateShopifyAccessToken()
 
         $error = curl_error($curl);
 
-        curl_close($curl);
+        
 
         throw new Exception(
             'Shopify token request failed: ' . $error
@@ -53,7 +53,7 @@ function generateShopifyAccessToken()
         CURLINFO_HTTP_CODE
     );
 
-    curl_close($curl);
+    
 
     $data = json_decode(
         $response,
@@ -222,7 +222,7 @@ function shopifyGraphQL(
         $error =
             curl_error($curl);
 
-        curl_close($curl);
+        
 
         throw new Exception(
             'Shopify API request failed: ' .
@@ -238,7 +238,7 @@ function shopifyGraphQL(
         );
 
 
-    curl_close($curl);
+    
 
 
     $data =
