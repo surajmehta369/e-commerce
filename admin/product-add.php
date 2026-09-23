@@ -10,7 +10,7 @@ $db = $database->connect();
 $message = "";
 $messageType = "";
 
-function createUniqueSlug($db, $title)
+function createUniqueSlug($db, $title, $excludeId = 0)
 {
     $slug = strtolower(trim($title));
 
@@ -24,17 +24,29 @@ function createUniqueSlug($db, $title)
     $baseSlug = $slug;
     $counter = 1;
 
-    $stmt = $db->prepare("
+    $sql = "
         SELECT COUNT(*)
         FROM products
         WHERE slug = :slug
-    ");
+    ";
+
+    if ($excludeId > 0) {
+        $sql .= " AND id != :exclude_id";
+    }
+
+    $stmt = $db->prepare($sql);
 
     while (true) {
 
-        $stmt->execute([
+        $params = [
             ':slug' => $slug
-        ]);
+        ];
+
+        if ($excludeId > 0) {
+            $params[':exclude_id'] = $excludeId;
+        }
+
+        $stmt->execute($params);
 
         if ((int) $stmt->fetchColumn() === 0) {
             break;
@@ -47,6 +59,465 @@ function createUniqueSlug($db, $title)
     return $slug;
 }
 
+$shopifyWebhookUrl =
+    "https://baseavangers.topscripts.in/sumit_rana/offline/shopify_latest_webhook.json";
+
+$shopifyWebhookData = null;
+
+if ($_SERVER['REQUEST_METHOD'] !== 'POST') {
+
+    $ch = curl_init($shopifyWebhookUrl);
+
+    curl_setopt_array($ch, [
+        CURLOPT_RETURNTRANSFER => true,
+        CURLOPT_FOLLOWLOCATION => true,
+        CURLOPT_TIMEOUT => 15,
+        CURLOPT_CONNECTTIMEOUT => 10,
+        CURLOPT_SSL_VERIFYPEER => false,
+        CURLOPT_SSL_VERIFYHOST => false
+    ]);
+
+    $jsonResponse = curl_exec($ch);
+
+    $curlError = curl_error($ch);
+
+    curl_close($ch);
+
+
+    if ($jsonResponse !== false && $jsonResponse !== '') {
+
+        $decodedWebhook = json_decode(
+            $jsonResponse,
+            true
+        );
+
+        if (
+            is_array($decodedWebhook) &&
+            !empty($decodedWebhook['product']) &&
+            is_array($decodedWebhook['product'])
+        ) {
+
+            $shopifyWebhookData = $decodedWebhook;
+        }
+    }
+}
+
+if (
+    $_SERVER['REQUEST_METHOD'] !== 'POST' &&
+    $shopifyWebhookData !== null
+) {
+
+    $shopifyProduct = $shopifyWebhookData['product'];
+    $webhookTopic =
+        $shopifyWebhookData['shopify']['topic'] ?? '';
+
+    if (
+        $webhookTopic === '' ||
+        $webhookTopic === 'products/update'
+    ) {
+
+        $shopifyProductId =
+            isset($shopifyProduct['id'])
+            ? (string) $shopifyProduct['id']
+            : null;
+
+        $shopifyStatus =
+            strtoupper(
+                trim(
+                    $shopifyProduct['status'] ?? ''
+                )
+            );
+
+        $variants =
+            $shopifyProduct['variants'] ?? [];
+
+        if (is_array($variants) && !empty($variants)) {
+
+            try {
+
+                $db->beginTransaction();
+
+                $updatedCount = 0;
+                $insertedCount = 0;
+                $skippedCount = 0;
+
+                foreach ($variants as $variant) {
+                    $shopifySku =
+                        trim(
+                            (string) (
+                                $variant['sku'] ?? ''
+                            )
+                        );
+
+                    if ($shopifySku === '') {
+
+                        $skippedCount++;
+
+                        continue;
+                    }
+
+                    $title =
+                        trim(
+                            (string) (
+                                $shopifyProduct['title'] ?? ''
+                            )
+                        );
+
+                    if ($title === '') {
+
+                        $title = 'Shopify Product';
+                    }
+
+
+                    $description =
+                        $shopifyProduct['body_html'] ?? null;
+
+                    $shopifyHandle =
+                        trim(
+                            (string) (
+                                $shopifyProduct['handle'] ?? ''
+                            )
+                        );
+
+                    $image = null;
+
+                    if (
+                        !empty($shopifyProduct['image']) &&
+                        is_array($shopifyProduct['image'])
+                    ) {
+
+                        $image =
+                            $shopifyProduct['image']['src'] ?? null;
+                    }
+
+                    if (
+                        empty($image) &&
+                        !empty($shopifyProduct['images']) &&
+                        is_array($shopifyProduct['images'])
+                    ) {
+
+                        $image =
+                            $shopifyProduct['images'][0]['src'] ?? null;
+                    }
+
+                    $priceValue =
+                        isset($variant['price']) &&
+                        is_numeric($variant['price'])
+                        ? (float) $variant['price']
+                        : 0.00;
+
+                    $compareAtPrice =
+                        $variant['compare_at_price'] ?? null;
+
+                    $originalPriceValue =
+                        (
+                            $compareAtPrice !== null &&
+                            $compareAtPrice !== '' &&
+                            is_numeric($compareAtPrice)
+                        )
+                        ? (float) $compareAtPrice
+                        : $priceValue;
+                    $discount = 0;
+
+                    if (
+                        $originalPriceValue > 0 &&
+                        $originalPriceValue > $priceValue
+                    ) {
+
+                        $discount = round(
+                            (
+                                (
+                                    $originalPriceValue -
+                                    $priceValue
+                                )
+                                /
+                                $originalPriceValue
+                            ) * 100,
+                            2
+                        );
+                    }
+
+                    $stock =
+                        isset($variant['inventory_quantity']) &&
+                        is_numeric($variant['inventory_quantity'])
+                        ? (int) $variant['inventory_quantity']
+                        : 0;
+                    $localStatus =
+                        strtolower($shopifyProduct['status'] ?? '') === 'active'
+                        ? 1
+                        : 0;
+                    $skuStmt = $db->prepare("
+                        SELECT
+                            id,
+                            slug,
+                            image
+                        FROM products
+                        WHERE sku = :sku
+                        LIMIT 1
+                    ");
+
+                    $skuStmt->execute([
+                        ':sku' => $shopifySku
+                    ]);
+
+                    $existingProduct =
+                        $skuStmt->fetch(PDO::FETCH_ASSOC);
+
+                    if ($existingProduct) {
+
+                        $localProductId =
+                            (int) $existingProduct['id'];
+
+                        if ($shopifyHandle !== '') {
+
+                            $newSlug =
+                                createUniqueSlug(
+                                    $db,
+                                    $shopifyHandle,
+                                    $localProductId
+                                );
+                        } elseif (
+                            !empty($existingProduct['slug'])
+                        ) {
+
+                            $newSlug =
+                                $existingProduct['slug'];
+                        } else {
+
+                            $newSlug =
+                                createUniqueSlug(
+                                    $db,
+                                    $title,
+                                    $localProductId
+                                );
+                        }
+
+                        $imageValue =
+                            !empty($image)
+                            ? $image
+                            : $existingProduct['image'];
+
+
+                        $updateStmt = $db->prepare("
+                            UPDATE products
+                            SET
+                                shopify_product_id = :shopify_product_id,
+                                shopify_status = :shopify_status,
+                                shopify_synced_at = NOW(),
+
+                                sku = :sku,
+                                title = :title,
+                                slug = :slug,
+                                description = :description,
+                                image = :image,
+
+                                price = :price,
+                                original_price = :original_price,
+                                discount = :discount,
+                                stock = :stock,
+                                status = :status
+
+                            WHERE id = :id
+                        ");
+
+
+                        $updateStmt->execute([
+
+                            ':shopify_product_id' =>
+                            $shopifyProductId,
+
+                            ':shopify_status' =>
+                            $shopifyStatus !== ''
+                                ? $shopifyStatus
+                                : null,
+
+                            ':sku' =>
+                            $shopifySku,
+
+                            ':title' =>
+                            $title,
+
+                            ':slug' =>
+                            $newSlug,
+
+                            ':description' =>
+                            $description,
+
+                            ':image' =>
+                            $imageValue,
+
+                            ':price' =>
+                            $priceValue,
+
+                            ':original_price' =>
+                            $originalPriceValue,
+
+                            ':discount' =>
+                            $discount,
+
+                            ':stock' =>
+                            $stock,
+
+                            ':status' =>
+                            $localStatus,
+
+                            ':id' =>
+                            $localProductId
+                        ]);
+
+
+                        $updatedCount++;
+                    } else {
+
+                        if ($shopifyHandle !== '') {
+
+                            $newSlug =
+                                createUniqueSlug(
+                                    $db,
+                                    $shopifyHandle
+                                );
+                        } else {
+
+                            $newSlug =
+                                createUniqueSlug(
+                                    $db,
+                                    $title
+                                );
+                        }
+
+                        $insertStmt = $db->prepare("
+                            INSERT INTO products
+                            (
+                                shopify_product_id,
+                                shopify_status,
+                                shopify_synced_at,
+
+                                sku,
+                                title,
+                                slug,
+                                description,
+                                image,
+
+                                price,
+                                original_price,
+                                discount,
+                                stock,
+
+                                category_id,
+                                brand_id,
+                                vendor_id,
+
+                                status
+                            )
+                            VALUES
+                            (
+                                :shopify_product_id,
+                                :shopify_status,
+                                NOW(),
+
+                                :sku,
+                                :title,
+                                :slug,
+                                :description,
+                                :image,
+
+                                :price,
+                                :original_price,
+                                :discount,
+                                :stock,
+
+                                NULL,
+                                NULL,
+                                NULL,
+
+                                :status
+                            )
+                        ");
+
+
+                        $insertStmt->execute([
+
+                            ':shopify_product_id' =>
+                            $shopifyProductId,
+
+                            ':shopify_status' =>
+                            $shopifyStatus !== ''
+                                ? $shopifyStatus
+                                : null,
+
+                            ':sku' =>
+                            $shopifySku,
+
+                            ':title' =>
+                            $title,
+
+                            ':slug' =>
+                            $newSlug,
+
+                            ':description' =>
+                            $description,
+
+                            ':image' =>
+                            $image,
+
+                            ':price' =>
+                            $priceValue,
+
+                            ':original_price' =>
+                            $originalPriceValue,
+
+                            ':discount' =>
+                            $discount,
+
+                            ':stock' =>
+                            $stock,
+
+                            ':status' =>
+                            $localStatus
+                        ]);
+
+
+                        $insertedCount++;
+                    }
+                }
+
+
+                $db->commit();
+
+                if ($updatedCount > 0 || $insertedCount > 0) {
+
+                    $message =
+                        "Shopify sync completed. " .
+                        $updatedCount .
+                        " product(s) updated, " .
+                        $insertedCount .
+                        " product(s) inserted.";
+
+                    if ($skippedCount > 0) {
+
+                        $message .=
+                            " " .
+                            $skippedCount .
+                            " variant(s) skipped because SKU was empty.";
+                    }
+
+                    $messageType = "success";
+                }
+            } catch (PDOException $e) {
+
+                if ($db->inTransaction()) {
+                    $db->rollBack();
+                }
+
+                $message =
+                    "Shopify synchronization failed.";
+
+                $messageType = "danger";
+            }
+        }
+    }
+}
+
 $categoryStmt = $db->prepare("
     SELECT id, name, parent_id
     FROM categories
@@ -55,7 +526,11 @@ $categoryStmt = $db->prepare("
 ");
 
 $categoryStmt->execute();
-$categories = $categoryStmt->fetchAll(PDO::FETCH_ASSOC);
+
+$categories =
+    $categoryStmt->fetchAll(PDO::FETCH_ASSOC);
+
+
 $brandStmt = $db->prepare("
     SELECT id, name
     FROM brands
@@ -64,43 +539,121 @@ $brandStmt = $db->prepare("
 ");
 
 $brandStmt->execute();
-$brands = $brandStmt->fetchAll(PDO::FETCH_ASSOC);
+
+$brands =
+    $brandStmt->fetchAll(PDO::FETCH_ASSOC);
+
+
 if ($_SERVER['REQUEST_METHOD'] === 'POST') {
 
-    $sku           = trim($_POST['sku'] ?? '');
-    $title         = trim($_POST['title'] ?? '');
-    $description   = trim($_POST['description'] ?? '');
-    $price         = trim($_POST['price'] ?? '');
-    $originalPrice = trim($_POST['original_price'] ?? '');
-    $stock         = trim($_POST['stock'] ?? '');
-    $categoryId    = (int) ($_POST['category_id'] ?? 0);
-    $brandId       = (int) ($_POST['brand_id'] ?? 0);
-    $status        = isset($_POST['status']) ? (int) $_POST['status'] : 1;
+    $sku =
+        trim(
+            $_POST['sku'] ?? ''
+        );
+
+    $title =
+        trim(
+            $_POST['title'] ?? ''
+        );
+
+    $description =
+        trim(
+            $_POST['description'] ?? ''
+        );
+
+    $price =
+        trim(
+            $_POST['price'] ?? ''
+        );
+
+    $originalPrice =
+        trim(
+            $_POST['original_price'] ?? ''
+        );
+
+    $stock =
+        trim(
+            $_POST['stock'] ?? ''
+        );
+
+    $categoryId =
+        (int) (
+            $_POST['category_id'] ?? 0
+        );
+
+    $brandId =
+        (int) (
+            $_POST['brand_id'] ?? 0
+        );
+
+    $status =
+        isset($_POST['status'])
+        ? (int) $_POST['status']
+        : 1;
 
     if ($sku === '') {
-        $message = "SKU is required.";
-        $messageType = "danger";
+
+        $message =
+            "SKU is required.";
+
+        $messageType =
+            "danger";
     } elseif ($title === '') {
-        $message = "Product title is required.";
-        $messageType = "danger";
-    } elseif ($price === '' || !is_numeric($price) || $price < 0) {
-        $message = "Please enter a valid price.";
-        $messageType = "danger";
+
+        $message =
+            "Product title is required.";
+
+        $messageType =
+            "danger";
+    } elseif (
+        $price === '' ||
+        !is_numeric($price) ||
+        $price < 0
+    ) {
+
+        $message =
+            "Please enter a valid price.";
+
+        $messageType =
+            "danger";
     } elseif (
         $originalPrice !== '' &&
-        (!is_numeric($originalPrice) || $originalPrice < 0)
+        (
+            !is_numeric($originalPrice) ||
+            $originalPrice < 0
+        )
     ) {
-        $message = "Please enter a valid original price.";
-        $messageType = "danger";
-    } elseif ($stock === '' || !is_numeric($stock) || $stock < 0) {
-        $message = "Please enter a valid stock quantity.";
-        $messageType = "danger";
+
+        $message =
+            "Please enter a valid original price.";
+
+        $messageType =
+            "danger";
+    } elseif (
+        $stock === '' ||
+        !is_numeric($stock) ||
+        $stock < 0
+    ) {
+
+        $message =
+            "Please enter a valid stock quantity.";
+
+        $messageType =
+            "danger";
     } elseif ($categoryId <= 0) {
-        $message = "Please select a category.";
-        $messageType = "danger";
+
+        $message =
+            "Please select a category.";
+
+        $messageType =
+            "danger";
     } elseif ($brandId <= 0) {
-        $message = "Please select a brand.";
-        $messageType = "danger";
+
+        $message =
+            "Please select a brand.";
+
+        $messageType =
+            "danger";
     } else {
 
         $skuStmt = $db->prepare("
@@ -114,46 +667,72 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
             ':sku' => $sku
         ]);
 
+
         if ($skuStmt->fetch()) {
 
-            $message = "This SKU already exists.";
-            $messageType = "danger";
+            $message =
+                "This SKU already exists.";
+
+            $messageType =
+                "danger";
         } else {
 
-            $priceValue = (float) $price;
+            $priceValue =
+                (float) $price;
 
-            $originalPriceValue = $originalPrice !== ''
+
+            $originalPriceValue =
+                $originalPrice !== ''
                 ? (float) $originalPrice
                 : $priceValue;
 
+
             $discount = 0;
 
-            if ($originalPriceValue > 0 && $originalPriceValue > $priceValue) {
 
-                $discount = round(
-                    (($originalPriceValue - $priceValue) / $originalPriceValue) * 100,
-                    2
-                );
+            if (
+                $originalPriceValue > 0 &&
+                $originalPriceValue > $priceValue
+            ) {
+
+                $discount =
+                    round(
+                        (
+                            (
+                                $originalPriceValue -
+                                $priceValue
+                            )
+                            /
+                            $originalPriceValue
+                        ) * 100,
+                        2
+                    );
             }
 
-            $slug = createUniqueSlug($db, $title);
-            /*
-|--------------------------------------------------------------------------
-| Image Upload
-|--------------------------------------------------------------------------
-*/
+            $slug =
+                createUniqueSlug(
+                    $db,
+                    $title
+                );
 
             $imageName = null;
+
 
             if (
                 isset($_FILES['image']) &&
                 $_FILES['image']['error'] !== UPLOAD_ERR_NO_FILE
             ) {
 
-                if ($_FILES['image']['error'] !== UPLOAD_ERR_OK) {
+                if (
+                    $_FILES['image']['error'] !==
+                    UPLOAD_ERR_OK
+                ) {
 
-                    $message = "There was an error uploading the image.";
-                    $messageType = "danger";
+                    $message =
+                        "There was an error uploading the image.";
+
+                    $messageType =
+                        "danger";
                 } else {
 
                     $allowedTypes = [
@@ -162,46 +741,96 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
                         'image/webp'
                     ];
 
-                    $fileType = mime_content_type($_FILES['image']['tmp_name']);
 
-                    if (!in_array($fileType, $allowedTypes, true)) {
-
-                        $message = "Only JPG, PNG and WEBP images are allowed.";
-                        $messageType = "danger";
-                    } elseif ($_FILES['image']['size'] > 5 * 1024 * 1024) {
-
-                        $message = "Image size must not exceed 5MB.";
-                        $messageType = "danger";
-                    } else {
-
-                        $extension = strtolower(
-                            pathinfo(
-                                $_FILES['image']['name'],
-                                PATHINFO_EXTENSION
-                            )
+                    $fileType =
+                        mime_content_type(
+                            $_FILES['image']['tmp_name']
                         );
 
-                        $fileName = uniqid('product_', true) . '.' . $extension;
 
-                        $uploadDirectory = "../assets/uploads/";
+                    if (
+                        !in_array(
+                            $fileType,
+                            $allowedTypes,
+                            true
+                        )
+                    ) {
 
-                        if (!is_dir($uploadDirectory)) {
-                            mkdir($uploadDirectory, 0755, true);
+                        $message =
+                            "Only JPG, PNG and WEBP images are allowed.";
+
+                        $messageType =
+                            "danger";
+                    } elseif (
+                        $_FILES['image']['size'] >
+                        5 * 1024 * 1024
+                    ) {
+
+                        $message =
+                            "Image size must not exceed 5MB.";
+
+                        $messageType =
+                            "danger";
+                    } else {
+
+                        $extension =
+                            strtolower(
+                                pathinfo(
+                                    $_FILES['image']['name'],
+                                    PATHINFO_EXTENSION
+                                )
+                            );
+
+
+                        $fileName =
+                            uniqid(
+                                'product_',
+                                true
+                            ) .
+                            '.' .
+                            $extension;
+
+
+                        $uploadDirectory =
+                            "../assets/uploads/";
+
+
+                        if (
+                            !is_dir(
+                                $uploadDirectory
+                            )
+                        ) {
+
+                            mkdir(
+                                $uploadDirectory,
+                                0755,
+                                true
+                            );
                         }
 
-                        $uploadPath = $uploadDirectory . $fileName;
 
-                        if (!move_uploaded_file(
-                            $_FILES['image']['tmp_name'],
-                            $uploadPath
-                        )) {
+                        $uploadPath =
+                            $uploadDirectory .
+                            $fileName;
 
-                            $message = "Failed to upload product image.";
-                            $messageType = "danger";
+
+                        if (
+                            !move_uploaded_file(
+                                $_FILES['image']['tmp_name'],
+                                $uploadPath
+                            )
+                        ) {
+
+                            $message =
+                                "Failed to upload product image.";
+
+                            $messageType =
+                                "danger";
                         } else {
 
-                            // Store relative path in database
-                            $imageName = "assets/uploads/" . $fileName;
+                            $imageName =
+                                "assets/uploads/" .
+                                $fileName;
                         }
                     }
                 }
@@ -246,98 +875,168 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
                         )
                     ");
 
+
                     $stmt->execute([
-                        ':sku'            => $sku,
-                        ':title'          => $title,
-                        ':slug'           => $slug,
-                        ':description'   => $description,
-                        ':image'          => $imageName,
-                        ':price'          => $priceValue,
-                        ':original_price' => $originalPriceValue,
-                        ':discount'       => $discount,
-                        ':stock'          => (int) $stock,
-                        ':category_id'    => $categoryId,
-                        ':brand_id'       => $brandId,
-                        ':status'         => $status
+
+                        ':sku' =>
+                        $sku,
+
+                        ':title' =>
+                        $title,
+
+                        ':slug' =>
+                        $slug,
+
+                        ':description' =>
+                        $description,
+
+                        ':image' =>
+                        $imageName,
+
+                        ':price' =>
+                        $priceValue,
+
+                        ':original_price' =>
+                        $originalPriceValue,
+
+                        ':discount' =>
+                        $discount,
+
+                        ':stock' =>
+                        (int) $stock,
+
+                        ':category_id' =>
+                        $categoryId,
+
+                        ':brand_id' =>
+                        $brandId,
+
+                        ':status' =>
+                        $status
                     ]);
-                    $localProductId = (int) $db->lastInsertId();
-                    $shopifyResult = createShopifyProduct([
-                        'title'       => $title,
-                        'description' => $description,
-                        'slug'        => $slug,
-                        'status'      => $status
-                    ]);
 
 
-                    if (!empty($shopifyResult['success'])) {
+                    $localProductId =
+                        (int) $db->lastInsertId();
 
-                        $shopifyProductId = $shopifyResult['data']['id'] ?? null;
+                    $shopifyResult =
+                        createShopifyProduct([
+                            'title' =>
+                            $title,
+
+                            'description' =>
+                            $description,
+
+                            'slug' =>
+                            $slug,
+
+                            'status' =>
+                            $status
+                        ]);
+
+
+                    if (
+                        !empty($shopifyResult['success'])
+                    ) {
+
+                        $shopifyProductId =
+                            $shopifyResult['data']['id']
+                            ?? null;
+
 
                         if (!$shopifyProductId) {
 
-                            $message = "Shopify product was created, but Shopify Product ID was not returned.";
-                            $messageType = "warning";
+                            $message =
+                                "Shopify product was created, but Shopify Product ID was not returned.";
+
+                            $messageType =
+                                "warning";
                         } else {
 
-                            $shopifyUpdate = $db->prepare("
-            UPDATE products
-            SET
-                shopify_product_id = :shopify_product_id,
-                shopify_status = :shopify_status,
-                shopify_synced_at = NOW()
-            WHERE id = :id
-        ");
+                            $shopifyUpdate =
+                                $db->prepare("
+                                    UPDATE products
+                                    SET
+                                        shopify_product_id =
+                                            :shopify_product_id,
+
+                                        shopify_status =
+                                            :shopify_status,
+
+                                        shopify_synced_at =
+                                            NOW()
+
+                                    WHERE id = :id
+                                ");
+
 
                             $shopifyUpdate->execute([
-                                ':shopify_product_id' => $shopifyProductId,
-                                ':shopify_status'     => $status ? 'ACTIVE' : 'DRAFT',
-                                ':id'                 => $localProductId
+
+                                ':shopify_product_id' =>
+                                $shopifyProductId,
+
+                                ':shopify_status' =>
+                                $status
+                                    ? 'ACTIVE'
+                                    : 'DRAFT',
+
+                                ':id' =>
+                                $localProductId
                             ]);
+                            $variantResult =
+                                updateShopifyProductVariant(
+                                    $shopifyProductId,
+                                    $price,
+                                    $originalPrice,
+                                    $sku
+                                );
 
-                            $variantResult = updateShopifyProductVariant(
-                                $shopifyProductId,
-                                $price,
-                                $originalPrice,
-                                $sku
-                            );
-
-                            $inventoryResult = updateShopifyInventory(
-                                $shopifyProductId,
-                                (int) $stock
-                            );
+                            $inventoryResult =
+                                updateShopifyInventory(
+                                    $shopifyProductId,
+                                    (int) $stock
+                                );
 
 
                             $variantSuccess =
                                 !empty($variantResult['success']);
 
+
                             $inventorySuccess =
                                 !empty($inventoryResult['success']);
 
 
-                            if ($variantSuccess && $inventorySuccess) {
+                            if (
+                                $variantSuccess &&
+                                $inventorySuccess
+                            ) {
 
                                 $message =
                                     "Product created successfully and fully synced to Shopify.";
 
-                                $messageType = "success";
+                                $messageType =
+                                    "success";
                             } elseif ($variantSuccess) {
 
                                 $message =
                                     "Product created and variant synced, but inventory sync failed.";
 
-                                $messageType = "warning";
+                                $messageType =
+                                    "warning";
                             } elseif ($inventorySuccess) {
 
                                 $message =
                                     "Product created and inventory synced, but variant sync failed.";
 
-                                $messageType = "warning";
+                                $messageType =
+                                    "warning";
                             } else {
 
                                 $message =
                                     "Product created in Shopify, but price, SKU and inventory synchronization failed.";
 
-                                $messageType = "warning";
+                                $messageType =
+                                    "warning";
                             }
                         }
                     } else {
@@ -345,7 +1044,8 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
                         $message =
                             "Product created locally, but Shopify product creation failed.";
 
-                        $messageType = "warning";
+                        $messageType =
+                            "warning";
                     }
 
                     $sku = "";
@@ -361,15 +1061,29 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
 
                     if ($imageName) {
 
-                        $uploadedFile = "../assets/uploads/" . $imageName;
+                        $uploadedFile =
+                            "../" .
+                            $imageName;
 
-                        if (file_exists($uploadedFile)) {
-                            unlink($uploadedFile);
+
+                        if (
+                            file_exists(
+                                $uploadedFile
+                            )
+                        ) {
+
+                            unlink(
+                                $uploadedFile
+                            );
                         }
                     }
 
-                    $message = "Unable to create product. Please try again.";
-                    $messageType = "danger";
+
+                    $message =
+                        "Unable to create product. Please try again.";
+
+                    $messageType =
+                        "danger";
                 }
             }
         }
