@@ -2,6 +2,7 @@
 
 require_once "auth.php";
 require_once "../connection/dbconnect.php";
+require_once "../shopify/functions.php";
 
 $database = new Database();
 $pdo = $database->connect();
@@ -283,98 +284,195 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
             }
         }
     }
+if ($message === '') {
 
-    if ($message === '') {
+    try {
 
-        try {
+        $pdo->beginTransaction();
 
-            $pdo->beginTransaction();
+        $slug = createUniqueSlug(
+            $pdo,
+            $title,
+            $productId
+        );
+        $updateStmt = $pdo->prepare("
+            UPDATE products
+            SET
+                sku = :sku,
+                title = :title,
+                slug = :slug,
+                description = :description,
+                image = :image,
+                price = :price,
+                original_price = :original_price,
+                discount = :discount,
+                stock = :stock,
+                category_id = :category_id,
+                brand_id = :brand_id,
+                status = :status
+            WHERE id = :id
+        ");
 
-            $slug = createUniqueSlug(
-                $pdo,
-                $title,
-                $productId
-            );
+        $updateStmt->execute([
+            ':sku'            => $sku,
+            ':title'          => $title,
+            ':slug'           => $slug,
+            ':description'    => $description,
+            ':image'          => $imageName,
+            ':price'          => $price,
+            ':original_price' => $originalPrice !== ''
+                ? $originalPrice
+                : null,
+            ':discount'       => $discount,
+            ':stock'          => $stock,
+            ':category_id'    => $categoryId,
+            ':brand_id'       => $brandId,
+            ':status'         => $status,
+            ':id'             => $productId
+        ]);
 
-            $updateStmt = $pdo->prepare("
-                UPDATE products
-                SET
-                    sku = :sku,
-                    title = :title,
-                    slug = :slug,
-                    description = :description,
-                    image = :image,
-                    price = :price,
-                    original_price = :original_price,
-                    discount = :discount,
-                    stock = :stock,
-                    category_id = :category_id,
-                    brand_id = :brand_id,
-                    status = :status
-                WHERE id = :id
-            ");
+        $pdo->commit();
 
-            $updateStmt->execute([
-                ':sku'            => $sku,
-                ':title'          => $title,
-                ':slug'           => $slug,
-                ':description'    => $description,
-                ':image'          => $imageName,
-                ':price'          => $price,
-                ':original_price' => $originalPrice !== ''
-                    ? $originalPrice
-                    : null,
-                ':discount'       => $discount,
-                ':stock'          => $stock,
-                ':category_id'    => $categoryId,
-                ':brand_id'       => $brandId,
-                ':status'         => $status,
-                ':id'             => $productId
-            ]);
+        if (
+            isset($_FILES['image']) &&
+            $_FILES['image']['error'] === UPLOAD_ERR_OK &&
+            !empty($product['image']) &&
+            $product['image'] !== $imageName
+        ) {
 
-            $pdo->commit();
+            $oldImagePath = "../" . $product['image'];
+
             if (
-                isset($_FILES['image']) &&
-                $_FILES['image']['error'] === UPLOAD_ERR_OK &&
-                !empty($product['image']) &&
-                $product['image'] !== $imageName
+                file_exists($oldImagePath) &&
+                is_file($oldImagePath)
+            ) {
+                @unlink($oldImagePath);
+            }
+        }
+        $stmt = $pdo->prepare("
+            SELECT *
+            FROM products
+            WHERE id = :id
+            LIMIT 1
+        ");
+
+        $stmt->execute([
+            ':id' => $productId
+        ]);
+
+        $product = $stmt->fetch(PDO::FETCH_ASSOC);
+
+        $shopifyProductId =
+            trim($product['shopify_product_id'] ?? '');
+
+        if ($shopifyProductId !== '') {
+
+            $shopifyProductResult =
+                updateShopifyProduct(
+                    $shopifyProductId,
+                    [
+                        'title'       => $title,
+                        'description' => $description,
+                        'slug'        => $slug,
+                        'status'      => $status
+                    ]
+                );
+
+            $shopifyVariantResult =
+                updateShopifyProductVariant(
+                    $shopifyProductId,
+                    $price,
+                    $originalPrice,
+                    $sku
+                );
+
+            $shopifyInventoryResult =
+                updateShopifyInventory(
+                    $shopifyProductId,
+                    $stock
+                );
+
+            $shopifyProductSuccess =
+                !empty($shopifyProductResult['success']);
+
+            $shopifyVariantSuccess =
+                !empty($shopifyVariantResult['success']);
+
+            $shopifyInventorySuccess =
+                !empty($shopifyInventoryResult['success']);
+
+            if (
+                $shopifyProductSuccess &&
+                $shopifyVariantSuccess &&
+                $shopifyInventorySuccess
             ) {
 
-                $oldImagePath = "../" . $product['image'];
+                $syncStmt = $pdo->prepare("
+                    UPDATE products
+                    SET
+                        shopify_status = :shopify_status,
+                        shopify_synced_at = NOW()
+                    WHERE id = :id
+                ");
 
-                if (
-                    file_exists($oldImagePath) &&
-                    is_file($oldImagePath)
-                ) {
-                    @unlink($oldImagePath);
+                $syncStmt->execute([
+                    ':shopify_status' =>
+                        $status == 1
+                            ? 'ACTIVE'
+                            : 'DRAFT',
+                    ':id' => $productId
+                ]);
+
+                $message =
+                    "Product updated successfully and synced with Shopify.";
+
+                $messageType = "success";
+
+            } else {
+
+                $failedParts = [];
+
+                if (!$shopifyProductSuccess) {
+                    $failedParts[] = "product";
                 }
+
+                if (!$shopifyVariantSuccess) {
+                    $failedParts[] = "price/SKU";
+                }
+
+                if (!$shopifyInventorySuccess) {
+                    $failedParts[] = "inventory";
+                }
+
+                $message =
+                    "Product updated locally, but Shopify sync failed for: "
+                    . implode(', ', $failedParts)
+                    . ".";
+
+                $messageType = "warning";
             }
 
-            $message = "Product updated successfully.";
-            $messageType = "success";
-            $stmt = $pdo->prepare("
-                SELECT *
-                FROM products
-                WHERE id = :id
-                LIMIT 1
-            ");
+        } else {
+            $message =
+                "Product updated successfully. "
+                . "No Shopify product is linked.";
 
-            $stmt->execute([
-                ':id' => $productId
-            ]);
-
-            $product = $stmt->fetch(PDO::FETCH_ASSOC);
-
-        } catch (Exception $e) {
-
-            if ($pdo->inTransaction()) {
-                $pdo->rollBack();
-            }
-
-            $message = "Something went wrong while updating the product.";
-            $messageType = "danger";
+            $messageType = "warning";
         }
+
+
+    } catch (Exception $e) {
+
+        if ($pdo->inTransaction()) {
+            $pdo->rollBack();
+        }
+
+        $message =
+            "Something went wrong while updating the product.";
+
+        $messageType = "danger";
     }
+}
 }
 
 ?>

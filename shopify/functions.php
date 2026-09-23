@@ -41,7 +41,7 @@ function generateShopifyAccessToken()
 
         $error = curl_error($curl);
 
-        
+
 
         throw new Exception(
             'Shopify token request failed: ' . $error
@@ -53,7 +53,7 @@ function generateShopifyAccessToken()
         CURLINFO_HTTP_CODE
     );
 
-    
+
 
     $data = json_decode(
         $response,
@@ -222,7 +222,7 @@ function shopifyGraphQL(
         $error =
             curl_error($curl);
 
-        
+
 
         throw new Exception(
             'Shopify API request failed: ' .
@@ -238,7 +238,7 @@ function shopifyGraphQL(
         );
 
 
-    
+
 
 
     $data =
@@ -260,6 +260,16 @@ function shopifyGraphQL(
 
 function createShopifyProduct(array $product)
 {
+    $title = trim($product['title'] ?? '');
+
+    if ($title === '') {
+        return [
+            'success' => false,
+            'message' => 'Product title is required.',
+            'errors' => []
+        ];
+    }
+
     $query = <<<'GRAPHQL'
 mutation ProductCreate($product: ProductCreateInput!) {
     productCreate(product: $product) {
@@ -279,17 +289,71 @@ GRAPHQL;
 
     $variables = [
         'product' => [
-            'title' => $product['title'],
+            'title' => $title,
             'descriptionHtml' => $product['description'] ?? '',
-            'handle' => $product['slug'] ?? null,
+            'handle' => !empty($product['slug'])
+                ? trim($product['slug'])
+                : null,
             'status' => !empty($product['status'])
                 ? 'ACTIVE'
                 : 'DRAFT'
         ]
     ];
 
-    return shopifyGraphQL($query, $variables);
+    $response = shopifyGraphQL(
+        $query,
+        $variables
+    );
+    if (!empty($response['errors'])) {
+        return [
+            'success' => false,
+            'message' => 'Shopify GraphQL request failed.',
+            'errors' => $response['errors']
+        ];
+    }
+    $shopifyData = $response['data']['data'] ?? [];
+
+    $productCreate =
+        $shopifyData['productCreate'] ?? null;
+    if (!$productCreate) {
+        return [
+            'success' => false,
+            'message' => 'Shopify productCreate response was not returned.',
+            'response' => $response
+        ];
+    }
+
+    $userErrors =
+        $productCreate['userErrors'] ?? [];
+
+    if (!empty($userErrors)) {
+        return [
+            'success' => false,
+            'message' => 'Shopify product creation failed.',
+            'errors' => $userErrors
+        ];
+    }
+    $createdProduct =
+        $productCreate['product'] ?? null;
+
+    if (
+        !$createdProduct ||
+        empty($createdProduct['id'])
+    ) {
+        return [
+            'success' => false,
+            'message' => 'Shopify product was not returned after creation.',
+            'response' => $response
+        ];
+    }
+    return [
+        'success' => true,
+        'message' => 'Shopify product created successfully.',
+        'data' => $createdProduct
+    ];
 }
+
+
 
 
 function getShopifyProductInventoryInfo($shopifyProductId)
@@ -395,20 +459,27 @@ GRAPHQL;
         'location_name' => $location['name']
     ];
 }
-
 function updateShopifyInventory($shopifyProductId, $newQuantity)
 {
     $newQuantity = (int) $newQuantity;
+
     $inventoryInfo = getShopifyProductInventoryInfo($shopifyProductId);
 
-    if (!$inventoryInfo['success']) {
-        return $inventoryInfo;
+    if (empty($inventoryInfo['success'])) {
+        return [
+            'success' => false,
+            'message' => $inventoryInfo['message'] ?? 'Unable to get Shopify inventory information.',
+            'errors' => $inventoryInfo['errors'] ?? []
+        ];
     }
 
-    $inventoryItemId = $inventoryInfo['data']['inventory_item_id'];
-    $currentQuantity = $inventoryInfo['data']['inventory_quantity'];
+    $inventoryItemId =
+        $inventoryInfo['data']['inventory_item_id'];
 
+    $currentQuantity =
+        (int) $inventoryInfo['data']['inventory_quantity'];
     if ($currentQuantity === $newQuantity) {
+
         return [
             'success' => true,
             'message' => 'Shopify inventory is already up to date.',
@@ -419,22 +490,31 @@ function updateShopifyInventory($shopifyProductId, $newQuantity)
             ]
         ];
     }
+
     $locationInfo = getShopifyLocationId();
 
-    if (!$locationInfo['success']) {
-        return $locationInfo;
+    if (empty($locationInfo['success'])) {
+        return [
+            'success' => false,
+            'message' => $locationInfo['message'] ?? 'Unable to get Shopify location.',
+            'errors' => $locationInfo['errors'] ?? []
+        ];
     }
 
     $locationId = $locationInfo['location_id'];
-    $idempotencyKey = 'inventory-' .
-        preg_replace('/[^a-zA-Z0-9_-]/', '-', $shopifyProductId) .
+    $idempotencyKey =
+        'inventory-' .
+        preg_replace(
+            '/[^a-zA-Z0-9_-]/',
+            '-',
+            $shopifyProductId
+        ) .
         '-' .
         $currentQuantity .
         '-' .
         $newQuantity .
         '-' .
         uniqid();
-
     $query = <<<'GRAPHQL'
 mutation InventorySetQuantities(
     $input: InventorySetQuantitiesInput!
@@ -476,26 +556,45 @@ GRAPHQL;
         'idempotencyKey' => $idempotencyKey
     ];
 
-    $response = shopifyGraphQL($query, $variables);
+    $response = shopifyGraphQL(
+        $query,
+        $variables
+    );
+
 
     if (!empty($response['errors'])) {
+
         return [
             'success' => false,
             'message' => 'Shopify GraphQL error.',
             'errors' => $response['errors']
         ];
     }
+    $shopifyData =
+        $response['data']['data'] ?? [];
+
+    $inventoryResult =
+        $shopifyData['inventorySetQuantities'] ?? null;
+
+    if (!$inventoryResult) {
+
+        return [
+            'success' => false,
+            'message' => 'Shopify inventory response was not returned.',
+            'response' => $response
+        ];
+    }
     $userErrors =
-        $response['data']['inventorySetQuantities']['userErrors'] ?? [];
+        $inventoryResult['userErrors'] ?? [];
 
     if (!empty($userErrors)) {
+
         return [
             'success' => false,
             'message' => 'Shopify inventory update failed.',
             'errors' => $userErrors
         ];
     }
-
     return [
         'success' => true,
         'message' => 'Shopify inventory updated successfully.',
@@ -506,8 +605,7 @@ GRAPHQL;
             'location_id' => $locationId,
             'changed' => true,
             'shopify_response' =>
-            $response['data']['inventorySetQuantities']['inventoryAdjustmentGroup']
-                ?? null
+            $inventoryResult['inventoryAdjustmentGroup'] ?? null
         ]
     ];
 }
@@ -634,3 +732,101 @@ GRAPHQL;
             ?? []
     ];
 }
+
+function updateShopifyProduct(
+    $shopifyProductId,
+    array $product
+) {
+    $query = <<<'GRAPHQL'
+mutation ProductUpdate(
+    $product: ProductUpdateInput!
+) {
+    productUpdate(product: $product) {
+        product {
+            id
+            title
+            handle
+            status
+            descriptionHtml
+        }
+        userErrors {
+            field
+            message
+        }
+    }
+}
+GRAPHQL;
+
+    $variables = [
+        'product' => [
+            'id' => $shopifyProductId,
+            'title' => $product['title'] ?? '',
+            'descriptionHtml' =>
+                $product['description'] ?? '',
+            'handle' => $product['slug'] ?? null,
+            'status' => !empty($product['status'])
+                ? 'ACTIVE'
+                : 'DRAFT'
+        ]
+    ];
+
+    $response = shopifyGraphQL(
+        $query,
+        $variables
+    );
+    if (!empty($response['errors'])) {
+        return [
+            'success' => false,
+            'message' => 'Shopify product update request failed.',
+            'errors' => $response['errors']
+        ];
+    }
+    $shopifyData =
+        $response['data']['data'] ?? [];
+
+    $productUpdate =
+        $shopifyData['productUpdate'] ?? null;
+
+    if (!$productUpdate) {
+        return [
+            'success' => false,
+            'message' =>
+                'Shopify productUpdate response was not returned.',
+            'response' => $response
+        ];
+    }
+
+    $userErrors =
+        $productUpdate['userErrors'] ?? [];
+
+    if (!empty($userErrors)) {
+        return [
+            'success' => false,
+            'message' =>
+                'Shopify product update failed.',
+            'errors' => $userErrors
+        ];
+    }
+    $updatedProduct =
+        $productUpdate['product'] ?? null;
+
+    if (
+        !$updatedProduct ||
+        empty($updatedProduct['id'])
+    ) {
+        return [
+            'success' => false,
+            'message' =>
+                'Shopify updated product was not returned.',
+            'response' => $response
+        ];
+    }
+
+    return [
+        'success' => true,
+        'message' =>
+            'Shopify product updated successfully.',
+        'data' => $updatedProduct
+    ];
+}
+
