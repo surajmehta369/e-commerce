@@ -2,6 +2,10 @@
 
 require_once __DIR__ . '/config.php';
 
+
+$database = new Database();
+$db = $database->connect();
+
 function generateShopifyAccessToken()
 {
     $curl = curl_init();
@@ -151,85 +155,49 @@ function getShopifyAccessToken()
 
     return generateShopifyAccessToken();
 }
+function shopifyGraphQL(string $query, array $variables = [])
+{
+    $accessToken = getShopifyAccessToken();
 
-function shopifyGraphQL(
-    string $query,
-    array $variables = []
-) {
-
-    $accessToken =
-        getShopifyAccessToken();
-
-
-    $payload = [
-        'query' => $query
-    ];
-
-
-    if (!empty($variables)) {
-
-        $payload['variables'] =
-            $variables;
-    }
-
-
-    $curl = curl_init();
+    $curl = curl_init(SHOPIFY_GRAPHQL_URL);
 
     curl_setopt_array($curl, [
+        CURLOPT_RETURNTRANSFER => true,
+        CURLOPT_POST => true,
+        CURLOPT_HTTPHEADER => [
+            'Content-Type: application/json',
+            'Accept: application/json',
+            'X-Shopify-Access-Token: ' . $accessToken,
+        ],
 
-        CURLOPT_URL =>
-        SHOPIFY_GRAPHQL_URL,
+        CURLOPT_POSTFIELDS => json_encode([
+            'query' => $query,
 
-        CURLOPT_RETURNTRANSFER =>
-        true,
-
-        CURLOPT_ENCODING => '',
-
-        CURLOPT_MAXREDIRS => 10,
+            // IMPORTANT:
+            // GraphQL variables must be an object.
+            // An empty PHP array would become [] instead of {}.
+            'variables' => (object) $variables,
+        ]),
 
         CURLOPT_TIMEOUT => 30,
-
-        CURLOPT_FOLLOWLOCATION =>
-        true,
-
-        CURLOPT_HTTP_VERSION =>
-        CURL_HTTP_VERSION_1_1,
-
-        CURLOPT_CUSTOMREQUEST =>
-        'POST',
-
-        CURLOPT_POSTFIELDS =>
-        json_encode($payload),
-
-        CURLOPT_HTTPHEADER => [
-
-            'Content-Type: application/json',
-
-            'Accept: application/json',
-
-            'X-Shopify-Access-Token: ' .
-                $accessToken
-        ]
     ]);
 
-
-    $response =
-        curl_exec($curl);
-
+    $response = curl_exec($curl);
 
     if ($response === false) {
+        $error = curl_error($curl);
+        curl_close($curl);
 
-        $error =
-            curl_error($curl);
-
-
-
-        throw new Exception(
-            'Shopify API request failed: ' .
-                $error
-        );
+        return [
+            'http_code' => 0,
+            'data' => [],
+            'errors' => [
+                [
+                    'message' => 'Shopify cURL error: ' . $error
+                ]
+            ]
+        ];
     }
-
 
     $httpCode =
         curl_getinfo(
@@ -237,9 +205,7 @@ function shopifyGraphQL(
             CURLINFO_HTTP_CODE
         );
 
-
-
-
+    curl_close($curl);
 
     $data =
         json_decode(
@@ -247,15 +213,37 @@ function shopifyGraphQL(
             true
         );
 
+    if (!is_array($data)) {
+        return [
+            'http_code' => $httpCode,
+            'data' => [],
+            'errors' => [
+                [
+                    'message' => 'Invalid Shopify JSON response',
+                    'raw_response' => $response
+                ]
+            ]
+        ];
+    }
 
     return [
-
-        'http_code' =>
-        $httpCode,
-
-        'data' =>
-        $data
+        'http_code' => $httpCode,
+        'data' => $data,
+        'errors' => $data['errors'] ?? []
     ];
+}
+function shopifyGid(string $type, $id): string
+{
+    $id = trim((string) $id);
+
+    if ($id === '') {
+        return '';
+    }
+    if (str_starts_with($id, 'gid://shopify/')) {
+        return $id;
+    }
+
+    return "gid://shopify/{$type}/{$id}";
 }
 
 function createShopifyProduct(array $product)
@@ -354,10 +342,21 @@ GRAPHQL;
 }
 
 
-
-
 function getShopifyProductInventoryInfo($shopifyProductId)
 {
+    $productGid = shopifyGid(
+        'Product',
+        $shopifyProductId
+    );
+
+    if ($productGid === '') {
+        return [
+            'success' => false,
+            'message' => 'Shopify product ID is empty.',
+            'data' => null
+        ];
+    }
+
     $query = <<<'GRAPHQL'
 query GetProductInventoryInfo($id: ID!) {
     product(id: $id) {
@@ -379,10 +378,20 @@ query GetProductInventoryInfo($id: ID!) {
 GRAPHQL;
 
     $response = shopifyGraphQL($query, [
-        'id' => $shopifyProductId
+        'id' => $productGid
     ]);
-    $shopifyData = $response['data']['data'] ?? [];
+    if (!empty($response['errors'])) {
+        return [
+            'success' => false,
+            'message' => 'Shopify product inventory lookup failed.',
+            'data' => null,
+            'errors' => $response['errors'],
+            'response' => $response
+        ];
+    }
 
+    $shopifyData =
+        $response['data']['data'] ?? [];
     if (
         empty($shopifyData['product']) ||
         empty($shopifyData['product']['variants']['nodes'])
@@ -395,9 +404,11 @@ GRAPHQL;
         ];
     }
 
-    $product = $shopifyData['product'];
-    $variant = $product['variants']['nodes'][0];
+    $product =
+        $shopifyData['product'];
 
+    $variant =
+        $product['variants']['nodes'][0];
     if (empty($variant['inventoryItem']['id'])) {
         return [
             'success' => false,
@@ -410,14 +421,28 @@ GRAPHQL;
     return [
         'success' => true,
         'message' => 'Inventory information fetched successfully.',
+
         'data' => [
-            'product_id' => $product['id'],
-            'title' => $product['title'],
-            'status' => $product['status'],
-            'variant_id' => $variant['id'],
-            'sku' => $variant['sku'],
-            'inventory_quantity' => (int) $variant['inventoryQuantity'],
-            'inventory_item_id' => $variant['inventoryItem']['id']
+            'product_id' =>
+            $product['id'],
+
+            'title' =>
+            $product['title'],
+
+            'status' =>
+            $product['status'],
+
+            'variant_id' =>
+            $variant['id'],
+
+            'sku' =>
+            $variant['sku'],
+
+            'inventory_quantity' =>
+            (int) $variant['inventoryQuantity'],
+
+            'inventory_item_id' =>
+            $variant['inventoryItem']['id']
         ]
     ];
 }
@@ -430,33 +455,79 @@ query GetLocations {
         nodes {
             id
             name
+            isActive
+            hasActiveInventory
+            fulfillsOnlineOrders
         }
     }
 }
 GRAPHQL;
 
     $response = shopifyGraphQL($query);
-
-    $shopifyData = $response['data']['data'] ?? [];
-
-    if (
-        empty($shopifyData['locations']['nodes'])
-    ) {
+    if (!empty($response['errors'])) {
         return [
             'success' => false,
-            'message' => 'No Shopify inventory location found.',
+            'message' => 'Shopify locations query failed.',
             'location_id' => null,
+            'errors' => $response['errors'],
             'response' => $response
         ];
     }
 
-    $location = $shopifyData['locations']['nodes'][0];
+    $shopifyData =
+        $response['data']['data'] ?? [];
+
+    $locations =
+        $shopifyData['locations']['nodes'] ?? [];
+
+    if (empty($locations)) {
+        return [
+            'success' => false,
+            'message' => 'No Shopify inventory location found.',
+            'location_id' => null,
+            'errors' => [],
+            'response' => $response
+        ];
+    }
+    foreach ($locations as $location) {
+
+        if (
+            !empty($location['isActive']) &&
+            !empty($location['hasActiveInventory'])
+        ) {
+            return [
+                'success' => true,
+                'message' => 'Shopify active inventory location found.',
+                'location_id' => $location['id'],
+                'location_name' => $location['name'],
+                'data' => $location
+            ];
+        }
+    }
+
+    /*
+     * If no location has active inventory, use the first active
+     * location as a fallback.
+     */
+    foreach ($locations as $location) {
+
+        if (!empty($location['isActive'])) {
+            return [
+                'success' => true,
+                'message' => 'Shopify active location found.',
+                'location_id' => $location['id'],
+                'location_name' => $location['name'],
+                'data' => $location
+            ];
+        }
+    }
 
     return [
-        'success' => true,
-        'message' => 'Shopify location found.',
-        'location_id' => $location['id'],
-        'location_name' => $location['name']
+        'success' => false,
+        'message' => 'Shopify locations were returned, but no active inventory location was found.',
+        'location_id' => null,
+        'locations' => $locations,
+        'response' => $response
     ];
 }
 function updateShopifyInventory($shopifyProductId, $newQuantity)
@@ -609,14 +680,23 @@ GRAPHQL;
         ]
     ];
 }
-
 function updateShopifyProductVariant(
     $shopifyProductId,
     $price,
     $originalPrice,
     $sku
 ) {
+    $productGid = shopifyGid(
+        'Product',
+        $shopifyProductId
+    );
 
+    if ($productGid === '') {
+        return [
+            'success' => false,
+            'message' => 'Shopify product ID is empty.'
+        ];
+    }
     $query = <<<'GRAPHQL'
 query GetProductVariant($id: ID!) {
     product(id: $id) {
@@ -631,21 +711,29 @@ query GetProductVariant($id: ID!) {
 GRAPHQL;
 
     $response = shopifyGraphQL($query, [
-        'id' => $shopifyProductId
+        'id' => $productGid
     ]);
+    if (!empty($response['errors'])) {
+        return [
+            'success' => false,
+            'message' => 'Shopify product lookup failed.',
+            'errors' => $response['errors']
+        ];
+    }
 
-    $shopifyData = $response['data']['data'] ?? [];
-
+    $shopifyData =
+        $response['data']['data'] ?? [];
     if (
         empty($shopifyData['product']) ||
         empty($shopifyData['product']['variants']['nodes'][0])
     ) {
         return [
             'success' => false,
-            'message' => 'Shopify product variant not found.'
+            'message' => 'Shopify product variant not found.',
+            'product_id' => $productGid,
+            'response' => $response
         ];
     }
-
     $variantId =
         $shopifyData['product']['variants']['nodes'][0]['id'];
 
@@ -676,17 +764,31 @@ mutation UpdateProductVariant(
 }
 GRAPHQL;
 
-
     $variables = [
-        'productId' => $shopifyProductId,
+        'productId' => $productGid,
+
         'variants' => [
             [
                 'id' => $variantId,
-                'price' => number_format((float) $price, 2, '.', ''),
+
+                'price' =>
+                number_format(
+                    (float) $price,
+                    2,
+                    '.',
+                    ''
+                ),
+
                 'compareAtPrice' =>
                 !empty($originalPrice)
-                    ? number_format((float) $originalPrice, 2, '.', '')
+                    ? number_format(
+                        (float) $originalPrice,
+                        2,
+                        '.',
+                        ''
+                    )
                     : null,
+
                 'inventoryItem' => [
                     'sku' => $sku
                 ]
@@ -694,13 +796,14 @@ GRAPHQL;
         ]
     ];
 
-
     $response = shopifyGraphQL(
         $mutation,
         $variables
     );
 
-
+    /*
+     * GraphQL errors.
+     */
     if (!empty($response['errors'])) {
         return [
             'success' => false,
@@ -709,11 +812,26 @@ GRAPHQL;
         ];
     }
 
+    $shopifyData =
+        $response['data']['data'] ?? [];
 
+    $result =
+        $shopifyData['productVariantsBulkUpdate']
+        ?? null;
+
+    if (!$result) {
+        return [
+            'success' => false,
+            'message' => 'Shopify variant update response was not returned.',
+            'response' => $response
+        ];
+    }
+
+    /*
+     * Shopify mutation-level errors.
+     */
     $userErrors =
-        $response['data']['data']['productVariantsBulkUpdate']['userErrors']
-        ?? [];
-
+        $result['userErrors'] ?? [];
 
     if (!empty($userErrors)) {
         return [
@@ -723,16 +841,13 @@ GRAPHQL;
         ];
     }
 
-
     return [
         'success' => true,
         'message' => 'Shopify price, original price and SKU updated.',
         'data' =>
-        $response['data']['data']['productVariantsBulkUpdate']['productVariants']
-            ?? []
+        $result['productVariants'] ?? []
     ];
 }
-
 function updateShopifyProduct(
     $shopifyProductId,
     array $product
@@ -759,10 +874,10 @@ GRAPHQL;
 
     $variables = [
         'product' => [
-            'id' => $shopifyProductId,
+            'id' => shopifyGid('Product', $shopifyProductId),
             'title' => $product['title'] ?? '',
             'descriptionHtml' =>
-                $product['description'] ?? '',
+            $product['description'] ?? '',
             'handle' => $product['slug'] ?? null,
             'status' => !empty($product['status'])
                 ? 'ACTIVE'
@@ -791,7 +906,7 @@ GRAPHQL;
         return [
             'success' => false,
             'message' =>
-                'Shopify productUpdate response was not returned.',
+            'Shopify productUpdate response was not returned.',
             'response' => $response
         ];
     }
@@ -803,7 +918,7 @@ GRAPHQL;
         return [
             'success' => false,
             'message' =>
-                'Shopify product update failed.',
+            'Shopify product update failed.',
             'errors' => $userErrors
         ];
     }
@@ -817,7 +932,7 @@ GRAPHQL;
         return [
             'success' => false,
             'message' =>
-                'Shopify updated product was not returned.',
+            'Shopify updated product was not returned.',
             'response' => $response
         ];
     }
@@ -825,8 +940,941 @@ GRAPHQL;
     return [
         'success' => true,
         'message' =>
-            'Shopify product updated successfully.',
+        'Shopify product updated successfully.',
         'data' => $updatedProduct
     ];
 }
 
+function createShopifyVendorCollection($vendorId)
+{
+    global $db;
+
+    $vendorId = (int) $vendorId;
+
+    if ($vendorId <= 0) {
+        return [
+            'success' => false,
+            'message' => 'Invalid vendor ID.'
+        ];
+    }
+
+    /*
+     * Get vendor information
+     */
+    $stmt = $db->prepare("
+        SELECT
+            user_id,
+            store_name,
+            business_name,
+            shopify_collection_id
+        FROM vendor_profiles
+        WHERE user_id = :user_id
+        LIMIT 1
+    ");
+
+    $stmt->execute([
+        ':user_id' => $vendorId
+    ]);
+
+    $vendor = $stmt->fetch(PDO::FETCH_ASSOC);
+
+    if (!$vendor) {
+        return [
+            'success' => false,
+            'message' => 'Vendor profile not found.'
+        ];
+    }
+
+    /*
+     * If collection already exists in database,
+     * reuse it.
+     */
+    if (!empty($vendor['shopify_collection_id'])) {
+
+        return [
+            'success' => true,
+            'message' =>
+                'Vendor Shopify collection already exists.',
+            'collection_id' =>
+                $vendor['shopify_collection_id'],
+            'created' => false
+        ];
+    }
+
+    /*
+     * Use business name first.
+     * If business name is empty, use store name.
+     */
+    $vendorName = trim(
+        $vendor['business_name'] ?? ''
+    );
+
+    if ($vendorName === '') {
+        $vendorName = trim(
+            $vendor['store_name'] ?? ''
+        );
+    }
+
+    if ($vendorName === '') {
+        return [
+            'success' => false,
+            'message' =>
+                'Vendor business/store name is empty.'
+        ];
+    }
+
+    /*
+     * Shopify collection title
+     */
+    $collectionTitle = $vendorName;
+
+    /*
+     * Shopify GraphQL mutation
+     */
+    $query = <<<'GRAPHQL'
+mutation CreateVendorCollection(
+    $collection: CollectionCreateInput!
+) {
+    collectionCreate(
+        collection: $collection
+    ) {
+        collection {
+            id
+            title
+            handle
+        }
+        userErrors {
+            field
+            message
+        }
+    }
+}
+GRAPHQL;
+
+    $variables = [
+        'collection' => [
+            'title' => $collectionTitle
+        ]
+    ];
+
+    $response = shopifyGraphQL(
+        $query,
+        $variables
+    );
+
+    /*
+     * GraphQL-level errors
+     */
+    if (!empty($response['errors'])) {
+
+        return [
+            'success' => false,
+            'message' =>
+                'Shopify collection creation failed.',
+            'errors' => $response['errors'],
+            'response' => $response
+        ];
+    }
+
+    $shopifyData =
+        $response['data']['data'] ?? [];
+
+    $result =
+        $shopifyData['collectionCreate'] ?? null;
+
+    if (!$result) {
+
+        return [
+            'success' => false,
+            'message' =>
+                'Shopify collectionCreate response was not returned.',
+            'response' => $response
+        ];
+    }
+
+    /*
+     * Shopify user errors
+     */
+    $userErrors =
+        $result['userErrors'] ?? [];
+
+    if (!empty($userErrors)) {
+
+        return [
+            'success' => false,
+            'message' =>
+                'Shopify vendor collection creation failed.',
+            'errors' => $userErrors
+        ];
+    }
+
+    /*
+     * Collection
+     */
+    $collection =
+        $result['collection'] ?? null;
+
+    if (
+        !$collection ||
+        empty($collection['id'])
+    ) {
+
+        return [
+            'success' => false,
+            'message' =>
+                'Shopify collection ID was not returned.',
+            'response' => $response
+        ];
+    }
+    $updateStmt = $db->prepare("
+        UPDATE vendor_profiles
+        SET shopify_collection_id = :collection_id
+        WHERE user_id = :user_id
+    ");
+
+    $updateStmt->execute([
+        ':collection_id' =>
+            $collection['id'],
+        ':user_id' =>
+            $vendorId
+    ]);
+
+    return [
+        'success' => true,
+        'message' =>
+            'Shopify vendor collection created successfully.',
+        'collection_id' =>
+            $collection['id'],
+        'collection_title' =>
+            $collection['title'],
+        'created' => true
+    ];
+}
+
+function addShopifyProductToVendorCollection(
+    $shopifyProductId,
+    $vendorId
+) {
+    $shopifyProductId =
+        shopifyGid(
+            'Product',
+            $shopifyProductId
+        );
+
+    if ($shopifyProductId === '') {
+        return [
+            'success' => false,
+            'message' => 'Shopify product ID is empty.'
+        ];
+    }
+    $collectionResult =
+        createShopifyVendorCollection(
+            $vendorId
+        );
+
+    if (empty($collectionResult['success'])) {
+
+        return [
+            'success' => false,
+            'message' =>
+            $collectionResult['message']
+                ?? 'Unable to create/get vendor collection.',
+            'errors' =>
+            $collectionResult['errors']
+                ?? []
+        ];
+    }
+
+    $collectionId =
+        $collectionResult['collection_id'];
+
+    $query = <<<'GRAPHQL'
+mutation AddProductToCollection(
+    $id: ID!
+    $productIds: [ID!]!
+) {
+    collectionAddProducts(
+        id: $id
+        productIds: $productIds
+    ) {
+        collection {
+            id
+            title
+        }
+        userErrors {
+            field
+            message
+        }
+    }
+}
+GRAPHQL;
+
+    $variables = [
+        'id' => $collectionId,
+        'productIds' => [
+            $shopifyProductId
+        ]
+    ];
+
+    $response =
+        shopifyGraphQL(
+            $query,
+            $variables
+        );
+    if (!empty($response['errors'])) {
+
+        return [
+            'success' => false,
+            'message' =>
+            'Shopify collection product request failed: ' .
+                (
+                    $response['errors'][0]['message']
+                    ?? 'Unknown GraphQL error.'
+                ),
+            'errors' => $response['errors']
+        ];
+    }
+
+    $shopifyData =
+        $response['data']['data'] ?? [];
+
+    $result =
+        $shopifyData['collectionAddProducts'] ?? null;
+
+    if (!$result) {
+
+        return [
+            'success' => false,
+            'message' =>
+            'Shopify collectionAddProducts response was not returned.',
+            'response' => $response
+        ];
+    }
+    $userErrors =
+        $result['userErrors'] ?? [];
+
+    if (!empty($userErrors)) {
+
+        $errorMessages = [];
+
+        foreach ($userErrors as $error) {
+
+            $errorMessages[] =
+                ($error['message'] ?? 'Unknown Shopify error.');
+        }
+
+        return [
+            'success' => false,
+            'message' =>
+            'Unable to add product to vendor collection: ' .
+                implode(' | ', $errorMessages),
+            'errors' => $userErrors
+        ];
+    }
+
+    return [
+        'success' => true,
+        'message' =>
+        'Product added to vendor Shopify collection.',
+        'collection_id' =>
+        $collectionId,
+        'collection_title' =>
+        $result['collection']['title'] ?? null
+    ];
+}
+
+function deleteShopifyProduct($shopifyProductId)
+{
+    $shopifyProductId = shopifyGid(
+        'Product',
+        $shopifyProductId
+    );
+
+    if ($shopifyProductId === '') {
+        return [
+            'success' => false,
+            'message' => 'Shopify product ID is empty.'
+        ];
+    }
+
+    $query = <<<'GRAPHQL'
+mutation ProductDelete(
+    $input: ProductDeleteInput!
+) {
+    productDelete(
+        input: $input
+    ) {
+        deletedProductId
+        userErrors {
+            field
+            message
+        }
+    }
+}
+GRAPHQL;
+
+    $variables = [
+        'input' => [
+            'id' => $shopifyProductId
+        ]
+    ];
+
+    $response = shopifyGraphQL(
+        $query,
+        $variables
+    );
+
+    if (!empty($response['errors'])) {
+        return [
+            'success' => false,
+            'message' => 'Shopify product deletion request failed.',
+            'errors' => $response['errors'],
+            'response' => $response
+        ];
+    }
+
+    $shopifyData =
+        $response['data']['data'] ?? [];
+
+    $result =
+        $shopifyData['productDelete'] ?? null;
+
+    if (!$result) {
+        return [
+            'success' => false,
+            'message' =>
+                'Shopify productDelete response was not returned.',
+            'response' => $response
+        ];
+    }
+
+    $userErrors =
+        $result['userErrors'] ?? [];
+
+    if (!empty($userErrors)) {
+        return [
+            'success' => false,
+            'message' =>
+                'Shopify product deletion failed.',
+            'errors' => $userErrors
+        ];
+    }
+
+    if (empty($result['deletedProductId'])) {
+        return [
+            'success' => false,
+            'message' =>
+                'Shopify did not return a deleted product ID.',
+            'response' => $response
+        ];
+    }
+
+    return [
+        'success' => true,
+        'message' =>
+            'Shopify product deleted successfully.',
+        'deleted_product_id' =>
+            $result['deletedProductId']
+    ];
+}
+
+function createUniqueSlug($db, $title, $excludeId = 0)
+{
+    $slug = strtolower(trim($title));
+
+    $slug = preg_replace('/[^a-z0-9]+/', '-', $slug);
+    $slug = trim($slug, '-');
+
+    if ($slug === '') {
+        $slug = 'product';
+    }
+
+    $baseSlug = $slug;
+    $counter = 1;
+
+    $sql = "
+        SELECT COUNT(*)
+        FROM products
+        WHERE slug = :slug
+    ";
+
+    if ($excludeId > 0) {
+        $sql .= " AND id != :exclude_id";
+    }
+
+    $stmt = $db->prepare($sql);
+
+    while (true) {
+
+        $params = [
+            ':slug' => $slug
+        ];
+
+        if ($excludeId > 0) {
+            $params[':exclude_id'] = $excludeId;
+        }
+
+        $stmt->execute($params);
+
+        if ((int) $stmt->fetchColumn() === 0) {
+            break;
+        }
+
+        $slug = $baseSlug . '-' . $counter;
+        $counter++;
+    }
+
+    return $slug;
+}
+
+function syncShopifyProductsToDatabase()
+{
+    global $db;
+
+    $shopifyWebhookUrl =
+        "https://baseavangers.topscripts.in/sumit_rana/offline/shopify_latest_webhook.json";
+
+    $ch = curl_init($shopifyWebhookUrl);
+
+    curl_setopt_array($ch, [
+        CURLOPT_RETURNTRANSFER => true,
+        CURLOPT_FOLLOWLOCATION => true,
+        CURLOPT_TIMEOUT => 15,
+        CURLOPT_CONNECTTIMEOUT => 10,
+        CURLOPT_SSL_VERIFYPEER => false,
+        CURLOPT_SSL_VERIFYHOST => false
+    ]);
+
+    $jsonResponse = curl_exec($ch);
+
+    if ($jsonResponse === false) {
+        curl_close($ch);
+        return [
+            'success' => false,
+            'message' => 'Unable to fetch Shopify webhook.'
+        ];
+    }
+
+    curl_close($ch);
+
+    $decodedWebhook = json_decode($jsonResponse, true);
+
+    if (
+        !is_array($decodedWebhook) ||
+        empty($decodedWebhook['product']) ||
+        !is_array($decodedWebhook['product'])
+    ) {
+        return [
+            'success' => false,
+            'message' => 'No Shopify product webhook data found.'
+        ];
+    }
+
+    $shopifyProduct = $decodedWebhook['product'];
+
+    $webhookTopic =
+        $decodedWebhook['shopify']['topic'] ?? '';
+
+    if (
+        $webhookTopic !== '' &&
+        $webhookTopic !== 'products/update'
+    ) {
+        return [
+            'success' => false,
+            'message' => 'Webhook topic is not products/update.'
+        ];
+    }
+
+    $shopifyProductId =
+        isset($shopifyProduct['id'])
+        ? (string) $shopifyProduct['id']
+        : null;
+
+    $shopifyStatus =
+        strtoupper(
+            trim(
+                $shopifyProduct['status'] ?? ''
+            )
+        );
+
+    $variants =
+        $shopifyProduct['variants'] ?? [];
+
+    if (
+        !is_array($variants) ||
+        empty($variants)
+    ) {
+        return [
+            'success' => false,
+            'message' => 'No Shopify variants found.'
+        ];
+    }
+
+    try {
+
+        $db->beginTransaction();
+
+        $updatedCount = 0;
+        $insertedCount = 0;
+        $skippedCount = 0;
+
+        foreach ($variants as $variant) {
+
+            $shopifySku =
+                trim(
+                    (string) (
+                        $variant['sku'] ?? ''
+                    )
+                );
+
+            if ($shopifySku === '') {
+                $skippedCount++;
+                continue;
+            }
+
+            $title =
+                trim(
+                    (string) (
+                        $shopifyProduct['title'] ?? ''
+                    )
+                );
+
+            if ($title === '') {
+                $title = 'Shopify Product';
+            }
+
+            $description =
+                $shopifyProduct['body_html'] ?? null;
+
+            $shopifyHandle =
+                trim(
+                    (string) (
+                        $shopifyProduct['handle'] ?? ''
+                    )
+                );
+
+            $image = null;
+
+            if (
+                !empty($shopifyProduct['image']) &&
+                is_array($shopifyProduct['image'])
+            ) {
+                $image =
+                    $shopifyProduct['image']['src'] ?? null;
+            }
+
+            if (
+                empty($image) &&
+                !empty($shopifyProduct['images']) &&
+                is_array($shopifyProduct['images'])
+            ) {
+                $image =
+                    $shopifyProduct['images'][0]['src'] ?? null;
+            }
+
+            $priceValue =
+                isset($variant['price']) &&
+                is_numeric($variant['price'])
+                ? (float) $variant['price']
+                : 0.00;
+
+            $compareAtPrice =
+                $variant['compare_at_price'] ?? null;
+
+            $originalPriceValue =
+                (
+                    $compareAtPrice !== null &&
+                    $compareAtPrice !== '' &&
+                    is_numeric($compareAtPrice)
+                )
+                ? (float) $compareAtPrice
+                : $priceValue;
+
+            $discount = 0;
+
+            if (
+                $originalPriceValue > 0 &&
+                $originalPriceValue > $priceValue
+            ) {
+                $discount =
+                    round(
+                        (
+                            (
+                                $originalPriceValue -
+                                $priceValue
+                            )
+                            /
+                            $originalPriceValue
+                        ) * 100,
+                        2
+                    );
+            }
+
+            $stock =
+                isset($variant['inventory_quantity']) &&
+                is_numeric($variant['inventory_quantity'])
+                ? (int) $variant['inventory_quantity']
+                : 0;
+
+            $localStatus =
+                strtolower(
+                    $shopifyProduct['status'] ?? ''
+                ) === 'active'
+                ? 1
+                : 0;
+            $skuStmt = $db->prepare("
+                SELECT
+                    id,
+                    slug,
+                    image
+                FROM products
+                WHERE sku = :sku
+                LIMIT 1
+            ");
+
+            $skuStmt->execute([
+                ':sku' => $shopifySku
+            ]);
+
+            $existingProduct =
+                $skuStmt->fetch(PDO::FETCH_ASSOC);
+            if ($existingProduct) {
+
+                $localProductId =
+                    (int) $existingProduct['id'];
+
+                if ($shopifyHandle !== '') {
+
+                    $newSlug =
+                        createUniqueSlug(
+                            $db,
+                            $shopifyHandle,
+                            $localProductId
+                        );
+                } elseif (
+                    !empty($existingProduct['slug'])
+                ) {
+
+                    $newSlug =
+                        $existingProduct['slug'];
+                } else {
+
+                    $newSlug =
+                        createUniqueSlug(
+                            $db,
+                            $title,
+                            $localProductId
+                        );
+                }
+
+                $imageValue =
+                    !empty($image)
+                    ? $image
+                    : $existingProduct['image'];
+
+                $updateStmt = $db->prepare("
+                    UPDATE products
+                    SET
+                        shopify_product_id = :shopify_product_id,
+                        shopify_status = :shopify_status,
+                        shopify_synced_at = NOW(),
+
+                        sku = :sku,
+                        title = :title,
+                        slug = :slug,
+                        description = :description,
+                        image = :image,
+
+                        price = :price,
+                        original_price = :original_price,
+                        discount = :discount,
+                        stock = :stock,
+                        status = :status
+
+                    WHERE id = :id
+                ");
+
+                $updateStmt->execute([
+
+                    ':shopify_product_id' =>
+                    $shopifyProductId,
+
+                    ':shopify_status' =>
+                    $shopifyStatus !== ''
+                        ? $shopifyStatus
+                        : null,
+
+                    ':sku' =>
+                    $shopifySku,
+
+                    ':title' =>
+                    $title,
+
+                    ':slug' =>
+                    $newSlug,
+
+                    ':description' =>
+                    $description,
+
+                    ':image' =>
+                    $imageValue,
+
+                    ':price' =>
+                    $priceValue,
+
+                    ':original_price' =>
+                    $originalPriceValue,
+
+                    ':discount' =>
+                    $discount,
+
+                    ':stock' =>
+                    $stock,
+
+                    ':status' =>
+                    $localStatus,
+
+                    ':id' =>
+                    $localProductId
+                ]);
+
+                $updatedCount++;
+            } else {
+
+                if ($shopifyHandle !== '') {
+
+                    $newSlug =
+                        createUniqueSlug(
+                            $db,
+                            $shopifyHandle
+                        );
+                } else {
+
+                    $newSlug =
+                        createUniqueSlug(
+                            $db,
+                            $title
+                        );
+                }
+
+                $insertStmt = $db->prepare("
+                    INSERT INTO products
+                    (
+                        shopify_product_id,
+                        shopify_status,
+                        shopify_synced_at,
+
+                        sku,
+                        title,
+                        slug,
+                        description,
+                        image,
+
+                        price,
+                        original_price,
+                        discount,
+                        stock,
+
+                        category_id,
+                        brand_id,
+                        vendor_id,
+
+                        status
+                    )
+                    VALUES
+                    (
+                        :shopify_product_id,
+                        :shopify_status,
+                        NOW(),
+
+                        :sku,
+                        :title,
+                        :slug,
+                        :description,
+                        :image,
+
+                        :price,
+                        :original_price,
+                        :discount,
+                        :stock,
+
+                        NULL,
+                        NULL,
+                        NULL,
+
+                        :status
+                    )
+                ");
+
+                $insertStmt->execute([
+
+                    ':shopify_product_id' =>
+                    $shopifyProductId,
+
+                    ':shopify_status' =>
+                    $shopifyStatus !== ''
+                        ? $shopifyStatus
+                        : null,
+
+                    ':sku' =>
+                    $shopifySku,
+
+                    ':title' =>
+                    $title,
+
+                    ':slug' =>
+                    $newSlug,
+
+                    ':description' =>
+                    $description,
+
+                    ':image' =>
+                    $image,
+
+                    ':price' =>
+                    $priceValue,
+
+                    ':original_price' =>
+                    $originalPriceValue,
+
+                    ':discount' =>
+                    $discount,
+
+                    ':stock' =>
+                    $stock,
+
+                    ':status' =>
+                    $localStatus
+                ]);
+
+                $insertedCount++;
+            }
+        }
+
+        $db->commit();
+
+        return [
+            'success' => true,
+            'message' =>
+            "Shopify sync completed. " .
+                $updatedCount .
+                " product(s) updated, " .
+                $insertedCount .
+                " product(s) inserted.",
+            'updated' => $updatedCount,
+            'inserted' => $insertedCount,
+            'skipped' => $skippedCount
+        ];
+    } catch (PDOException $e) {
+
+        if ($db->inTransaction()) {
+            $db->rollBack();
+        }
+
+        return [
+            'success' => false,
+            'message' => 'Shopify synchronization failed.',
+            'error' => $e->getMessage()
+        ];
+    }
+}

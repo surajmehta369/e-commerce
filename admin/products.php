@@ -7,6 +7,7 @@ require_once "../shopify/functions.php";
 $database = new Database();
 $db = $database->connect();
 
+syncShopifyProductsToDatabase();
 $message = "";
 $messageType = "success";
 
@@ -876,7 +877,7 @@ function stockBadge($stock)
                             <tr>
 
                                 <th>#</th>
-
+                                    
                                 <th>Product</th>
 
                                 <th>Vendor</th>
@@ -929,7 +930,7 @@ function stockBadge($stock)
                                             <?php echo (int) $product['id']; ?>
                                         </td>
                                         <td>
-
+   
                                             <div class="d-flex align-items-center gap-3">
 
                                                 <?php if (!empty($product['image'])): ?>
