@@ -1,6 +1,8 @@
 <?php
+
 require_once "auth.php";
 require_once "../connection/dbconnect.php";
+require_once "../shopify/functions.php";
 
 $database = new Database();
 $db = $database->connect();
@@ -13,7 +15,10 @@ if ($productId <= 0) {
     exit;
 }
 $productStmt = $db->prepare("
-    SELECT id, image
+    SELECT
+        id,
+        image,
+        shopify_product_id
     FROM products
     WHERE id = :id
       AND vendor_id = :vendor_id
@@ -32,10 +37,24 @@ if (!$product) {
     exit;
 }
 
+if (!empty($product['shopify_product_id'])) {
+
+    $shopifyResult = deleteShopifyProduct(
+        $product['shopify_product_id']
+    );
+if (empty($shopifyResult['success'])) {
+
+    echo '<pre>';
+    print_r($shopifyResult);
+    echo '</pre>';
+    exit;
+}
+}
+
+
 try {
 
     $db->beginTransaction();
-
     $deleteStmt = $db->prepare("
         DELETE FROM products
         WHERE id = :id
@@ -46,6 +65,7 @@ try {
         ':id' => $productId,
         ':vendor_id' => $vendorId
     ]);
+
     if ($deleteStmt->rowCount() !== 1) {
 
         $db->rollBack();
@@ -66,8 +86,10 @@ try {
             unlink($imagePath);
         }
     }
+
     header("Location: products.php?deleted=1");
     exit;
+
 
 } catch (Exception $e) {
 
@@ -75,6 +97,9 @@ try {
         $db->rollBack();
     }
 
-    header("Location: products.php?delete_error=1");
+    header(
+        "Location: products.php?delete_error=1"
+    );
+
     exit;
 }

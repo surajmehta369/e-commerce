@@ -21,60 +21,6 @@ $productId = (int) $_GET['id'];
 $message = '';
 $messageType = '';
 
-function createUniqueSlug(PDO $pdo, string $title, int $productId = 0): string
-{
-    $slug = strtolower(trim($title));
-
-    $slug = preg_replace('/[^a-z0-9]+/', '-', $slug);
-    $slug = trim($slug, '-');
-
-    if ($slug === '') {
-        $slug = 'product';
-    }
-
-    $baseSlug = $slug;
-    $counter = 1;
-
-    while (true) {
-
-        if ($productId > 0) {
-
-            $stmt = $pdo->prepare("
-                SELECT id
-                FROM products
-                WHERE slug = :slug
-                AND id != :id
-                LIMIT 1
-            ");
-
-            $stmt->execute([
-                ':slug' => $slug,
-                ':id'   => $productId
-            ]);
-
-        } else {
-
-            $stmt = $pdo->prepare("
-                SELECT id
-                FROM products
-                WHERE slug = :slug
-                LIMIT 1
-            ");
-
-            $stmt->execute([
-                ':slug' => $slug
-            ]);
-        }
-
-        if (!$stmt->fetch()) {
-            return $slug;
-        }
-
-        $counter++;
-        $slug = $baseSlug . '-' . $counter;
-    }
-}
-
 $stmt = $pdo->prepare("
     SELECT *
     FROM products
@@ -432,17 +378,29 @@ if ($message === '') {
 
                 $failedParts = [];
 
-                if (!$shopifyProductSuccess) {
-                    $failedParts[] = "product";
-                }
+if (!$shopifyProductSuccess) {
+    $failedParts[] =
+        "product: " .
+        ($shopifyProductResult['message'] ?? 'Unknown error') .
+        " " .
+        json_encode($shopifyProductResult['errors'] ?? []);
+}
 
-                if (!$shopifyVariantSuccess) {
-                    $failedParts[] = "price/SKU";
-                }
+if (!$shopifyVariantSuccess) {
+    $failedParts[] =
+        "price/SKU: " .
+        ($shopifyVariantResult['message'] ?? 'Unknown error') .
+        " " .
+        json_encode($shopifyVariantResult['errors'] ?? []);
+}
 
-                if (!$shopifyInventorySuccess) {
-                    $failedParts[] = "inventory";
-                }
+if (!$shopifyInventorySuccess) {
+    $failedParts[] =
+        "inventory: " .
+        ($shopifyInventoryResult['message'] ?? 'Unknown error') .
+        " " .
+        json_encode($shopifyInventoryResult['errors'] ?? []);
+}
 
                 $message =
                     "Product updated locally, but Shopify sync failed for: "
