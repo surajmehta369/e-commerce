@@ -172,10 +172,6 @@ function shopifyGraphQL(string $query, array $variables = [])
 
         CURLOPT_POSTFIELDS => json_encode([
             'query' => $query,
-
-            // IMPORTANT:
-            // GraphQL variables must be an object.
-            // An empty PHP array would become [] instead of {}.
             'variables' => (object) $variables,
         ]),
 
@@ -504,11 +500,6 @@ GRAPHQL;
             ];
         }
     }
-
-    /*
-     * If no location has active inventory, use the first active
-     * location as a fallback.
-     */
     foreach ($locations as $location) {
 
         if (!empty($location['isActive'])) {
@@ -801,9 +792,6 @@ GRAPHQL;
         $variables
     );
 
-    /*
-     * GraphQL errors.
-     */
     if (!empty($response['errors'])) {
         return [
             'success' => false,
@@ -826,10 +814,6 @@ GRAPHQL;
             'response' => $response
         ];
     }
-
-    /*
-     * Shopify mutation-level errors.
-     */
     $userErrors =
         $result['userErrors'] ?? [];
 
@@ -957,10 +941,6 @@ function createShopifyVendorCollection($vendorId)
             'message' => 'Invalid vendor ID.'
         ];
     }
-
-    /*
-     * Get vendor information
-     */
     $stmt = $db->prepare("
         SELECT
             user_id,
@@ -985,10 +965,6 @@ function createShopifyVendorCollection($vendorId)
         ];
     }
 
-    /*
-     * If collection already exists in database,
-     * reuse it.
-     */
     if (!empty($vendor['shopify_collection_id'])) {
 
         return [
@@ -1001,10 +977,6 @@ function createShopifyVendorCollection($vendorId)
         ];
     }
 
-    /*
-     * Use business name first.
-     * If business name is empty, use store name.
-     */
     $vendorName = trim(
         $vendor['business_name'] ?? ''
     );
@@ -1022,15 +994,8 @@ function createShopifyVendorCollection($vendorId)
                 'Vendor business/store name is empty.'
         ];
     }
-
-    /*
-     * Shopify collection title
-     */
     $collectionTitle = $vendorName;
 
-    /*
-     * Shopify GraphQL mutation
-     */
     $query = <<<'GRAPHQL'
 mutation CreateVendorCollection(
     $collection: CollectionCreateInput!
@@ -1061,10 +1026,6 @@ GRAPHQL;
         $query,
         $variables
     );
-
-    /*
-     * GraphQL-level errors
-     */
     if (!empty($response['errors'])) {
 
         return [
@@ -1091,10 +1052,6 @@ GRAPHQL;
             'response' => $response
         ];
     }
-
-    /*
-     * Shopify user errors
-     */
     $userErrors =
         $result['userErrors'] ?? [];
 
@@ -1108,9 +1065,6 @@ GRAPHQL;
         ];
     }
 
-    /*
-     * Collection
-     */
     $collection =
         $result['collection'] ?? null;
 
@@ -1878,3 +1832,401 @@ function syncShopifyProductsToDatabase()
         ];
     }
 }
+
+function findShopifyProductBySKU(string $sku)
+{
+    $sku = trim($sku);
+
+    if ($sku === '') {
+        return [
+            'success' => false,
+            'found' => false,
+            'message' => 'SKU is required.',
+            'product' => null
+        ];
+    }
+
+    $query = <<<'GRAPHQL'
+query FindProductBySKU($query: String!) {
+    products(first: 10, query: $query) {
+        nodes {
+            id
+            title
+            handle
+            status
+            variants(first: 100) {
+                nodes {
+                    id
+                    sku
+                    price
+                    compareAtPrice
+                    inventoryQuantity
+                    inventoryItem {
+                        id
+                        sku
+                    }
+                }
+            }
+        }
+    }
+}
+GRAPHQL;
+
+    $response = shopifyGraphQL($query, [
+        'query' => 'sku:' . $sku
+    ]);
+
+    if (!empty($response['errors'])) {
+        return [
+            'success' => false,
+            'found' => false,
+            'message' => 'Shopify SKU lookup failed.',
+            'product' => null,
+            'errors' => $response['errors']
+        ];
+    }
+
+    $shopifyData =
+        $response['data']['data'] ?? [];
+
+    $products =
+        $shopifyData['products']['nodes'] ?? [];
+
+    foreach ($products as $product) {
+
+        $variants =
+            $product['variants']['nodes'] ?? [];
+
+        foreach ($variants as $variant) {
+
+            if (
+                trim((string) ($variant['sku'] ?? ''))
+                === $sku
+            ) {
+                return [
+                    'success' => true,
+                    'found' => true,
+                    'message' =>
+                        'Shopify product found by SKU.',
+                    'product' => $product,
+                    'variant' => $variant
+                ];
+            }
+        }
+    }
+
+    return [
+        'success' => true,
+        'found' => false,
+        'message' =>
+            'No Shopify product found with this SKU.',
+        'product' => null,
+        'variant' => null
+    ];
+}
+function syncProductToShopify(array $product)
+{
+    $sku = trim((string) ($product['sku'] ?? ''));
+
+    if ($sku === '') {
+        return [
+            'success' => false,
+            'message' => 'SKU is required.',
+            'action' => null,
+            'data' => null
+        ];
+    }
+
+    $title = trim((string) ($product['title'] ?? ''));
+
+    if ($title === '') {
+        return [
+            'success' => false,
+            'message' => 'Product title is required.',
+            'action' => null,
+            'data' => null
+        ];
+    }
+
+    $price =
+        isset($product['price']) &&
+        is_numeric($product['price'])
+            ? (float) $product['price']
+            : 0;
+
+    $originalPrice =
+        isset($product['original_price']) &&
+        $product['original_price'] !== '' &&
+        is_numeric($product['original_price'])
+            ? (float) $product['original_price']
+            : $price;
+
+    $stock =
+        isset($product['stock']) &&
+        is_numeric($product['stock'])
+            ? (int) $product['stock']
+            : 0;
+
+    $status =
+        !empty($product['status'])
+            ? 1
+            : 0;
+
+    /*
+     * -----------------------------------------
+     * 1. CHECK SKU IN SHOPIFY
+     * -----------------------------------------
+     */
+
+    $existing =
+        findShopifyProductBySKU($sku);
+
+    if (!$existing['success']) {
+        return [
+            'success' => false,
+            'message' =>
+                $existing['message']
+                ?? 'Shopify SKU lookup failed.',
+            'action' => null,
+            'errors' =>
+                $existing['errors'] ?? []
+        ];
+    }
+
+    /*
+     * -----------------------------------------
+     * 2. SKU EXISTS
+     * -----------------------------------------
+     */
+
+    if (!empty($existing['found'])) {
+
+        $shopifyProduct =
+            $existing['product'];
+
+        $shopifyVariant =
+            $existing['variant'];
+
+        $shopifyProductId =
+            $shopifyProduct['id'] ?? null;
+
+        if (!$shopifyProductId) {
+            return [
+                'success' => false,
+                'message' =>
+                    'Shopify product was found but Product ID is missing.',
+                'action' => 'update'
+            ];
+        }
+
+        /*
+         * Update product information
+         */
+
+        $productUpdate =
+            updateShopifyProduct(
+                $shopifyProductId,
+                [
+                    'title' =>
+                        $title,
+
+                    'description' =>
+                        $product['description'] ?? '',
+
+                    'slug' =>
+                        $product['slug'] ?? null,
+
+                    'status' =>
+                        $status
+                ]
+            );
+
+        if (empty($productUpdate['success'])) {
+            return [
+                'success' => false,
+                'message' =>
+                    'Shopify product update failed.',
+                'action' => 'update',
+                'shopify_product_id' =>
+                    $shopifyProductId,
+                'errors' =>
+                    $productUpdate['errors'] ?? []
+            ];
+        }
+
+        /*
+         * Update price + original price + SKU
+         */
+
+        $variantUpdate =
+            updateShopifyProductVariant(
+                $shopifyProductId,
+                $price,
+                $originalPrice,
+                $sku
+            );
+
+        /*
+         * Update inventory
+         */
+
+        $inventoryUpdate =
+            updateShopifyInventory(
+                $shopifyProductId,
+                $stock
+            );
+
+        if (
+            empty($variantUpdate['success']) ||
+            empty($inventoryUpdate['success'])
+        ) {
+            return [
+                'success' => false,
+                'message' =>
+                    'Shopify product updated, but one or more additional sync operations failed.',
+                'action' => 'update',
+                'shopify_product_id' =>
+                    $shopifyProductId,
+                'variant' =>
+                    $variantUpdate,
+                'inventory' =>
+                    $inventoryUpdate
+            ];
+        }
+
+        return [
+            'success' => true,
+            'message' =>
+                'Shopify product found by SKU and updated successfully.',
+            'action' => 'update',
+            'data' => [
+                'shopify_product_id' =>
+                    $shopifyProductId,
+
+                'shopify_variant_id' =>
+                    $shopifyVariant['id'] ?? null,
+
+                'sku' =>
+                    $sku,
+
+                'price' =>
+                    $price,
+
+                'original_price' =>
+                    $originalPrice,
+
+                'stock' =>
+                    $stock
+            ]
+        ];
+    }
+
+    /*
+     * -----------------------------------------
+     * 3. SKU DOES NOT EXIST
+     * -----------------------------------------
+     */
+
+    $createResult =
+        createShopifyProduct([
+            'title' =>
+                $title,
+
+            'description' =>
+                $product['description'] ?? '',
+
+            'slug' =>
+                $product['slug'] ?? null,
+
+            'status' =>
+                $status
+        ]);
+
+    if (empty($createResult['success'])) {
+        return [
+            'success' => false,
+            'message' =>
+                'Unable to create Shopify product.',
+            'action' => 'create',
+            'errors' =>
+                $createResult['errors'] ?? []
+        ];
+    }
+
+    $shopifyProductId =
+        $createResult['data']['id'] ?? null;
+
+    if (!$shopifyProductId) {
+        return [
+            'success' => false,
+            'message' =>
+                'Shopify product was created but Product ID was not returned.',
+            'action' => 'create'
+        ];
+    }
+
+    /*
+     * Update variant:
+     * SKU + price + original price
+     */
+
+    $variantUpdate =
+        updateShopifyProductVariant(
+            $shopifyProductId,
+            $price,
+            $originalPrice,
+            $sku
+        );
+
+    /*
+     * Update inventory
+     */
+
+    $inventoryUpdate =
+        updateShopifyInventory(
+            $shopifyProductId,
+            $stock
+        );
+
+    if (
+        empty($variantUpdate['success']) ||
+        empty($inventoryUpdate['success'])
+    ) {
+        return [
+            'success' => false,
+            'message' =>
+                'Shopify product was created, but variant or inventory sync failed.',
+            'action' => 'create',
+            'shopify_product_id' =>
+                $shopifyProductId,
+            'variant' =>
+                $variantUpdate,
+            'inventory' =>
+                $inventoryUpdate
+        ];
+    }
+
+    return [
+        'success' => true,
+        'message' =>
+            'Shopify product created and fully synchronized successfully.',
+        'action' => 'create',
+        'data' => [
+            'shopify_product_id' =>
+                $shopifyProductId,
+
+            'sku' =>
+                $sku,
+
+            'price' =>
+                $price,
+
+            'original_price' =>
+                $originalPrice,
+
+            'stock' =>
+                $stock
+        ]
+    ];
+}
+

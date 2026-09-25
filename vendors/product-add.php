@@ -98,6 +98,9 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
 
     $description = trim($_POST['description'] ?? '');
 
+    error_log('PRODUCT DESCRIPTION POST: ' . print_r($_POST['description'] ?? null, true));
+error_log('PRODUCT DESCRIPTION VARIABLE: ' . $description);
+
     $price = trim($_POST['price'] ?? '');
 
     $originalPrice = trim($_POST['original_price'] ?? '');
@@ -805,7 +808,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
 
                                 </label>
 
-                            <textarea name="description" id='description' rows="5" class="form-control" placeholder="Describe your product"><?= htmlspecialchars($_POST['description'] ?? $product['description'] ?? '') ?></textarea>
+                            <textarea name="description" rows="5" class="form-control" placeholder="Describe your product"><?= htmlspecialchars($_POST['description'] ?? '') ?></textarea>
 
 
                             </div>
