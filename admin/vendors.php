@@ -358,7 +358,7 @@ function accountBadge($status)
             Admin Profile
         </a>
 
-        <a href="../logout.php">
+        <a href="../outh/logout.php">
             Logout
         </a>
 

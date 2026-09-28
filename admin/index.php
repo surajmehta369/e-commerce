@@ -304,7 +304,7 @@ function orderStatusBadge($status)
                     <div class="border-top border-secondary my-3"></div>
 
                     <a
-                        href="../logout.php"
+                        href="../outh/logout.php"
                         class="nav-link text-danger">
                         Logout
                     </a>

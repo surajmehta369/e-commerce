@@ -352,26 +352,53 @@ function getShopifyProductInventoryInfo($shopifyProductId)
             'data' => null
         ];
     }
+    $locationInfo = getShopifyLocationId();
 
-    $query = <<<'GRAPHQL'
+if (empty($locationInfo['success'])) {
+    return [
+        'success' => false,
+        'message' => $locationInfo['message'] ?? 'Unable to get Shopify location.',
+        'errors' => $locationInfo['errors'] ?? []
+    ];
+}
+
+$targetLocationId = $locationInfo['location_id'];
+
+$query = <<<'GRAPHQL'
 query GetProductInventoryInfo($id: ID!) {
     product(id: $id) {
         id
         title
         status
+
         variants(first: 10) {
             nodes {
                 id
                 sku
-                inventoryQuantity
+
                 inventoryItem {
                     id
+
+                    inventoryLevels(first: 50) {
+                        nodes {
+                            location {
+                                id
+                                name
+                            }
+
+                            quantities(names: ["available"]) {
+                                name
+                                quantity
+                            }
+                        }
+                    }
                 }
             }
         }
     }
 }
 GRAPHQL;
+
 
     $response = shopifyGraphQL($query, [
         'id' => $productGid
@@ -413,6 +440,36 @@ GRAPHQL;
             'response' => $response
         ];
     }
+ $inventoryQuantity = 0;
+
+foreach (
+    ($variant['inventoryItem']['inventoryLevels']['nodes'] ?? [])
+    as $inventoryLevel
+) {
+
+    if (
+        ($inventoryLevel['location']['id'] ?? '')
+        === $targetLocationId
+    ) {
+
+        foreach (
+            ($inventoryLevel['quantities'] ?? [])
+            as $quantity
+        ) {
+
+            if (
+                ($quantity['name'] ?? '') === 'available'
+            ) {
+                $inventoryQuantity =
+                    (int) $quantity['quantity'];
+
+                break;
+            }
+        }
+
+        break;
+    }
+}
 
     return [
         'success' => true,
@@ -434,8 +491,8 @@ GRAPHQL;
             'sku' =>
             $variant['sku'],
 
-            'inventory_quantity' =>
-            (int) $variant['inventoryQuantity'],
+          'inventory_quantity' =>
+            $inventoryQuantity,
 
             'inventory_item_id' =>
             $variant['inventoryItem']['id']
@@ -485,33 +542,34 @@ GRAPHQL;
             'response' => $response
         ];
     }
-    foreach ($locations as $location) {
+foreach ($locations as $location) {
 
-        if (
-            !empty($location['isActive']) &&
-            !empty($location['hasActiveInventory'])
-        ) {
-            return [
-                'success' => true,
-                'message' => 'Shopify active inventory location found.',
-                'location_id' => $location['id'],
-                'location_name' => $location['name'],
-                'data' => $location
-            ];
-        }
+    if (
+        $location['name'] === 'My Custom Location' &&
+        !empty($location['isActive'])
+    ) {
+        return [
+            'success' => true,
+            'message' => 'Shopify target inventory location found.',
+            'location_id' => $location['id'],
+            'location_name' => $location['name'],
+            'data' => $location
+        ];
     }
-    foreach ($locations as $location) {
+}
 
-        if (!empty($location['isActive'])) {
-            return [
-                'success' => true,
-                'message' => 'Shopify active location found.',
-                'location_id' => $location['id'],
-                'location_name' => $location['name'],
-                'data' => $location
-            ];
-        }
-    }
+    // foreach ($locations as $location) {
+
+    //     if (!empty($location['isActive'])) {
+    //         return [
+    //             'success' => true,
+    //             'message' => 'Shopify active location found.',
+    //             'location_id' => $location['id'],
+    //             'location_name' => $location['name'],
+    //             'data' => $location
+    //         ];
+    //     }
+    // }
 
     return [
         'success' => false,
@@ -742,10 +800,12 @@ mutation UpdateProductVariant(
             price
             compareAtPrice
             sku
-            inventoryItem {
+           inventoryItem {
                 id
                 sku
+                tracked
             }
+
         }
         userErrors {
             field
@@ -824,6 +884,29 @@ GRAPHQL;
             'errors' => $userErrors
         ];
     }
+$updatedVariant =
+    $result['productVariants'][0] ?? null;
+
+$inventoryItemId =
+    $updatedVariant['inventoryItem']['id'] ?? null;
+
+if (!empty($inventoryItemId)) {
+
+    $trackingUpdate =
+        enableShopifyInventoryTracking(
+            $inventoryItemId
+        );
+
+    if (empty($trackingUpdate['success'])) {
+        return [
+            'success' => false,
+            'message' =>
+                'Variant updated, but inventory tracking could not be enabled.',
+            'errors' =>
+                $trackingUpdate['errors'] ?? []
+        ];
+    }
+}
 
     return [
         'success' => true,
@@ -1924,6 +2007,87 @@ GRAPHQL;
         'variant' => null
     ];
 }
+
+function enableShopifyInventoryTracking($inventoryItemId)
+{
+    $query = <<<'GRAPHQL'
+mutation InventoryItemUpdate(
+    $id: ID!
+    $input: InventoryItemInput!
+) {
+    inventoryItemUpdate(
+        id: $id
+        input: $input
+    ) {
+        inventoryItem {
+            id
+            tracked
+            sku
+        }
+
+        userErrors {
+            field
+            message
+        }
+    }
+}
+GRAPHQL;
+
+    $variables = [
+        'id' => $inventoryItemId,
+
+        'input' => [
+            'tracked' => true
+        ]
+    ];
+
+    $response = shopifyGraphQL(
+        $query,
+        $variables
+    );
+
+    if (!empty($response['errors'])) {
+        return [
+            'success' => false,
+            'message' =>
+                'Shopify inventory tracking update failed.',
+            'errors' =>
+                $response['errors']
+        ];
+    }
+
+    $result =
+        $response['data']['data']['inventoryItemUpdate']
+        ?? null;
+
+    if (!$result) {
+        return [
+            'success' => false,
+            'message' =>
+                'Shopify inventoryItemUpdate response was not returned.',
+            'response' => $response
+        ];
+    }
+
+    if (!empty($result['userErrors'])) {
+        return [
+            'success' => false,
+            'message' =>
+                'Unable to enable Shopify inventory tracking.',
+            'errors' =>
+                $result['userErrors']
+        ];
+    }
+
+    return [
+        'success' => true,
+        'message' =>
+            'Shopify inventory tracking enabled.',
+        'data' =>
+            $result['inventoryItem'] ?? null
+    ];
+}
+
 function syncProductToShopify(array $product)
 {
     $sku = trim((string) ($product['sku'] ?? ''));
@@ -1971,13 +2135,6 @@ function syncProductToShopify(array $product)
         !empty($product['status'])
             ? 1
             : 0;
-
-    /*
-     * -----------------------------------------
-     * 1. CHECK SKU IN SHOPIFY
-     * -----------------------------------------
-     */
-
     $existing =
         findShopifyProductBySKU($sku);
 
@@ -1992,13 +2149,6 @@ function syncProductToShopify(array $product)
                 $existing['errors'] ?? []
         ];
     }
-
-    /*
-     * -----------------------------------------
-     * 2. SKU EXISTS
-     * -----------------------------------------
-     */
-
     if (!empty($existing['found'])) {
 
         $shopifyProduct =
@@ -2018,10 +2168,6 @@ function syncProductToShopify(array $product)
                 'action' => 'update'
             ];
         }
-
-        /*
-         * Update product information
-         */
 
         $productUpdate =
             updateShopifyProduct(
@@ -2054,10 +2200,6 @@ function syncProductToShopify(array $product)
             ];
         }
 
-        /*
-         * Update price + original price + SKU
-         */
-
         $variantUpdate =
             updateShopifyProductVariant(
                 $shopifyProductId,
@@ -2065,10 +2207,6 @@ function syncProductToShopify(array $product)
                 $originalPrice,
                 $sku
             );
-
-        /*
-         * Update inventory
-         */
 
         $inventoryUpdate =
             updateShopifyInventory(
@@ -2121,12 +2259,6 @@ function syncProductToShopify(array $product)
         ];
     }
 
-    /*
-     * -----------------------------------------
-     * 3. SKU DOES NOT EXIST
-     * -----------------------------------------
-     */
-
     $createResult =
         createShopifyProduct([
             'title' =>
@@ -2165,11 +2297,6 @@ function syncProductToShopify(array $product)
         ];
     }
 
-    /*
-     * Update variant:
-     * SKU + price + original price
-     */
-
     $variantUpdate =
         updateShopifyProductVariant(
             $shopifyProductId,
@@ -2177,10 +2304,6 @@ function syncProductToShopify(array $product)
             $originalPrice,
             $sku
         );
-
-    /*
-     * Update inventory
-     */
 
     $inventoryUpdate =
         updateShopifyInventory(

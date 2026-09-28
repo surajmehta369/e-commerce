@@ -3,6 +3,8 @@
 require_once "auth.php";
 require_once "../connection/dbconnect.php";
 require_once "../shopify/functions.php";
+require_once "../zoho/zoho_functions.php";
+
 
 $database = new Database();
 $pdo = $database->connect();
@@ -378,29 +380,29 @@ if ($message === '') {
 
                 $failedParts = [];
 
-if (!$shopifyProductSuccess) {
-    $failedParts[] =
-        "product: " .
-        ($shopifyProductResult['message'] ?? 'Unknown error') .
-        " " .
-        json_encode($shopifyProductResult['errors'] ?? []);
-}
+                if (!$shopifyProductSuccess) {
+                    $failedParts[] =
+                        "product: " .
+                        ($shopifyProductResult['message'] ?? 'Unknown error') .
+                        " " .
+                        json_encode($shopifyProductResult['errors'] ?? []);
+                }
 
-if (!$shopifyVariantSuccess) {
-    $failedParts[] =
-        "price/SKU: " .
-        ($shopifyVariantResult['message'] ?? 'Unknown error') .
-        " " .
-        json_encode($shopifyVariantResult['errors'] ?? []);
-}
+                if (!$shopifyVariantSuccess) {
+                    $failedParts[] =
+                        "price/SKU: " .
+                        ($shopifyVariantResult['message'] ?? 'Unknown error') .
+                        " " .
+                        json_encode($shopifyVariantResult['errors'] ?? []);
+                }
 
-if (!$shopifyInventorySuccess) {
-    $failedParts[] =
-        "inventory: " .
-        ($shopifyInventoryResult['message'] ?? 'Unknown error') .
-        " " .
-        json_encode($shopifyInventoryResult['errors'] ?? []);
-}
+                if (!$shopifyInventorySuccess) {
+                    $failedParts[] =
+                        "inventory: " .
+                        ($shopifyInventoryResult['message'] ?? 'Unknown error') .
+                        " " .
+                        json_encode($shopifyInventoryResult['errors'] ?? []);
+                }
 
                 $message =
                     "Product updated locally, but Shopify sync failed for: "
@@ -417,7 +419,62 @@ if (!$shopifyInventorySuccess) {
 
             $messageType = "warning";
         }
+    $zohoResult = syncProductToZoho([
+            'name' =>
+                $title,
 
+            'sku' =>
+                $sku,
+
+            'description' =>
+                $description,
+
+            'rate' =>
+                (float) $price,
+
+            'purchase_rate' =>
+                $originalPrice !== ''
+                    ? (float) $originalPrice
+                    : (float) $price,
+
+            'stock' =>
+                (int) $stock
+        ]);
+
+
+        $zohoSuccess =
+            !empty($zohoResult['success']);
+
+
+        if ($zohoSuccess) {
+
+            if ($messageType === 'success') {
+
+                $message .=
+                    " Zoho Inventory item synced successfully.";
+
+            } else {
+
+                $message .=
+                    " Zoho Inventory item synced successfully.";
+
+            }
+
+        } else {
+
+            $zohoMessage =
+                $zohoResult['message']
+                ?? 'Unknown Zoho synchronization error.';
+
+
+            $message .=
+                " Zoho Inventory sync failed: " .
+                $zohoMessage;
+
+            if ($messageType === 'success') {
+                $messageType = 'warning';
+            }
+        }
 
     } catch (Exception $e) {
 
@@ -570,7 +627,7 @@ if (!$shopifyInventorySuccess) {
                 Admin Profile
             </a>
 
-            <a href="../logout.php">
+            <a href="../outh/logout.php">
                 <i class="bi bi-box-arrow-right me-2"></i>
                 Logout
             </a>

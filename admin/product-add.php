@@ -3,6 +3,7 @@
 require_once "auth.php";
 require_once "../connection/dbconnect.php";
 require_once "../shopify/functions.php";
+require_once "../zoho/zoho_functions.php";
 
 $database = new Database();
 $db = $database->connect();
@@ -533,7 +534,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
                                     "warning";
                             }
                         }
-                    } else {
+                                       } else {
 
                         $message =
                             "Product created locally, but Shopify product creation failed.";
@@ -541,6 +542,66 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
                         $messageType =
                             "warning";
                     }
+
+                    $zohoResult = syncProductToZoho([
+                        'name' =>
+                            $title,
+
+                        'sku' =>
+                            $sku,
+
+                        'description' =>
+                            $description,
+
+                        'rate' =>
+                            $priceValue,
+
+                        'purchase_rate' =>
+                            $originalPriceValue,
+                         
+                            'stock' =>
+                                (int) $stock   
+                    ]);
+
+
+                    if (!empty($zohoResult['success'])) {
+
+                        if ($messageType === "success") {
+
+                            $message .=
+                                " Zoho Inventory item synced successfully.";
+
+                        } elseif ($messageType === "warning") {
+
+                            $message .=
+                                " Zoho Inventory item synced successfully.";
+
+                        }
+
+                    } else {
+
+                        $zohoError =
+                            $zohoResult['message']
+                            ?? 'Unknown Zoho synchronization error.';
+
+
+                        if ($message !== '') {
+
+                            $message .=
+                                " Zoho Inventory sync failed: " .
+                                $zohoError;
+
+                        } else {
+
+                            $message =
+                                "Product created successfully, but Zoho Inventory sync failed: " .
+                                $zohoError;
+
+                        }
+
+                        $messageType = "warning";
+                    }
+
 
                     $sku = "";
                     $title = "";
@@ -754,7 +815,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
                     </a>
 
                     <a
-                        href="../logout.php"
+                        href="../outh/logout.php"
                         class="nav-link text-danger mt-3">
                         <i class="bi bi-box-arrow-right me-2"></i>
                         Logout
