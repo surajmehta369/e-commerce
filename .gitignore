@@ -1,6 +1,8 @@
 /assets/uploads
 /config
 /vendor
-shopify/access.json
+shopify/access_old.json
 shopify/config.php
 shopify/shopify_keys.php
+zoho/zoho_keys.php
+zoho/RefreshAccess.json

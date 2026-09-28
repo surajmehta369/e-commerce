@@ -29,7 +29,7 @@ $productStmt = $db->prepare("
         category_id,
         brand_id,
         status,
-        vendor_id
+        vendor_id,
         shopify_product_id,
         shopify_status
     FROM products
@@ -398,22 +398,24 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
             $product = $productStmt->fetch(PDO::FETCH_ASSOC);
 
             $success = "Product updated successfully.";
-        } catch (Exception $e) {
+       } catch (Exception $e) {
 
-            if ($db->inTransaction()) {
-                $db->rollBack();
-            }
+    if ($db->inTransaction()) {
+        $db->rollBack();
+    }
 
-            if (
-                $uploadedNewImage &&
-                $uploadedFilePath &&
-                file_exists($uploadedFilePath)
-            ) {
-                unlink($uploadedFilePath);
-            }
+    if (
+        $uploadedNewImage &&
+        $uploadedFilePath &&
+        file_exists($uploadedFilePath)
+    ) {
+        unlink($uploadedFilePath);
+    }
 
-            $errors[] = "Failed to update product. Please try again.";
-        }
+    $errors[] =
+        "Failed to update product: " .
+        $e->getMessage();
+}
     }
 }
 
