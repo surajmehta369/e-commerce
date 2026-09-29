@@ -3,6 +3,7 @@
 require_once "auth.php";
 require_once "../connection/dbconnect.php";
 require_once "../shopify/functions.php";
+require_once "../zoho/zoho_functions.php";
 
 $database = new Database();
 $db = $database->connect();
