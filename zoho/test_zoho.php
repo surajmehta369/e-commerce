@@ -4,16 +4,16 @@ require_once __DIR__ . '/zoho_functions.php';
 
 $product = [
     'name' =>
-        'API Sync New Product',
+        'API Sync Testing',
 
     'sku' =>
-        'API-SYNC-NEW-001',
+        'API-SYNC-NEW-002',
 
     'description' =>
-        'Testing automatic creation.',
+        'Testing product creation.',
 
     'rate' =>
-        300
+        3000
 ];
 
 

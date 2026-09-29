@@ -177,11 +177,6 @@ function zohoInventoryApi(
 
     $accessToken =
         getZohoAccessToken();
-
-
-    /*
-     * Build URL.
-     */
     $url =
         rtrim(
             ZOHO_API_DOMAIN,
@@ -334,6 +329,181 @@ function zohoInventoryApi(
             []
     ];
 }
+
+function getZohoPrimaryLocation()
+{
+    $response = zohoInventoryApi(
+        'GET',
+        'locations',
+        [
+            'organization_id' =>
+                ZOHO_ORGANIZATION_ID
+        ]
+    );
+
+    if (empty($response['success'])) {
+
+        $zohoMessage =
+            $response['response']['message']
+            ?? '';
+
+        $zohoCode =
+            $response['response']['code']
+            ?? '';
+
+        $message =
+            'Unable to retrieve Zoho Inventory locations.';
+
+        if ($zohoMessage !== '') {
+
+            $message .=
+                ' Zoho: ' .
+                $zohoMessage;
+        }
+
+        if ($zohoCode !== '') {
+
+            $message .=
+                ' (Code: ' .
+                $zohoCode .
+                ')';
+        }
+
+        return [
+            'success' => false,
+
+            'location_id' => null,
+
+            'message' => $message,
+
+            'response' => $response
+        ];
+    }
+
+    $locations =
+        $response['response']['locations']
+        ?? [];
+
+    if (empty($locations)) {
+
+        return [
+            'success' => false,
+
+            'location_id' => null,
+
+            'message' =>
+                'No Zoho Inventory locations were found.',
+
+            'response' => $response
+        ];
+    }
+
+    /*
+     * First preference:
+     * Primary active location.
+     */
+    foreach ($locations as $location) {
+
+        $locationId =
+            trim(
+                (string) (
+                    $location['location_id']
+                    ?? ''
+                )
+            );
+
+        $isPrimary =
+            !empty($location['is_primary']);
+
+        $status =
+            strtolower(
+                trim(
+                    (string) (
+                        $location['status']
+                        ?? ''
+                    )
+                )
+            );
+
+        if (
+            $locationId !== '' &&
+            $isPrimary &&
+            (
+                $status === '' ||
+                $status === 'active'
+            )
+        ) {
+
+            return [
+                'success' => true,
+
+                'location_id' =>
+                    $locationId,
+
+                'location' =>
+                    $location
+            ];
+        }
+    }
+
+    /*
+     * Fallback:
+     * First active location.
+     */
+    foreach ($locations as $location) {
+
+        $locationId =
+            trim(
+                (string) (
+                    $location['location_id']
+                    ?? ''
+                )
+            );
+
+        $status =
+            strtolower(
+                trim(
+                    (string) (
+                        $location['status']
+                        ?? ''
+                    )
+                )
+            );
+
+        if (
+            $locationId !== '' &&
+            (
+                $status === '' ||
+                $status === 'active'
+            )
+        ) {
+
+            return [
+                'success' => true,
+
+                'location_id' =>
+                    $locationId,
+
+                'location' =>
+                    $location
+            ];
+        }
+    }
+
+    return [
+        'success' => false,
+
+        'location_id' => null,
+
+        'message' =>
+            'No active Zoho Inventory location was found.',
+
+        'response' =>
+            $response
+    ];
+}
+
+
 function findZohoItemBySKU(string $sku)
 {
     $sku = trim($sku);
@@ -445,6 +615,57 @@ function createZohoItem(array $product)
         $itemData['purchase_rate'] =
             (float) $product['purchase_rate'];
     }
+
+if (isset($product['stock'])) {
+
+    $stock =
+        (float) $product['stock'];
+
+    if ($stock < 0) {
+        $stock = 0;
+    }
+
+    $locationResult =
+        getZohoPrimaryLocation();
+
+    if (empty($locationResult['success'])) {
+
+        return [
+            'success' => false,
+
+            'message' =>
+                $locationResult['message']
+                ?? 'Unable to determine Zoho Inventory location.',
+
+            'item' => null,
+
+            'response' =>
+                $locationResult
+        ];
+    }
+
+    $locationId =
+        $locationResult['location_id'];
+
+    $initialStockRate =
+        isset($product['purchase_rate']) &&
+        (float) $product['purchase_rate'] > 0
+            ? (float) $product['purchase_rate']
+            : (float) ($product['rate'] ?? 0);
+
+    $itemData['locations'] = [
+        [
+            'location_id' =>
+                $locationId,
+
+            'initial_stock' =>
+                $stock,
+
+            'initial_stock_rate' =>
+                $initialStockRate
+        ]
+    ];
+}
 
     $response = zohoInventoryApi(
         'POST',
