@@ -1,6 +1,7 @@
 <?php
 
 require_once __DIR__ . '/config.php';
+require_once "../zoho/zoho_functions.php";
 
 
 $database = new Database();
@@ -1555,6 +1556,8 @@ function syncShopifyProductsToDatabase()
         $insertedCount = 0;
         $skippedCount = 0;
 
+        $zohoProducts = [];
+
         foreach ($variants as $variant) {
 
             $shopifySku =
@@ -1776,6 +1779,17 @@ function syncShopifyProductsToDatabase()
                 ]);
 
                 $updatedCount++;
+                 
+                $zohoProducts[] = [
+                'name' => $title,
+                'sku' => $shopifySku,
+                'description' => $description,
+                'rate' => $priceValue,
+                'purchase_rate' => $originalPriceValue,
+                'stock' => $stock
+            ];
+
+
             } else {
 
                 if ($shopifyHandle !== '') {
@@ -1885,23 +1899,71 @@ function syncShopifyProductsToDatabase()
                 ]);
 
                 $insertedCount++;
+
+                $zohoProducts[] = [
+                'name' => $title,
+                'sku' => $shopifySku,
+                'description' => $description,
+                'rate' => $priceValue,
+                'purchase_rate' => $originalPriceValue,
+                'stock' => $stock
+            ];
+
             }
         }
 
-        $db->commit();
+       $db->commit();
 
-        return [
-            'success' => true,
+$zohoSuccess = 0;
+$zohoFailed = 0;
+$zohoErrors = [];
+
+foreach ($zohoProducts as $zohoProduct) {
+
+    $zohoResult =
+        syncProductToZoho($zohoProduct);
+
+    if (!empty($zohoResult['success'])) {
+
+        $zohoSuccess++;
+
+    } else {
+
+        $zohoFailed++;
+
+        $zohoErrors[] = [
+            'sku' => $zohoProduct['sku'],
             'message' =>
-            "Shopify sync completed. " .
-                $updatedCount .
-                " product(s) updated, " .
-                $insertedCount .
-                " product(s) inserted.",
-            'updated' => $updatedCount,
-            'inserted' => $insertedCount,
-            'skipped' => $skippedCount
+                $zohoResult['message']
+                ?? 'Unknown Zoho synchronization error.'
         ];
+    }
+}
+
+return [
+    'success' => true,
+
+    'message' =>
+        "Shopify sync completed. " .
+        $updatedCount .
+        " product(s) updated, " .
+        $insertedCount .
+        " product(s) inserted. " .
+        "Zoho: " .
+        $zohoSuccess .
+        " synced, " .
+        $zohoFailed .
+        " failed.",
+
+    'updated' => $updatedCount,
+    'inserted' => $insertedCount,
+    'skipped' => $skippedCount,
+
+    'zoho_synced' => $zohoSuccess,
+    'zoho_failed' => $zohoFailed,
+    'zoho_errors' => $zohoErrors
+];
+
     } catch (PDOException $e) {
 
         if ($db->inTransaction()) {

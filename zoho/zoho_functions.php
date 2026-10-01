@@ -596,10 +596,16 @@ function createZohoItem(array $product)
             'item' => $existing['item']
         ];
     }
-    $itemData = [
-        'name' => $name,
-        'sku' => $sku
-    ];
+$itemData = [
+    'name' => $name,
+    'sku' => $sku,
+    'item_type' => 'inventory',
+    'product_type' => 'goods',
+    'can_be_sold' => true,
+    'can_be_purchased' => true,
+    'track_inventory' => true
+];
+
 
     if (isset($product['description'])) {
         $itemData['description'] =
@@ -705,6 +711,241 @@ if (isset($product['stock'])) {
         'item' => $item
     ];
 }
+
+function adjustZohoItemStock(
+    string $itemId,
+    string $itemName,
+    float $newStock
+) {
+    $itemId = trim($itemId);
+    $itemName = trim($itemName);
+
+    if ($itemId === '') {
+        return [
+            'success' => false,
+            'message' => 'Zoho item ID is required.',
+            'response' => null
+        ];
+    }
+
+    if ($itemName === '') {
+        $itemName = 'Product';
+    }
+
+    if ($newStock < 0) {
+        $newStock = 0;
+    }
+
+    /*
+     * Get current Zoho stock.
+     */
+    $itemResponse = zohoInventoryApi(
+        'GET',
+        'items/' . rawurlencode($itemId),
+        [
+            'organization_id' =>
+                ZOHO_ORGANIZATION_ID
+        ]
+    );
+
+    if (empty($itemResponse['success'])) {
+
+        return [
+            'success' => false,
+
+            'message' =>
+                'Unable to retrieve current Zoho item stock.',
+
+            'response' =>
+                $itemResponse
+        ];
+    }
+
+    $zohoItem =
+        $itemResponse['response']['item']
+        ?? null;
+
+    if (!$zohoItem) {
+
+        return [
+            'success' => false,
+
+            'message' =>
+                'Zoho item details were not returned.',
+
+            'response' =>
+                $itemResponse
+        ];
+    }
+
+    $currentStock =
+        isset($zohoItem['stock_on_hand'])
+            ? (float) $zohoItem['stock_on_hand']
+            : 0;
+
+    /*
+     * Calculate the required adjustment.
+     *
+     * Example:
+     *
+     * Zoho = 10
+     * Website = 15
+     *
+     * Difference = +5
+     *
+     * Zoho = 15
+     * Website = 7
+     *
+     * Difference = -8
+     */
+    $quantityAdjusted =
+        $newStock - $currentStock;
+
+    /*
+     * Nothing to change.
+     */
+    if (abs($quantityAdjusted) < 0.000001) {
+
+        return [
+            'success' => true,
+
+            'message' =>
+                'Zoho stock is already up to date.',
+
+            'current_stock' =>
+                $currentStock,
+
+            'new_stock' =>
+                $newStock,
+
+            'adjustment' =>
+                0,
+
+            'response' => null
+        ];
+    }
+
+    /*
+     * Get the primary Zoho location.
+     */
+    $locationResult =
+        getZohoPrimaryLocation();
+
+    if (empty($locationResult['success'])) {
+
+        return [
+            'success' => false,
+
+            'message' =>
+                $locationResult['message']
+                ?? 'Unable to determine Zoho Inventory location.',
+
+            'response' =>
+                $locationResult
+        ];
+    }
+
+    $locationId =
+        $locationResult['location_id'];
+
+    /*
+     * Zoho Inventory Adjustment.
+     *
+     * Positive value:
+     * increase stock.
+     *
+     * Negative value:
+     * decrease stock.
+     */
+    $adjustmentData = [
+        'date' =>
+            date('Y-m-d'),
+
+        'reason' =>
+            'Stock synchronization',
+
+        'description' =>
+            'Stock synchronized from website product.',
+
+        'reference_number' =>
+            'WEB-' . $itemId . '-' . time(),
+
+        'adjustment_type' =>
+            'quantity',
+
+        'location_id' =>
+            $locationId,
+
+        'line_items' => [
+            [
+                'item_id' =>
+                    $itemId,
+
+                'name' =>
+                    $itemName,
+
+                'quantity_adjusted' =>
+                    $quantityAdjusted,
+
+                'location_id' =>
+                    $locationId
+            ]
+        ]
+    ];
+
+    $response =
+        zohoInventoryApi(
+            'POST',
+            'inventoryadjustments',
+            [
+                'organization_id' =>
+                    ZOHO_ORGANIZATION_ID
+            ],
+            $adjustmentData
+        );
+
+    if (empty($response['success'])) {
+
+        return [
+            'success' => false,
+
+            'message' =>
+                'Zoho inventory adjustment failed.',
+
+            'current_stock' =>
+                $currentStock,
+
+            'new_stock' =>
+                $newStock,
+
+            'adjustment' =>
+                $quantityAdjusted,
+
+            'response' =>
+                $response
+        ];
+    }
+
+    return [
+        'success' => true,
+
+        'message' =>
+            'Zoho stock adjusted successfully.',
+
+        'current_stock' =>
+            $currentStock,
+
+        'new_stock' =>
+            $newStock,
+
+        'adjustment' =>
+            $quantityAdjusted,
+
+        'response' =>
+            $response
+    ];
+}
+
 
 function updateZohoItem(string $itemId, array $product)
 {
@@ -836,29 +1077,95 @@ function syncProductToZoho(array $product)
             ];
         }
 
-        $result =
-            updateZohoItem(
-                $itemId,
-                $product
-            );
+$result =
+    updateZohoItem(
+        $itemId,
+        $product
+    );
+
+if (empty($result['success'])) {
+
+    return [
+        'success' => false,
+
+        'action' => 'update',
+
+        'message' =>
+            $result['message'] ??
+            'Zoho item update failed.',
+
+        'item' =>
+            $result['item'] ?? null,
+
+        'response' =>
+            $result
+    ];
+}
+
+/*
+ * Sync Stock on Hand separately.
+ */
+if (isset($product['stock'])) {
+
+    $stockResult =
+        adjustZohoItemStock(
+            $itemId,
+
+            $product['name']
+                ?? $existing['item']['name']
+                ?? 'Product',
+
+            (float) $product['stock']
+        );
+
+    if (empty($stockResult['success'])) {
 
         return [
-            'success' =>
-                !empty($result['success']),
+            'success' => false,
 
-            'action' =>
-                'update',
+            'action' => 'update',
 
             'message' =>
-                $result['message'] ??
-                'Zoho item update completed.',
+                'Zoho item details updated, but stock synchronization failed: ' .
+                (
+                    $stockResult['message']
+                    ?? 'Unknown stock synchronization error.'
+                ),
 
             'item' =>
                 $result['item'] ?? null,
 
-            'response' =>
-                $result
+            'response' => [
+                'item_update' =>
+                    $result,
+
+                'stock_update' =>
+                    $stockResult
+            ]
         ];
+    }
+}
+
+return [
+    'success' => true,
+
+    'action' => 'update',
+
+    'message' =>
+        'Zoho item and stock updated successfully.',
+
+    'item' =>
+        $result['item'] ?? null,
+
+    'response' => [
+        'item_update' =>
+            $result,
+
+        'stock_update' =>
+            $stockResult ?? null
+    ]
+];
+
     }
     $result =
         createZohoItem($product);
