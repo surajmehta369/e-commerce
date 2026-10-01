@@ -696,13 +696,14 @@ function orderStatusBadge($status)
 
                                         <?php else: ?>
 
-                                            <?php foreach ($recentOrders as $order): ?>
+                                                        <?php foreach ($recentOrders as $index => $order): ?>
 
                                                 <tr>
 
                                                     <td class="ps-3 fw-semibold">
-                                                        #<?= (int) $order['id']; ?>
+                                                        <?= $index + 1; ?>
                                                     </td>
+
 
                                                     <td>
                                                         <?= htmlspecialchars(

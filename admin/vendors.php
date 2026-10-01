@@ -546,14 +546,13 @@ function accountBadge($status)
                                 </tr>
 
                             <?php else: ?>
+                                    <?php foreach ($vendors as $index => $vendor): ?>
 
-                                <?php foreach ($vendors as $vendor): ?>
+                                        <tr>
 
-                                    <tr>
-
-                                        <td>
-                                            <?php echo (int) $vendor['id']; ?>
-                                        </td>
+                                            <td>
+                                                <?php echo $index + 1; ?>
+                                            </td>
 
 
                                         <td>

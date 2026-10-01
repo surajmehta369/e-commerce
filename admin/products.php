@@ -922,14 +922,14 @@ function stockBadge($stock)
 
                             <?php else: ?>
 
+                                    <?php foreach ($products as $index => $product): ?>
 
-                                <?php foreach ($products as $product): ?>
+                                        <tr>
 
-                                    <tr>
+                                            <td>
+                                                <?php echo $index + 1; ?>
+                                            </td>
 
-                                        <td>
-                                            <?php echo (int) $product['id']; ?>
-                                        </td>
                                         <td>
    
                                             <div class="d-flex align-items-center gap-3">

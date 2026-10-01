@@ -3,18 +3,24 @@
 if (session_status() === PHP_SESSION_NONE) {
     session_start();
 }
+if (
+    empty($_SESSION['logged_in']) ||
+    $_SESSION['logged_in'] !== true
+) {
 
-if (!empty($_SESSION['logged_in']) && $_SESSION['logged_in'] === true) {
+    $_SESSION['checkout_redirect'] = 'checkout.php';
 
-    if ($_SESSION['user_role'] === 'vendor') {
-        header("Location: vendors/index.php");
-        exit;
-    }
+    header("Location: /e-commerce/outh/login.php?from=checkout");
+    exit;
+}
 
-    if ($_SESSION['user_role'] === 'admin') {
-        header("Location: admin/index.php");
-        exit;
-    }
+if (
+    empty($_SESSION['user_role']) ||
+    $_SESSION['user_role'] !== 'customer'
+) {
 
-    // Customer is allowed to continue.
+    $_SESSION['checkout_redirect'] = 'checkout.php';
+
+    header("Location: /e-commerce/outh/login.php?from=checkout");
+    exit;
 }

@@ -5,17 +5,6 @@ session_start();
 require_once "connection/dbconnect.php";
 require_once "customer-auth.php";
 
-if (
-    !isset($_SESSION['user_id']) ||
-    $_SESSION['logged_in'] !== true
-) {
-
-    $_SESSION['checkout_redirect'] = 'checkout.php';
-
-    header("Location: outh/login.php");
-    exit;
-}
-
 $database = new Database();
 $db = $database->connect();
 

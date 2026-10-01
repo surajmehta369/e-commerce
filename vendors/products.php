@@ -182,13 +182,14 @@ if (isset($_GET['deleted'])): ?>
 
                                     <?php else: ?>
 
-                                        <?php foreach ($products as $product): ?>
+                                   <?php foreach ($products as $index => $product): ?>
 
                                             <tr>
 
                                                 <td>
-                                                    <?= (int) $product['id'] ?>
+                                                    <?php echo $index + 1; ?>
                                                 </td>
+
 
                                                 <td>
                                                     <?= htmlspecialchars($product['sku'] ?? '-') ?>

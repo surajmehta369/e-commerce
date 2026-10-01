@@ -531,25 +531,26 @@ function customerStatusBadge($status)
                     <?php else: ?>
 
 
-                        <?php foreach ($customers as $customer): ?>
+                                <?php foreach ($customers as $index => $customer): ?>
 
-                            <?php
+                                    <?php
 
-                            $initial = strtoupper(
-                                substr(
-                                    trim($customer['name']),
-                                    0,
-                                    1
-                                )
-                            );
+                                    $initial = strtoupper(
+                                        substr(
+                                            trim($customer['name']),
+                                            0,
+                                            1
+                                        )
+                                    );
 
-                            ?>
+                                    ?>
 
-                            <tr>
+                                    <tr>
 
-                                <td>
-                                    <?php echo (int) $customer['id']; ?>
-                                </td>
+                                        <td>
+                                            <?php echo $index + 1; ?>
+                                        </td>
+
                                 <td>
 
                                     <div class="d-flex align-items-center gap-3">

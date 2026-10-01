@@ -3,7 +3,12 @@ if (session_status() === PHP_SESSION_NONE) {
   session_start();
 }
 
-$isLoggedIn = isset($_SESSION['user_id']);
+$isLoggedIn =
+    !empty($_SESSION['logged_in']) &&
+    $_SESSION['logged_in'] === true &&
+    !empty($_SESSION['user_role']) &&
+    $_SESSION['user_role'] === 'customer';
+
 ?>
 
 <!doctype html>

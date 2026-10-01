@@ -2,23 +2,7 @@
 
 session_start();
 
-if (
-    isset($_SESSION['logged_in']) &&
-    $_SESSION['logged_in'] === true
-) {
 
-    if ($_SESSION['user_role'] === 'vendor') {
-
-        header("Location: vendors/index.php");
-        exit;
-    }
-
-    if ($_SESSION['user_role'] === 'admin') {
-
-        header("Location: admin/index.php");
-        exit;
-    }
-}
 require_once "../connection/dbconnect.php";
 
 $database = new Database();
@@ -26,6 +10,41 @@ $db = $database->connect();
 
 $message = "";
 $messageType = "";
+
+if (
+    isset($_SESSION['logged_in']) &&
+    $_SESSION['logged_in'] === true &&
+    empty($_GET['from'])
+) {
+
+    if (
+        isset($_SESSION['user_role']) &&
+        $_SESSION['user_role'] === 'vendor'
+    ) {
+
+        header("Location: /e-commerce/vendors/index.php");
+        exit;
+    }
+
+    if (
+        isset($_SESSION['user_role']) &&
+        $_SESSION['user_role'] === 'admin'
+    ) {
+
+        header("Location: /e-commerce/admin/index.php");
+        exit;
+    }
+
+    if (
+        isset($_SESSION['user_role']) &&
+        $_SESSION['user_role'] === 'customer'
+    ) {
+
+        header("Location: /e-commerce/index.php");
+        exit;
+    }
+}
+
 
 if ($_SERVER['REQUEST_METHOD'] === 'POST') {
 
