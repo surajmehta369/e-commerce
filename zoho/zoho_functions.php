@@ -1,6 +1,11 @@
 <?php
 
 require_once __DIR__ . '/zoho_keys.php';
+require_once "../shopify/functions.php";
+
+
+$database = new Database();
+$db = $database->connect();
 
 function generateZohoAccessToken()
 {
@@ -397,11 +402,6 @@ function getZohoPrimaryLocation()
             'response' => $response
         ];
     }
-
-    /*
-     * First preference:
-     * Primary active location.
-     */
     foreach ($locations as $location) {
 
         $locationId =
@@ -445,11 +445,6 @@ function getZohoPrimaryLocation()
             ];
         }
     }
-
-    /*
-     * Fallback:
-     * First active location.
-     */
     foreach ($locations as $location) {
 
         $locationId =
@@ -735,10 +730,6 @@ function adjustZohoItemStock(
     if ($newStock < 0) {
         $newStock = 0;
     }
-
-    /*
-     * Get current Zoho stock.
-     */
     $itemResponse = zohoInventoryApi(
         'GET',
         'items/' . rawurlencode($itemId),
@@ -782,28 +773,9 @@ function adjustZohoItemStock(
         isset($zohoItem['stock_on_hand'])
             ? (float) $zohoItem['stock_on_hand']
             : 0;
-
-    /*
-     * Calculate the required adjustment.
-     *
-     * Example:
-     *
-     * Zoho = 10
-     * Website = 15
-     *
-     * Difference = +5
-     *
-     * Zoho = 15
-     * Website = 7
-     *
-     * Difference = -8
-     */
     $quantityAdjusted =
         $newStock - $currentStock;
 
-    /*
-     * Nothing to change.
-     */
     if (abs($quantityAdjusted) < 0.000001) {
 
         return [
@@ -824,10 +796,6 @@ function adjustZohoItemStock(
             'response' => null
         ];
     }
-
-    /*
-     * Get the primary Zoho location.
-     */
     $locationResult =
         getZohoPrimaryLocation();
 
@@ -847,16 +815,6 @@ function adjustZohoItemStock(
 
     $locationId =
         $locationResult['location_id'];
-
-    /*
-     * Zoho Inventory Adjustment.
-     *
-     * Positive value:
-     * increase stock.
-     *
-     * Negative value:
-     * decrease stock.
-     */
     $adjustmentData = [
         'date' =>
             date('Y-m-d'),
@@ -1102,9 +1060,6 @@ if (empty($result['success'])) {
     ];
 }
 
-/*
- * Sync Stock on Hand separately.
- */
 if (isset($product['stock'])) {
 
     $stockResult =
@@ -1186,5 +1141,547 @@ return [
 
         'response' =>
             $result
+    ];
+}
+
+function syncZohoWebhookToDatabase()
+{
+    global $db;
+    $zohoWebhookUrl =
+        "https://baseavangers.topscripts.in/sumit_rana/offline/zoho_latest_webhook.json";
+    $ch = curl_init($zohoWebhookUrl);
+
+    curl_setopt_array($ch, [
+        CURLOPT_RETURNTRANSFER => true,
+        CURLOPT_FOLLOWLOCATION => true,
+        CURLOPT_TIMEOUT => 15,
+        CURLOPT_CONNECTTIMEOUT => 10,
+        CURLOPT_SSL_VERIFYPEER => false,
+        CURLOPT_SSL_VERIFYHOST => false
+    ]);
+
+    $jsonResponse = curl_exec($ch);
+
+    if ($jsonResponse === false) {
+
+        $error = curl_error($ch);
+
+        curl_close($ch);
+
+        return [
+            'success' => false,
+            'message' =>
+                'Unable to fetch Zoho webhook.',
+            'error' => $error
+        ];
+    }
+
+    curl_close($ch);
+    $decodedWebhook =
+        json_decode(
+            $jsonResponse,
+            true
+        );
+
+    if (
+        !is_array($decodedWebhook)
+    ) {
+
+        return [
+            'success' => false,
+            'message' =>
+                'Invalid Zoho webhook JSON.'
+        ];
+    }
+
+    $zohoPayload =
+        $decodedWebhook['decoded_payload']
+        ?? [];
+
+    if (
+        !is_array($zohoPayload) ||
+        empty($zohoPayload['item']) ||
+        !is_array($zohoPayload['item'])
+    ) {
+
+        return [
+            'success' => false,
+            'message' =>
+                'No Zoho item data found in webhook.'
+        ];
+    }
+
+    $zohoItem =
+        $zohoPayload['item'];
+    $sku =
+        trim(
+            (string) (
+                $zohoItem['sku'] ?? ''
+            )
+        );
+
+    if ($sku === '') {
+
+        return [
+            'success' => false,
+            'message' =>
+                'Zoho item SKU is missing.'
+        ];
+    }
+
+    $title =
+        trim(
+            (string) (
+                $zohoItem['name'] ?? ''
+            )
+        );
+
+    if ($title === '') {
+
+        $title = 'Zoho Product';
+    }
+
+    $description =
+        isset($zohoItem['description'])
+            ? trim(
+                (string)
+                $zohoItem['description']
+            )
+            : null;
+
+    if ($description === '') {
+        $description = null;
+    }
+    $price =
+        isset($zohoItem['rate']) &&
+        is_numeric($zohoItem['rate'])
+            ? (float) $zohoItem['rate']
+            : 0.00;
+
+    $originalPrice =
+        isset($zohoItem['purchase_rate']) &&
+        is_numeric($zohoItem['purchase_rate'])
+            ? (float) $zohoItem['purchase_rate']
+            : $price;
+
+    $stock =
+        isset($zohoItem['stock_on_hand']) &&
+        is_numeric($zohoItem['stock_on_hand'])
+            ? (int) $zohoItem['stock_on_hand']
+            : 0;
+
+    $zohoStatus =
+        strtolower(
+            trim(
+                (string) (
+                    $zohoItem['status'] ?? ''
+                )
+            )
+        );
+
+    $localStatus =
+        $zohoStatus === 'active'
+            ? 1
+            : 0;
+
+    $discount = 0;
+
+    if (
+        $originalPrice > 0 &&
+        $originalPrice > $price
+    ) {
+
+        $discount =
+            round(
+                (
+                    (
+                        $originalPrice -
+                        $price
+                    )
+                    /
+                    $originalPrice
+                ) * 100,
+                2
+            );
+    }
+    $skuStmt =
+        $db->prepare("
+            SELECT
+                id,
+                slug,
+                image,
+                shopify_product_id,
+                shopify_status
+            FROM products
+            WHERE sku = :sku
+            LIMIT 1
+        ");
+
+    $skuStmt->execute([
+        ':sku' => $sku
+    ]);
+
+    $existingProduct =
+        $skuStmt->fetch(PDO::FETCH_ASSOC);
+
+    if ($existingProduct) {
+
+        $localProductId =
+            (int) $existingProduct['id'];
+        $slug =
+            $existingProduct['slug'];
+        if (
+            trim(
+                (string) $slug
+            ) === ''
+        ) {
+
+            $slug =
+                createUniqueSlug(
+                    $db,
+                    $title,
+                    $localProductId
+                );
+        }
+
+        $updateStmt =
+            $db->prepare("
+                UPDATE products
+                SET
+                    title = :title,
+                    slug = :slug,
+                    description = :description,
+
+                    price = :price,
+                    original_price = :original_price,
+                    discount = :discount,
+                    stock = :stock,
+
+                    status = :status
+
+                WHERE id = :id
+            ");
+
+        $updateStmt->execute([
+
+            ':title' =>
+                $title,
+
+            ':slug' =>
+                $slug,
+
+            ':description' =>
+                $description,
+
+            ':price' =>
+                $price,
+
+            ':original_price' =>
+                $originalPrice,
+
+            ':discount' =>
+                $discount,
+
+            ':stock' =>
+                $stock,
+
+            ':status' =>
+                $localStatus,
+
+            ':id' =>
+                $localProductId
+        ]);
+
+        return [
+
+            'success' => true,
+
+            'action' => 'update',
+
+            'message' =>
+                'Local product updated from Zoho successfully.',
+
+            'product_id' =>
+                $localProductId,
+
+            'sku' =>
+                $sku
+        ];
+    }
+
+    $slug =
+        createUniqueSlug(
+            $db,
+            $title
+        );
+
+    $insertStmt =
+        $db->prepare("
+            INSERT INTO products
+            (
+                shopify_product_id,
+                shopify_status,
+                shopify_synced_at,
+
+                sku,
+                title,
+                slug,
+                description,
+                image,
+
+                price,
+                original_price,
+                discount,
+                stock,
+
+                category_id,
+                brand_id,
+                vendor_id,
+
+                status
+            )
+            VALUES
+            (
+                NULL,
+                NULL,
+                NULL,
+
+                :sku,
+                :title,
+                :slug,
+                :description,
+                NULL,
+
+                :price,
+                :original_price,
+                :discount,
+                :stock,
+
+                NULL,
+                NULL,
+                NULL,
+
+                :status
+            )
+        ");
+
+    $insertStmt->execute([
+
+        ':sku' =>
+            $sku,
+
+        ':title' =>
+            $title,
+
+        ':slug' =>
+            $slug,
+
+        ':description' =>
+            $description,
+
+        ':price' =>
+            $price,
+
+        ':original_price' =>
+            $originalPrice,
+
+        ':discount' =>
+            $discount,
+
+        ':stock' =>
+            $stock,
+
+        ':status' =>
+            $localStatus
+    ]);
+
+    $newProductId =
+        (int) $db->lastInsertId();
+
+    return [
+
+        'success' => true,
+
+        'action' => 'create',
+
+        'message' =>
+            'Local product created from Zoho successfully.',
+
+        'product_id' =>
+            $newProductId,
+
+        'sku' =>
+            $sku
+    ];
+}
+function syncZohoWebhookItemToShopify()
+{
+    $webhookFile =
+        'https://baseavangers.topscripts.in/sumit_rana/offline/zoho_latest_webhook.json';
+
+    $ch = curl_init($webhookFile);
+
+    curl_setopt_array($ch, [
+        CURLOPT_RETURNTRANSFER => true,
+        CURLOPT_FOLLOWLOCATION => true,
+        CURLOPT_TIMEOUT => 15,
+        CURLOPT_CONNECTTIMEOUT => 10,
+        CURLOPT_SSL_VERIFYPEER => false,
+        CURLOPT_SSL_VERIFYHOST => false
+    ]);
+
+    $jsonResponse = curl_exec($ch);
+
+    if ($jsonResponse === false) {
+
+        $error = curl_error($ch);
+
+        curl_close($ch);
+
+        return [
+            'success' => false,
+            'message' => 'Unable to fetch Zoho webhook.',
+            'error' => $error
+        ];
+    }
+
+    curl_close($ch);
+
+    $webhook = json_decode($jsonResponse, true);
+
+    if (
+        !is_array($webhook) ||
+        empty($webhook['decoded_payload']) ||
+        !is_array($webhook['decoded_payload'])
+    ) {
+        return [
+            'success' => false,
+            'message' => 'Invalid Zoho webhook JSON.'
+        ];
+    }
+
+    $item =
+        $webhook['decoded_payload']['item']
+        ?? null;
+
+    if (
+        !is_array($item) ||
+        empty($item)
+    ) {
+        return [
+            'success' => false,
+            'message' => 'No valid Zoho item webhook data found.'
+        ];
+    }
+
+    $sku =
+        trim(
+            (string) (
+                $item['sku'] ?? ''
+            )
+        );
+
+    if ($sku === '') {
+
+        return [
+            'success' => false,
+            'message' => 'Zoho item SKU is missing.',
+            'item' => $item
+        ];
+    }
+
+    $name =
+        trim(
+            (string) (
+                $item['name'] ?? ''
+            )
+        );
+
+    if ($name === '') {
+        $name = 'Zoho Product';
+    }
+
+    $description =
+        trim(
+            (string) (
+                $item['description'] ?? ''
+            )
+        );
+
+    $rate =
+        isset($item['rate']) &&
+        is_numeric($item['rate'])
+            ? (float) $item['rate']
+            : 0;
+
+    $purchaseRate =
+        isset($item['purchase_rate']) &&
+        is_numeric($item['purchase_rate'])
+            ? (float) $item['purchase_rate']
+            : $rate;
+
+    $stock =
+        isset($item['stock_on_hand']) &&
+        is_numeric($item['stock_on_hand'])
+            ? (int) $item['stock_on_hand']
+            : 0;
+
+    $status =
+        strtolower(
+            trim(
+                (string) (
+                    $item['status'] ?? ''
+                )
+            )
+        ) === 'active'
+            ? 1
+            : 0;
+
+    $shopifyResult =
+        syncProductToShopify([
+            'sku' =>
+                $sku,
+
+            'title' =>
+                $name,
+
+            'description' =>
+                $description,
+
+            'price' =>
+                $rate,
+
+            'original_price' =>
+                $purchaseRate,
+
+            'stock' =>
+                $stock,
+
+            'status' =>
+                $status
+        ]);
+
+    return [
+        'success' =>
+            !empty($shopifyResult['success']),
+
+        'message' =>
+            $shopifyResult['message']
+            ?? 'Zoho item synchronization completed.',
+
+        'sku' =>
+            $sku,
+
+        'zoho_item_id' =>
+            $item['item_id'] ?? null,
+
+        'zoho_stock' =>
+            $stock,
+
+        'zoho_item' =>
+            $item,
+
+        'shopify_result' =>
+            $shopifyResult
     ];
 }
