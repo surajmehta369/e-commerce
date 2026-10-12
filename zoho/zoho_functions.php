@@ -45,9 +45,6 @@ function generateZohoAccessToken()
     if ($response === false) {
 
         $error = curl_error($curl);
-
-        curl_close($curl);
-
         throw new Exception(
             'Zoho token request failed: ' .
             $error
@@ -59,10 +56,6 @@ function generateZohoAccessToken()
             $curl,
             CURLINFO_HTTP_CODE
         );
-
-    curl_close($curl);
-
-
     $data =
         json_decode(
             $response,
@@ -255,9 +248,6 @@ function zohoInventoryApi(
 
         $error =
             curl_error($curl);
-
-        curl_close($curl);
-
         return [
             'http_code' => 0,
 
@@ -281,11 +271,6 @@ function zohoInventoryApi(
             $curl,
             CURLINFO_HTTP_CODE
         );
-
-
-    curl_close($curl);
-
-
     $data =
         json_decode(
             $response,
@@ -1165,9 +1150,6 @@ function syncZohoWebhookToDatabase()
     if ($jsonResponse === false) {
 
         $error = curl_error($ch);
-
-        curl_close($ch);
-
         return [
             'success' => false,
             'message' =>
@@ -1175,8 +1157,6 @@ function syncZohoWebhookToDatabase()
             'error' => $error
         ];
     }
-
-    curl_close($ch);
     $decodedWebhook =
         json_decode(
             $jsonResponse,
@@ -1535,9 +1515,6 @@ function syncZohoWebhookItemToShopify()
     if ($jsonResponse === false) {
 
         $error = curl_error($ch);
-
-        curl_close($ch);
-
         return [
             'success' => false,
             'message' => 'Unable to fetch Zoho webhook.',
@@ -1545,7 +1522,7 @@ function syncZohoWebhookItemToShopify()
         ];
     }
 
-    curl_close($ch);
+
 
     $webhook = json_decode($jsonResponse, true);
 
