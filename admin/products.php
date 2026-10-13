@@ -10,7 +10,7 @@ $db = $database->connect();
 
 syncShopifyProductsToDatabase();
 $message = "";
-$messageType = "success";   
+$messageType = "success";
 
 
 if ($_SERVER['REQUEST_METHOD'] === 'POST') {
@@ -302,6 +302,16 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
     }
 }
 
+$allowedPerPage = [5, 10, 15, 20, 30, 40];
+
+$perPage = (int) ($_GET['per_page'] ?? 10);
+
+if (!in_array($perPage, $allowedPerPage, true)) {
+    $perPage = 10;
+}
+
+$page = max(1, (int) ($_GET['page'] ?? 1));
+
 $search = trim($_GET['search'] ?? '');
 $categoryId = (int) ($_GET['category_id'] ?? 0);
 $brandId = (int) ($_GET['brand_id'] ?? 0);
@@ -371,6 +381,32 @@ $stmt->execute();
 
 $brands = $stmt->fetchAll(PDO::FETCH_ASSOC);
 
+$countSql = "
+    SELECT COUNT(*)
+    FROM products p
+
+    LEFT JOIN users u
+        ON u.id = p.vendor_id
+        AND u.role = 'vendor'
+
+    LEFT JOIN vendor_profiles vp
+        ON vp.user_id = p.vendor_id
+
+    $whereSql
+";
+
+$countStmt = $db->prepare($countSql);
+$countStmt->execute($params);
+
+$totalProducts = (int) $countStmt->fetchColumn();
+
+$totalPages = max(1, (int) ceil($totalProducts / $perPage));
+
+$page = min($page, $totalPages);
+
+$offset = ($page - 1) * $perPage;
+
+
 $sql = "
     SELECT
         p.id,
@@ -415,12 +451,22 @@ $sql = "
     $whereSql
 
     ORDER BY p.created_at DESC
+    LIMIT :limit OFFSET :offset
 ";
 
 $stmt = $db->prepare($sql);
-$stmt->execute($params);
+
+foreach ($params as $key => $value) {
+    $stmt->bindValue($key, $value);
+}
+
+$stmt->bindValue(':limit', $perPage, PDO::PARAM_INT);
+$stmt->bindValue(':offset', $offset, PDO::PARAM_INT);
+
+$stmt->execute();
 
 $products = $stmt->fetchAll(PDO::FETCH_ASSOC);
+
 
 function productStatusBadge($status)
 {
@@ -826,6 +872,20 @@ function stockBadge($stock)
 
 
                         <div class="col-lg-2 col-md-6">
+                            <label class="form-label">Products per page</label>
+
+                            <select name="per_page" class="form-select">
+                                <?php foreach ([5, 10, 15, 20, 30, 40] as $option): ?>
+                                    <option
+                                        value="<?php echo $option; ?>"
+                                        <?php echo $perPage === $option ? 'selected' : ''; ?>>
+                                        <?php echo $option; ?>
+                                    </option>
+                                <?php endforeach; ?>
+                            </select>
+                        </div>
+
+                        <div class="col-lg-2 col-md-6">
 
                             <div class="d-flex gap-2">
 
@@ -863,7 +923,8 @@ function stockBadge($stock)
                     </h5>
 
                     <span class="text-muted">
-                        <?php echo count($products); ?> product(s)
+                        Showing <?php echo count($products); ?>
+                        of <?php echo $totalProducts; ?> products
                     </span>
 
                 </div>
@@ -878,7 +939,7 @@ function stockBadge($stock)
                             <tr>
 
                                 <th>#</th>
-                                    
+
                                 <th>Product</th>
 
                                 <th>Vendor</th>
@@ -922,16 +983,16 @@ function stockBadge($stock)
 
                             <?php else: ?>
 
-                                    <?php foreach ($products as $index => $product): ?>
+                                <?php foreach ($products as $index => $product): ?>
 
-                                        <tr>
-
-                                            <td>
-                                                <?php echo $index + 1; ?>
-                                            </td>
+                                    <tr>
 
                                         <td>
-   
+                                            <?php echo $offset + $index + 1; ?>
+                                        </td>
+
+                                        <td>
+
                                             <div class="d-flex align-items-center gap-3">
 
                                                 <?php if (!empty($product['image'])): ?>
@@ -1515,6 +1576,45 @@ function stockBadge($stock)
                         </tbody>
                     </table>
                 </div>
+
+
+                <?php
+                $queryParams = $_GET;
+                $queryParams['per_page'] = $perPage;
+                ?>
+
+                <div class="d-flex justify-content-between align-items-center flex-wrap gap-3 mt-3">
+
+                    <span class="text-muted">
+                        Page <?php echo $page; ?> of <?php echo $totalPages; ?>
+                    </span>
+
+                    <nav aria-label="Product pagination">
+                        <ul class="pagination mb-0">
+
+                            <?php $queryParams['page'] = max(1, $page - 1); ?>
+
+                            <li class="page-item <?php echo $page <= 1 ? 'disabled' : ''; ?>">
+                                <a class="page-link"
+                                    href="?<?php echo htmlspecialchars(http_build_query($queryParams)); ?>">
+                                    Previous
+                                </a>
+                            </li>
+
+                            <?php $queryParams['page'] = min($totalPages, $page + 1); ?>
+
+                            <li class="page-item <?php echo $page >= $totalPages ? 'disabled' : ''; ?>">
+                                <a class="page-link"
+                                    href="?<?php echo htmlspecialchars(http_build_query($queryParams)); ?>">
+                                    Next
+                                </a>
+                            </li>
+
+                        </ul>
+                    </nav>
+
+                </div>
+
             </div>
         </div>
 
