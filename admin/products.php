@@ -10,7 +10,7 @@ $db = $database->connect();
 
 syncShopifyProductsToDatabase();
 $message = "";
-$messageType = "success";
+$messageType = "success";   
 
 
 if ($_SERVER['REQUEST_METHOD'] === 'POST') {

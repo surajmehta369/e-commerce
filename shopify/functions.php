@@ -183,8 +183,6 @@ function shopifyGraphQL(string $query, array $variables = [])
 
     if ($response === false) {
         $error = curl_error($curl);
-        curl_close($curl);
-
         return [
             'http_code' => 0,
             'data' => [],
@@ -201,8 +199,6 @@ function shopifyGraphQL(string $query, array $variables = [])
             $curl,
             CURLINFO_HTTP_CODE
         );
-
-    curl_close($curl);
 
     $data =
         json_decode(
