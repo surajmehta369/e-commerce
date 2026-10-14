@@ -3,6 +3,7 @@
 require_once "auth.php";
 require_once "../connection/dbconnect.php";
 require_once "../shopify/functions.php";
+require_once "../zoho/zoho_functions.php";
 
 $database = new Database();
 $db = $database->connect();
@@ -395,27 +396,48 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
                 ':vendor_id' => $vendorId
             ]);
 
+
             $product = $productStmt->fetch(PDO::FETCH_ASSOC);
+            $zohoResult = syncProductToZoho([
+                'name' => $title,
+                'sku' => $sku,
+                'description' => $description,
+                'rate' => (float) $price,
+                'purchase_rate' => (float) $originalPrice,
+                'stock' => (int) $stock
+            ]);
 
-            $success = "Product updated successfully.";
-       } catch (Exception $e) {
+            if (!empty($zohoResult['success'])) {
 
-    if ($db->inTransaction()) {
-        $db->rollBack();
-    }
+                $success =
+                    "Product updated successfully in the local database, Shopify and Zoho Inventory.";
+            } else {
 
-    if (
-        $uploadedNewImage &&
-        $uploadedFilePath &&
-        file_exists($uploadedFilePath)
-    ) {
-        unlink($uploadedFilePath);
-    }
+                $zohoError = $zohoResult['message']
+                    ?? 'Unknown Zoho synchronization error.';
 
-    $errors[] =
-        "Failed to update product: " .
-        $e->getMessage();
-}
+                $success =
+                    "Product updated locally and in Shopify, but Zoho synchronization failed: "
+                    . $zohoError;
+            }
+        } catch (Exception $e) {
+
+            if ($db->inTransaction()) {
+                $db->rollBack();
+            }
+
+            if (
+                $uploadedNewImage &&
+                $uploadedFilePath &&
+                file_exists($uploadedFilePath)
+            ) {
+                unlink($uploadedFilePath);
+            }
+
+            $errors[] =
+                "Failed to update product: " .
+                $e->getMessage();
+        }
     }
 }
 

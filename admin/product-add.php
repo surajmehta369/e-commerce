@@ -534,7 +534,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
                                     "warning";
                             }
                         }
-                                       } else {
+                    } else {
 
                         $message =
                             "Product created locally, but Shopify product creation failed.";
@@ -544,61 +544,66 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
                     }
 
                     $zohoResult = syncProductToZoho([
-                        'name' =>
-                            $title,
-
-                        'sku' =>
-                            $sku,
-
-                        'description' =>
-                            $description,
-
-                        'rate' =>
-                            $priceValue,
-
-                        'purchase_rate' =>
-                            $originalPriceValue,
-                         
-                            'stock' =>
-                                (int) $stock   
+                        'name' => $title,
+                        'sku' => $sku,
+                        'description' => $description,
+                        'rate' => $priceValue,
+                        'purchase_rate' => $originalPriceValue,
+                        'stock' => (int) $stock
                     ]);
 
+                    $zohoItemId = trim((string) (
+                        $zohoResult['item_id']
+                        ?? $zohoResult['item']['item_id']
+                        ?? $zohoResult['response']['item']['item_id']
+                        ?? ''
+                    ));
+                    if (!empty($zohoResult['success']) && $zohoItemId === '') {
+                        $lookupResult = findZohoItemBySKU($sku);
 
-                    if (!empty($zohoResult['success'])) {
-
-                        if ($messageType === "success") {
-
-                            $message .=
-                                " Zoho Inventory item synced successfully.";
-
-                        } elseif ($messageType === "warning") {
-
-                            $message .=
-                                " Zoho Inventory item synced successfully.";
-
+                        if (
+                            !empty($lookupResult['success']) &&
+                            !empty($lookupResult['found'])
+                        ) {
+                            $zohoItemId = trim((string) (
+                                $lookupResult['item']['item_id'] ?? ''
+                            ));
                         }
+                    }
+                    if (!empty($zohoResult['success']) && $zohoItemId !== '') {
+                        try {
+                            $saveZohoId = $db->prepare("
+                            UPDATE products
+                            SET zoho_item_id = :zoho_item_id
+                            WHERE id = :id
+                        ");
 
+                            $saveZohoId->execute([
+                                ':zoho_item_id' => $zohoItemId,
+                                ':id' => $localProductId
+                            ]);
+
+                            if ($message !== '') {
+                                $message .= " Zoho Inventory item synced and ID saved.";
+                            } else {
+                                $message = "Product synced successfully to Zoho Inventory.";
+                            }
+
+                            if ($messageType === '') {
+                                $messageType = "success";
+                            }
+                        } catch (PDOException $e) {
+                            $message .= " Zoho item synced, but its ID could not be saved locally.";
+                            $messageType = "warning";
+                        }
+                    } elseif (!empty($zohoResult['success'])) {
+                        $message .= " Zoho sync reported success, but the Zoho item ID could not be retrieved.";
+                        $messageType = "warning";
                     } else {
-
-                        $zohoError =
-                            $zohoResult['message']
+                        $zohoError = $zohoResult['message']
                             ?? 'Unknown Zoho synchronization error.';
 
-
-                        if ($message !== '') {
-
-                            $message .=
-                                " Zoho Inventory sync failed: " .
-                                $zohoError;
-
-                        } else {
-
-                            $message =
-                                "Product created successfully, but Zoho Inventory sync failed: " .
-                                $zohoError;
-
-                        }
-
+                        $message .= " Zoho Inventory sync failed: " . $zohoError;
                         $messageType = "warning";
                     }
 
