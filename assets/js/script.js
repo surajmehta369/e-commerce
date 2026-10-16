@@ -231,30 +231,27 @@ document.addEventListener("DOMContentLoaded", function () {
 
             event.preventDefault();
             event.stopPropagation();
+
             selectedProduct = {
-
-                id:
-                    String(
-                        button.dataset.id
-                    ),
-
-                title:
-                    button.dataset.title || "",
-
-                price:
-                    Number(
-                        button.dataset.price
-                    ) || 0,
-
-                image:
-                    button.dataset.image || "",
-
-                stock:
-                    Number(
-                        button.dataset.stock
-                    ) || 0
-
+                id: String(button.dataset.id),
+                title: button.dataset.title || "",
+                price: Number(button.dataset.price) || 0,
+                image: button.dataset.image || "",
+                stock: Number(button.dataset.stock) || 0,
+                variant_id: button.dataset.variantId
+                    ? Number(button.dataset.variantId)
+                    : null,
+                variant_options: (() => {
+                    try {
+                        return JSON.parse(button.dataset.variantOptions || "{}");
+                    } catch (error) {
+                        return {};
+                    }
+                })(),
+                variant_title: button.dataset.variantTitle || "",
+                sku: button.dataset.sku || ""
             };
+
 
 
             console.log(
@@ -475,178 +472,129 @@ document.addEventListener("DOMContentLoaded", function () {
 
     if (confirmAddToCart) {
 
-        confirmAddToCart.addEventListener(
-            "click",
-            function () {
+        confirmAddToCart.addEventListener("click", function () {
 
-                if (!selectedProduct) {
+            if (!selectedProduct) {
+                console.error("No product selected.");
+                return;
+            }
 
-                    console.error(
-                        "No product selected."
-                    );
+            // Read quantity from the modal.
+            const quantity = Number(
+                quantityInput ? quantityInput.value : 1
+            );
 
-                    return;
+            if (!Number.isInteger(quantity) || quantity < 1) {
+                alert("Please enter a valid quantity.");
+                return;
+            }
 
-                }
+            // Validate stock.
+            const stock = Number(selectedProduct.stock);
 
+            if (!Number.isFinite(selectedProduct.stock) || selectedProduct.stock <= 0) {
+                alert("Sorry, this product is out of stock.");
+                return;
+            }
 
-                let quantity =
-                    Number(
-                        quantityInput
-                            ? quantityInput.value
-                            : 1
-                    );
-
-
-                if (
-                    !Number.isInteger(quantity) ||
-                    quantity < 1
-                ) {
-
-                    alert(
-                        "Please enter a valid quantity."
-                    );
-
-                    return;
-
-                }
-
-
-                if (
-                    selectedProduct.stock > 0 &&
-                    quantity > selectedProduct.stock
-                ) {
-
-                    alert(
-                        "Only " +
-                        selectedProduct.stock +
-                        " items are available in stock."
-                    );
-
-                    if (quantityInput) {
-
-                        quantityInput.value =
-                            selectedProduct.stock;
-
-                    }
-
-                    return;
-
-                }
-
-                addProductToCart(
-                    selectedProduct,
-                    quantity
+            if (quantity > stock) {
+                alert(
+                    "Only " + stock + " items are available in stock."
                 );
 
-                if (quantityModal) {
-
-                    quantityModal.hide();
-
+                if (quantityInput) {
+                    quantityInput.value = stock;
                 }
 
-
-                selectedProduct = null;
-
+                return;
             }
-        );
+
+            // Add product to cart.
+            addProductToCart(selectedProduct, quantity);
+
+            if (quantityModal) {
+                quantityModal.hide();
+            }
+
+            selectedProduct = null;
+
+        });
 
     }
 
 
-    function addProductToCart(
-        product,
-        quantity,
-        button = null
-    ) {
 
-        if (!product) {
 
+
+    function addProductToCart(product, quantity, button = null) {
+        if (!product) return;
+
+        const stock = Number(product.stock);
+        quantity = Number(quantity);
+
+        if (!Number.isFinite(stock) || stock <= 0) {
+            alert("Sorry, this product is out of stock.");
             return;
-
         }
 
+        if (!Number.isInteger(quantity) || quantity < 1) {
+            alert("Please enter a valid quantity.");
+            return;
+        }
 
-        let cart =
-            getCart();
+        if (quantity > stock) {
+            alert("Only " + stock + " items are available.");
+            return;
+        }
 
+        let cart = getCart();
 
-        const productId =
-            String(
-                product.id
-            );
+        const productId = String(product.id);
+        const variantId = product.variant_id == null
+            ? ""
+            : String(product.variant_id);
 
+        // Match BOTH the main product ID and the variant ID.
+        const existingProduct = cart.find(function (item) {
+            const itemVariantId = item.variant_id == null
+                ? ""
+                : String(item.variant_id);
 
-        const existingProduct =
-            cart.find(
-                function (item) {
-
-                    return String(
-                        item.id
-                    ) === productId;
-
-                }
-            );
+            return String(item.id) === productId &&
+                itemVariantId === variantId;
+        });
 
         if (existingProduct) {
-
             const newQuantity =
-                Number(
-                    existingProduct.quantity
-                ) +
-                Number(quantity);
+                Number(existingProduct.quantity) + quantity;
 
+            const itemStock = Number(existingProduct.stock);
 
-            if (
-                product.stock > 0 &&
-                newQuantity > product.stock
-            ) {
-
+            if (newQuantity > itemStock) {
                 alert(
-                    "You already have " +
-                    existingProduct.quantity +
-                    " in your cart. Only " +
-                    product.stock +
-                    " items are available."
+                    "You already have " + existingProduct.quantity +
+                    " in your cart. Only " + itemStock +
+                    " are available for this variant."
                 );
-
                 return;
-
             }
 
-
-            existingProduct.quantity =
-                newQuantity;
-
-        }
-
-
-        else {
-
+            existingProduct.quantity = newQuantity;
+        } else {
             cart.push({
-
-                id:
-                    productId,
-
-                title:
-                    product.title,
-
-                price:
-                    Number(
-                        product.price
-                    ),
-
-                image:
-                    product.image,
-
-                quantity:
-                    Number(
-                        quantity
-                    )
-
+                id: productId,
+                variant_id: product.variant_id ?? null,
+                variant_title: product.variant_title || "",
+                variant_options: product.variant_options ?? {},
+                sku: product.sku || "",
+                title: product.title || "",
+                price: Number(product.price),
+                image: product.image || "",
+                stock: stock,
+                quantity: quantity
             });
-
         }
+
         saveCart(cart);
         updateCartCount();
 
@@ -657,57 +605,26 @@ document.addEventListener("DOMContentLoaded", function () {
             confirmButtonText: "View Cart",
             showCancelButton: true,
             cancelButtonText: "Continue Shopping",
-            confirmButtonColor: "#4f9cff",
-            cancelButtonColor: "#6c757d",
             reverseButtons: true
-        }).then((result) => {
-
+        }).then(function (result) {
             if (result.isConfirmed) {
                 window.location.href = "cart.php";
             }
-
         });
 
-
-
-        console.log(
-            "Product added successfully:",
-            product
-        );
-
-        console.log(
-            "Updated cart:",
-            cart
-        );
-
         if (button) {
-
-            const originalText =
-                button.innerHTML;
-
-
+            const originalText = button.innerHTML;
             button.innerHTML =
                 '<i class="fa-solid fa-check me-2"></i> Added to Cart';
-
-
             button.disabled = true;
 
-
-            setTimeout(
-                function () {
-
-                    button.innerHTML =
-                        originalText;
-
-                    button.disabled = false;
-
-                },
-                1500
-            );
-
+            setTimeout(function () {
+                button.innerHTML = originalText;
+                button.disabled = false;
+            }, 1500);
         }
-
     }
+
 
 
     const cartContainer =
@@ -1058,9 +975,19 @@ document.addEventListener("DOMContentLoaded", function () {
 
 
                 if (product) {
+                    const stock = Number(product.stock);
 
-                    product.quantity++;
+                    if (!Number.isFinite(stock) || stock <= 0) {
+                        alert("Sorry, this product is out of stock.");
+                        return;
+                    }
 
+                    if (Number(product.quantity) >= stock) {
+                        alert("Only " + stock + " items are available in stock.");
+                        return;
+                    }
+
+                    product.quantity = Number(product.quantity) + 1;
                 }
 
 
@@ -1220,40 +1147,32 @@ function loadCheckoutCart() {
                 >
 
 
-                <div class="ms-3 flex-grow-1">
+               
+<div class="ms-3 flex-grow-1">
 
-                    <h6 class="mb-1">
+    <h6 class="mb-1">
+        ${escapeHtml(product.title || "Product")}
+    </h6>
 
-                        ${product.title}
+    ${product.variant_title
+                ? `<div class="text-muted small mb-1">
+              Variant: ${escapeHtml(product.variant_title)}
+           </div>`
+                : ""}
 
-                    </h6>
+    <small class="text-muted">
+        ₹${Number(product.price).toLocaleString("en-IN")}
+        ×
+        ${product.quantity}
+    </small>
 
+</div>
 
-                    <small class="text-muted">
-
-                        ₹${Number(product.price)
-                .toLocaleString("en-IN")}
-
-                        ×
-
-                        ${product.quantity}
-
-                    </small>
-
-                </div>
-
-
-                <strong>
-
-                    ₹${subtotal
-                .toLocaleString("en-IN")}
-
-                </strong>
-
-            </div>
-
-        `;
-
+<strong>
+    ₹${subtotal.toLocaleString("en-IN")}
+</strong>
+</div>
+`;
     });
 
 
@@ -1896,7 +1815,7 @@ document.addEventListener("DOMContentLoaded", function () {
                                     data-image="${escapeHtml(
                             product.image
                         )}"
-                                >
+                        data-stock="${Number(product.stock)}"
 
                                     <i
                                         class="fa-solid
@@ -2164,6 +2083,7 @@ document.addEventListener("DOMContentLoaded", function () {
                                     data-image="${escapeHtml(
                         product.image
                     )}"
+                     data-stock="${Number(product.stock)}"
                                 >
 
                                     <i
@@ -2801,19 +2721,19 @@ document.addEventListener('DOMContentLoaded', function () {
 
     document.querySelectorAll('input[name="payment_method"]').forEach(function (radio) {
 
-            radio.addEventListener(
-                'change',
-                function () {
+        radio.addEventListener(
+            'change',
+            function () {
 
-                    console.log(
-                        'Payment method selected:',
-                        this.value
-                    );
+                console.log(
+                    'Payment method selected:',
+                    this.value
+                );
 
-                }
-            );
+            }
+        );
 
-        });
+    });
 
     checkoutForm.addEventListener(
         'submit',
@@ -2842,7 +2762,7 @@ document.addEventListener('DOMContentLoaded', function () {
 
             try {
 
-            
+
                 await loadRazorpaySDK();
 
                 const cart =
@@ -3322,3 +3242,4 @@ document.addEventListener('DOMContentLoaded', function () {
         });
 
 });
+

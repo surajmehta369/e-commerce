@@ -55,6 +55,10 @@ try {
         $query,
         50
     );
+    error_log(
+    "Search result products: " .
+    json_encode($products)
+);
 
     $searchQuery = new SearchQuery($query);
 
