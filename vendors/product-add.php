@@ -7,6 +7,7 @@ session_start();
 
 require_once "../connection/dbconnect.php";
 require_once "../shopify/functions.php";
+require_once "../zoho/zoho_functions.php";
 
 
 if (
@@ -99,7 +100,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
     $description = trim($_POST['description'] ?? '');
 
     error_log('PRODUCT DESCRIPTION POST: ' . print_r($_POST['description'] ?? null, true));
-error_log('PRODUCT DESCRIPTION VARIABLE: ' . $description);
+    error_log('PRODUCT DESCRIPTION VARIABLE: ' . $description);
 
     $price = trim($_POST['price'] ?? '');
 
@@ -542,10 +543,11 @@ error_log('PRODUCT DESCRIPTION VARIABLE: ' . $description);
                                         ?? 'Unable to add product to vendor collection.'
                                 );
                             }
+
                             $db->commit();
 
                             $message =
-                                "Product submitted successfully. It is waiting for admin approval.";
+                                "Product submitted successfully. It is waiting for admin approval. Shopify product is saved as Draft.";
 
                             $messageType = "success";
 
@@ -808,7 +810,7 @@ error_log('PRODUCT DESCRIPTION VARIABLE: ' . $description);
 
                                 </label>
 
-                            <textarea name="description" rows="5" class="form-control" placeholder="Describe your product"><?= htmlspecialchars($_POST['description'] ?? '') ?></textarea>
+                                <textarea name="description" rows="5" class="form-control" placeholder="Describe your product"><?= htmlspecialchars($_POST['description'] ?? '') ?></textarea>
 
 
                             </div>

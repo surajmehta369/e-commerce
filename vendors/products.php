@@ -7,7 +7,7 @@ require_once "../shopify/functions.php";
 $database = new Database();
 $db = $database->connect();
 
-syncShopifyProductsToDatabase();
+// syncShopifyProductsToDatabase();
 
 $vendorId = $_SESSION['user_id'];
 

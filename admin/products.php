@@ -9,6 +9,8 @@ $database = new Database();
 $db = $database->connect();
 
 syncShopifyProductsToDatabase();
+syncZohoWebhookToDatabase();
+syncZohoWebhookItemToShopify();
 $message = "";
 $messageType = "success";
 
@@ -26,15 +28,22 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
 
         try {
             $productStmt = $db->prepare("
-                SELECT
-                    id,
-                    title,
-                    image,
-                    status,
-                    shopify_product_id
-                FROM products
-                WHERE id = :id
-                LIMIT 1
+    
+SELECT
+    id,
+    title,
+    sku,
+    description,
+    price,
+    original_price,
+    stock,
+    image,
+    status,
+    shopify_product_id,
+    zoho_item_id
+FROM products
+WHERE id = :id
+LIMIT 1
             ");
 
             $productStmt->execute([
@@ -51,119 +60,191 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
 
                 $shopifyProductId =
                     trim($product['shopify_product_id'] ?? '');
+
+
+
                 if ($action === 'approve') {
 
-                    $sql = "
-                        UPDATE products
-                        SET status = 1
-                        WHERE id = :id
-                    ";
+                    $zohoProduct = [
+                        'name' => $product['title'],
+                        'sku' => $product['sku'],
+                        'description' => $product['description'] ?? '',
+                        'rate' => (float) $product['price'],
+                        'purchase_rate' => (
+                            $product['original_price'] !== null
+                            && $product['original_price'] !== ''
+                        ) ? (float) $product['original_price']
+                            : (float) $product['price'],
+                        'stock' => (int) $product['stock'],
+                        'zoho_item_id' => $product['zoho_item_id'] ?? ''
+                    ];
 
-                    $stmt = $db->prepare($sql);
-
-                    $stmt->execute([
-                        ':id' => $productId
-                    ]);
+                    // Activate the Shopify Draft product.
+                    $shopifyResult = [
+                        'success' => false,
+                        'message' => 'No Shopify product is linked.'
+                    ];
 
                     if ($shopifyProductId !== '') {
+                        $shopifyResult = updateShopifyProduct(
+                            $shopifyProductId,
+                            [
+                                'title' => $product['title'],
+                                'status' => 1
+                            ]
+                        );
+                    }
 
-                        $shopifyResult =
+                    // Create/update the Zoho item and activate it.
+                    $zohoResult = syncApprovedProductToZoho($zohoProduct);
+
+
+                    // Save the Zoho ID even if activation needs a retry.
+                    $returnedZohoId = $zohoResult['item_id']
+                        ?? ($zohoResult['item']['item_id'] ?? '');
+
+                    if ($returnedZohoId !== '') {
+                        $saveId = $db->prepare("
+            UPDATE products
+            SET zoho_item_id = :zoho_item_id
+            WHERE id = :id
+        ");
+
+                        $saveId->execute([
+                            ':zoho_item_id' => $returnedZohoId,
+                            ':id' => $productId
+                        ]);
+                    }
+
+                    $shopifySuccess = !empty($shopifyResult['success']);
+                    $zohoSuccess = !empty($zohoResult['success']);
+
+                    if ($shopifySuccess && $zohoSuccess) {
+
+                        $stmt = $db->prepare("
+            UPDATE products
+            SET status = 1,
+                shopify_status = 'ACTIVE',
+                shopify_synced_at = NOW()
+            WHERE id = :id
+        ");
+
+                        $stmt->execute([':id' => $productId]);
+
+                        $message = 'Product approved and activated in Shopify and Zoho.';
+                        $messageType = 'success';
+                    } else {
+
+                        // Keep the product pending if either integration fails.
+                        // Roll back whichever external activation succeeded.
+                        if ($shopifySuccess && $shopifyProductId !== '') {
                             updateShopifyProduct(
                                 $shopifyProductId,
                                 [
                                     'title' => $product['title'],
-                                    'status' => 1
+                                    'status' => 0
                                 ]
                             );
-
-                        if (!empty($shopifyResult['success'])) {
-
-                            $syncStmt = $db->prepare("
-                                UPDATE products
-                                SET
-                                    shopify_status = 'ACTIVE',
-                                    shopify_synced_at = NOW()
-                                WHERE id = :id
-                            ");
-
-                            $syncStmt->execute([
-                                ':id' => $productId
-                            ]);
-
-                            $message =
-                                "Product approved and activated on Shopify.";
-
-                            $messageType = "success";
-                        } else {
-
-                            $message =
-                                "Product approved locally, but Shopify activation failed.";
-
-                            $messageType = "warning";
                         }
-                    } else {
 
-                        $message =
-                            "Product approved successfully. No Shopify product linked.";
+                        if ($zohoSuccess && $returnedZohoId !== '') {
+                            setZohoItemStatus($returnedZohoId, 'inactive');
+                        }
 
-                        $messageType = "warning";
+                        $details = [];
+
+                        if (!$shopifySuccess) {
+                            $details[] = 'Shopify: ' .
+                                ($shopifyResult['message'] ?? 'Activation failed.');
+                        }
+
+                        if (!$zohoSuccess) {
+                            $details[] = 'Zoho: ' .
+                                ($zohoResult['message'] ?? 'Synchronization failed.');
+                        }
+
+                        $message = 'Approval not completed. ' . implode(' ', $details);
+                        $messageType = 'warning';
                     }
                 } elseif ($action === 'activate') {
 
-                    $sql = "
-                        UPDATE products
-                        SET status = 1
-                        WHERE id = :id
-                    ";
-
-                    $stmt = $db->prepare($sql);
-
-                    $stmt->execute([
-                        ':id' => $productId
-                    ]);
+                    $zohoItemId = trim($product['zoho_item_id'] ?? '');
+                    $shopifyResult = [
+                        'success' => false,
+                        'message' => 'No Shopify product is linked.'
+                    ];
 
                     if ($shopifyProductId !== '') {
+                        $shopifyResult = updateShopifyProduct(
+                            $shopifyProductId,
+                            [
+                                'title' => $product['title'],
+                                'status' => 1
+                            ]
+                        );
+                    }
+                    $zohoResult = [
+                        'success' => false,
+                        'message' => 'No Zoho item is linked.'
+                    ];
 
-                        $shopifyResult =
+                    if ($zohoItemId !== '') {
+                        $zohoResult = setZohoItemStatus(
+                            $zohoItemId,
+                            'active'
+                        );
+                    }
+
+                    $shopifySuccess = !empty($shopifyResult['success']);
+                    $zohoSuccess = !empty($zohoResult['success']);
+
+                    // 3. Update local status only if both integrations succeed.
+                    if ($shopifySuccess && $zohoSuccess) {
+
+                        $stmt = $db->prepare("
+            UPDATE products
+            SET
+                status = 1,
+                shopify_status = 'ACTIVE',
+                shopify_synced_at = NOW()
+            WHERE id = :id
+        ");
+
+                        $stmt->execute([
+                            ':id' => $productId
+                        ]);
+
+                        $message = 'Product activated successfully in Shopify and Zoho.';
+                        $messageType = 'success';
+                    } else {
+
+                        // If Shopify succeeded but Zoho failed, restore Shopify to inactive.
+                        if ($shopifySuccess && $shopifyProductId !== '') {
                             updateShopifyProduct(
                                 $shopifyProductId,
                                 [
                                     'title' => $product['title'],
-                                    'status' => 1
+                                    'status' => 0
                                 ]
                             );
-
-                        if (!empty($shopifyResult['success'])) {
-
-                            $syncStmt = $db->prepare("
-                                UPDATE products
-                                SET
-                                    shopify_status = 'ACTIVE',
-                                    shopify_synced_at = NOW()
-                                WHERE id = :id
-                            ");
-
-                            $syncStmt->execute([
-                                ':id' => $productId
-                            ]);
-
-                            $message =
-                                "Product activated successfully on Shopify.";
-
-                            $messageType = "success";
-                        } else {
-
-                            $message =
-                                "Product activated locally, but Shopify activation failed.";
-
-                            $messageType = "warning";
                         }
-                    } else {
 
-                        $message =
-                            "Product activated successfully. No Shopify product linked.";
+                        $details = [];
 
-                        $messageType = "warning";
+                        if (!$shopifySuccess) {
+                            $details[] = 'Shopify: ' .
+                                ($shopifyResult['message'] ?? 'Activation failed.');
+                        }
+
+                        if (!$zohoSuccess) {
+                            $details[] = 'Zoho: ' .
+                                ($zohoResult['message'] ?? 'Activation failed.');
+                        }
+
+                        $message = 'Product activation was not completed. ' .
+                            implode(' ', $details);
+
+                        $messageType = 'warning';
                     }
                 } elseif ($action === 'deactivate') {
 
@@ -221,6 +302,28 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
                             "Product deactivated successfully. No Shopify product linked.";
 
                         $messageType = "warning";
+                    }
+
+                    $zohoItemId = trim($product['zoho_item_id'] ?? '');
+
+                    if ($zohoItemId !== '') {
+                        $zohoResult = setZohoItemStatus(
+                            $zohoItemId,
+                            'inactive'
+                        );
+
+                        if (empty($zohoResult['success'])) {
+                            $message = 'Shopify was deactivated, but Zoho deactivation failed: '
+                                . ($zohoResult['message'] ?? 'Unknown error.');
+
+                            $messageType = 'warning';
+                        } else {
+                            $message = 'Product deactivated in Shopify and Zoho.';
+                            $messageType = 'success';
+                        }
+                    } else {
+                        $message = 'Product deactivated in Shopify. No Zoho item is linked.';
+                        $messageType = 'warning';
                     }
                 } elseif ($action === 'delete') {
 
@@ -285,6 +388,24 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
                             "Product deleted successfully and archived on Shopify.";
 
                         $messageType = "success";
+                    }
+
+                    $zohoItemId = trim($product['zoho_item_id'] ?? '');
+
+                    if ($zohoItemId !== '') {
+                        $zohoResult = setZohoItemStatus(
+                            $zohoItemId,
+                            'inactive'
+                        );
+
+                        if (empty($zohoResult['success'])) {
+                            $message = 'Product was not deleted because Zoho deactivation failed: '
+                                . ($zohoResult['message'] ?? 'Unknown error.');
+
+                            $messageType = 'danger';
+
+                            // Stop this delete action here.
+                        }
                     }
                 } else {
 
