@@ -138,6 +138,52 @@ $brandName = $product['brand_name'] ?? 'Unknown Brand';
 
 $sku = $product['sku'];
 
+$variantStmt = $db->prepare("
+    SELECT id, product_id, variant_title, sku, price,
+           original_price, stock, attributes, status
+    FROM product_variants
+    WHERE product_id = :product_id
+      AND status = 1
+    ORDER BY id ASC
+");
+
+$variantStmt->execute([
+    ':product_id' => $productId
+]);
+
+$variants = $variantStmt->fetchAll(PDO::FETCH_ASSOC);
+
+$hasVariants = !empty($variants);
+$selectedVariant = null;
+
+if ($hasVariants) {
+    foreach ($variants as $variant) {
+        if ((int)$variant['stock'] > 0) {
+            $selectedVariant = $variant;
+            break;
+        }
+    }
+    if ($selectedVariant === null) {
+        $selectedVariant = $variants[0];
+    }
+    $price = (float)$selectedVariant['price'];
+    $originalPrice = (float)($selectedVariant['original_price'] ?? 0);
+    $stock = (int)$selectedVariant['stock'];
+    $sku = $selectedVariant['sku'] ?: $sku;
+}
+
+if ($stock <= 0) {
+    $stockText = "Out of Stock";
+    $stockClass = "text-danger";
+} elseif ($stock <= 5) {
+    $stockText = "Only {$stock} left in stock";
+    $stockClass = "text-warning";
+} else {
+    $stockText = "In Stock";
+    $stockClass = "text-success";
+}
+
+
 
 if ($stock <= 0) {
 
@@ -161,7 +207,7 @@ include "components/sidebar.php";
 ?>
 
 <main class="container-fluid" style="margin-top:100px;">
- 
+
     <div class="container-fluid">
 
         <div class="card border-0 shadow-sm rounded-4 p-4">
@@ -216,7 +262,7 @@ include "components/sidebar.php";
                     <p class="text-muted mb-3">
 
                         SKU:
-                        <strong>
+                        <strong id="productSku">
                             <?= htmlspecialchars($sku); ?>
                         </strong>
 
@@ -235,11 +281,61 @@ include "components/sidebar.php";
                     </p>
 
 
+                    <?php if ($hasVariants): ?>
+                        <div class="mb-3">
+                            <label for="productVariant" class="form-label fw-semibold">
+                                Select Variant
+                            </label>
+
+                            <select
+                                id="productVariant"
+                                class="form-select rounded-3">
+                                <?php foreach ($variants as $variant): ?>
+                                    <?php
+                                    $variantAttributes = json_decode(
+                                        $variant['attributes'] ?? '',
+                                        true
+                                    );
+
+                                    $variantLabel = $variant['variant_title'];
+
+                                    if (is_array($variantAttributes)) {
+                                        $attributeText = [];
+
+                                        foreach ($variantAttributes as $key => $value) {
+                                            $attributeText[] = $key . ': ' . $value;
+                                        }
+
+                                        if (!empty($attributeText)) {
+                                            $variantLabel .= ' (' .
+                                                implode(', ', $attributeText) . ')';
+                                        }
+                                    }
+                                    ?>
+
+                                    <option
+                                        value="<?= (int)$variant['id']; ?>"
+                                        data-price="<?= htmlspecialchars((string)$variant['price'], ENT_QUOTES, 'UTF-8'); ?>"
+                                        data-original-price="<?= htmlspecialchars((string)($variant['original_price'] ?? ''), ENT_QUOTES, 'UTF-8'); ?>"
+                                        data-stock="<?= (int)$variant['stock']; ?>"
+                                        data-sku="<?= htmlspecialchars($variant['sku'] ?? '', ENT_QUOTES, 'UTF-8'); ?>"
+                                        data-title="<?= htmlspecialchars($variant['variant_title'], ENT_QUOTES, 'UTF-8'); ?>"
+                                        data-attributes="<?= htmlspecialchars($variant['attributes'] ?? '{}', ENT_QUOTES, 'UTF-8'); ?>"
+                                        <?= (int)$variant['id'] === (int)$selectedVariant['id'] ? 'selected' : ''; ?>>
+                                        <?= htmlspecialchars($variantLabel, ENT_QUOTES, 'UTF-8'); ?>
+                                        — ₹<?= number_format((float)$variant['price'], 2); ?>
+                                        <?= (int)$variant['stock'] <= 0 ? '(Out of Stock)' : ''; ?>
+                                    </option>
+                                <?php endforeach; ?>
+                            </select>
+                        </div>
+                    <?php endif; ?>
+
                     <hr>
 
                     <div class="mb-3">
 
-                        <span
+                        <span id="productPrice"
                             class="fs-2
                                    fw-bold
                                    text-primary">
@@ -280,7 +376,7 @@ include "components/sidebar.php";
 
                     <div class="mb-4">
 
-                        <strong class="<?= $stockClass; ?>">
+                        <strong id="productStock" class="<?= $stockClass; ?>">
 
                             <i
                                 class="fa-solid fa-circle-check me-1"></i>
@@ -313,25 +409,38 @@ include "components/sidebar.php";
                     <?php endif; ?>
 
 
-                  
+
                     <?php if ($stock > 0): ?>
 
-                        <button
-    type="button"
-    class="shop-btn add-to-cart"
-    data-id="<?= (int)$product['id']; ?>"
-    data-title="<?= htmlspecialchars($title, ENT_QUOTES, 'UTF-8'); ?>"
-    data-price="<?= htmlspecialchars($price, ENT_QUOTES, 'UTF-8'); ?>"
-    data-image="<?= htmlspecialchars($image, ENT_QUOTES, 'UTF-8'); ?>"
-    data-stock="<?= (int)$stock; ?>"
->
-    <i
-        class="fa-solid fa-cart-plus me-2"
-    ></i>
-
-    Add to Cart
-</button>
-
+                        <CodeBlock language="php" editable>
+                            <button
+                                type="button"
+                                class="shop-btn add-to-cart"
+                                data-id="<?= (int)$product['id']; ?>"
+                                data-title="<?= htmlspecialchars($title ?? '', ENT_QUOTES, 'UTF-8'); ?>"
+                                data-price="<?= htmlspecialchars((string)$price, ENT_QUOTES, 'UTF-8'); ?>"
+                                data-image="<?= htmlspecialchars($image ?? '', ENT_QUOTES, 'UTF-8'); ?>"
+                                data-stock="<?= (int)$stock; ?>"
+                                data-variant-id="<?= $hasVariants ? (int)$selectedVariant['id'] : ''; ?>"
+                                data-variant-title="<?= htmlspecialchars(
+                                                        $hasVariants ? ($selectedVariant['variant_title'] ?? '') : '',
+                                                        ENT_QUOTES,
+                                                        'UTF-8'
+                                                    ); ?>"
+                                data-sku="<?= htmlspecialchars(
+                                                $hasVariants ? ($selectedVariant['sku'] ?? '') : ($sku ?? ''),
+                                                ENT_QUOTES,
+                                                'UTF-8'
+                                            ); ?>"
+                                data-variant-options="<?= htmlspecialchars(
+                                                            $hasVariants ? ($selectedVariant['attributes'] ?? '{}') : '{}',
+                                                            ENT_QUOTES,
+                                                            'UTF-8'
+                                                        ); ?>">
+                                <i class="fa-solid fa-cart-plus me-2"></i>
+                                Add to Cart
+                            </button>
+                        </CodeBlock>
                     <?php else: ?>
 
                         <button
@@ -344,7 +453,7 @@ include "components/sidebar.php";
                         </button>
 
                     <?php endif; ?>
-                
+
 
 
                 </div>
@@ -367,163 +476,248 @@ include "components/sidebar.php";
         </div>
     </section>
 </main>
-    <div
-        class="modal fade"
-        id="quantityModal"
-        tabindex="-1"
-        aria-hidden="true">
+<div
+    class="modal fade"
+    id="quantityModal"
+    tabindex="-1"
+    aria-hidden="true">
 
-        <div class="modal-dialog modal-dialog-centered">
+    <div class="modal-dialog modal-dialog-centered">
 
-            <div
-                class="modal-content
+        <div
+            class="modal-content
                    border-0
                    rounded-4
                    shadow">
 
-                <div class="modal-header border-0">
+            <div class="modal-header border-0">
 
-                    <h5 class="modal-title fw-bold">
-                        Add to Cart
-                    </h5>
+                <h5 class="modal-title fw-bold">
+                    Add to Cart
+                </h5>
 
-                    <button
-                        type="button"
-                        class="btn-close"
-                        data-bs-dismiss="modal"
-                        aria-label="Close"></button>
+                <button
+                    type="button"
+                    class="btn-close"
+                    data-bs-dismiss="modal"
+                    aria-label="Close"></button>
 
-                </div>
-
-
-                <div class="modal-body text-center px-4">
+            </div>
 
 
-                    <img
-                        id="modalProductImage"
-                        src=""
-                        alt=""
-                        style="
+            <div class="modal-body text-center px-4">
+
+
+                <img
+                    id="modalProductImage"
+                    src=""
+                    alt=""
+                    style="
                         width:120px;
                         height:120px;
                         object-fit:cover;
                         border-radius:12px;
                     "
-                        class="mb-3">
+                    class="mb-3">
 
 
-                    <h5
-                        id="modalProductTitle"
-                        class="fw-bold mb-2"></h5>
+                <h5
+                    id="modalProductTitle"
+                    class="fw-bold mb-2"></h5>
 
 
-                    <p
-                        id="modalProductPrice"
-                        class="text-primary fw-bold fs-5"></p>
+                <p
+                    id="modalProductPrice"
+                    class="text-primary fw-bold fs-5"></p>
 
-                    <div class="mt-4">
+                <div class="mt-4">
 
-                        <label
-                            class="fw-semibold d-block mb-2">
-                            Quantity
-                        </label>
+                    <label
+                        class="fw-semibold d-block mb-2">
+                        Quantity
+                    </label>
 
 
-                        <div
-                            class="d-flex
+                    <div
+                        class="d-flex
                                justify-content-center
                                align-items-center
                                gap-3">
 
-                            <button
-                                type="button"
-                                id="quantityMinus"
-                                class="btn
+                        <button
+                            type="button"
+                            id="quantityMinus"
+                            class="btn
                                    btn-outline-secondary
                                    rounded-circle"
-                                style="
+                            style="
                                 width:40px;
                                 height:40px;
                             ">
-                                −
-                            </button>
+                            −
+                        </button>
 
 
-                            <input
-                                type="number"
-                                id="quantityInput"
-                                value="1"
-                                min="1"
-                                class="form-control
+                        <input
+                            type="number"
+                            id="quantityInput"
+                            value="1"
+                            min="1"
+                            class="form-control
                                    text-center
                                    fw-bold"
-                                style="width:70px;">
+                            style="width:70px;">
 
 
-                            <button
-                                type="button"
-                                id="quantityPlus"
-                                class="btn
+                        <button
+                            type="button"
+                            id="quantityPlus"
+                            class="btn
                                    btn-outline-primary
                                    rounded-circle"
-                                style="
+                            style="
                                 width:40px;
                                 height:40px;
                             ">
-                                +
-                            </button>
-
-                        </div>
+                            +
+                        </button>
 
                     </div>
 
                 </div>
 
+            </div>
 
-                <div
-                    class="modal-footer
+
+            <div
+                class="modal-footer
                        border-0
                        justify-content-center
                        pb-4">
 
-                    <button
-                        type="button"
-                        class="btn
+                <button
+                    type="button"
+                    class="btn
                            btn-secondary
                            rounded-pill
                            px-4"
-                        data-bs-dismiss="modal">
-                        Cancel
-                    </button>
+                    data-bs-dismiss="modal">
+                    Cancel
+                </button>
 
 
-                    <button
-                        type="button"
-                        id="confirmAddToCart"
-                        class="btn
+                <button
+                    type="button"
+                    id="confirmAddToCart"
+                    class="btn
                            btn-primary
                            rounded-pill
                            px-4">
 
-                        <i
-                            class="fa-solid
+                    <i
+                        class="fa-solid
                                fa-cart-plus
                                me-2"></i>
 
-                        Add to Cart
+                    Add to Cart
 
-                    </button>
-
-                </div>
+                </button>
 
             </div>
 
         </div>
 
     </div>
-   
+
+</div>
 
 
+<script>
+    document.addEventListener("DOMContentLoaded", function() {
+        const variantSelect = document.getElementById("productVariant");
+
+        if (!variantSelect) {
+            return; // Ordinary products keep working normally.
+        }
+
+        const addButton = document.querySelector(
+            ".add-to-cart[data-id]"
+        );
+
+        const priceElement = document.getElementById("productPrice");
+        const originalPriceElement = document.getElementById("productOriginalPrice");
+        const skuElement = document.getElementById("productSku");
+        const stockElement = document.getElementById("productStock");
+
+        function updateSelectedVariant() {
+            const option = variantSelect.selectedOptions[0];
+
+            if (!option) return;
+
+            const price = Number(option.dataset.price) || 0;
+            const originalPrice = Number(option.dataset.originalPrice) || 0;
+            const stock = Number(option.dataset.stock) || 0;
+            const sku = option.dataset.sku || "";
+            const variantId = option.value;
+
+            if (priceElement) {
+                priceElement.textContent =
+                    "₹" + price.toLocaleString("en-IN", {
+                        minimumFractionDigits: 2,
+                        maximumFractionDigits: 2
+                    });
+            }
+
+            if (originalPriceElement) {
+                originalPriceElement.textContent = originalPrice > price ?
+                    "₹" + originalPrice.toLocaleString("en-IN", {
+                        minimumFractionDigits: 2,
+                        maximumFractionDigits: 2
+                    }) :
+                    "";
+                originalPriceElement.hidden = originalPrice <= price;
+            }
+
+            if (skuElement) {
+                skuElement.textContent = sku;
+            }
+
+            if (stockElement) {
+                if (stock <= 0) {
+                    stockElement.textContent = "Out of Stock";
+                    stockElement.className = "text-danger";
+                } else if (stock <= 5) {
+                    stockElement.textContent =
+                        "Only " + stock + " left in stock";
+                    stockElement.className = "text-warning";
+                } else {
+                    stockElement.textContent = "In Stock";
+                    stockElement.className = "text-success";
+                }
+            }
+
+            if (addButton) {
+                addButton.dataset.variantId = variantId;
+                addButton.dataset.variantOptions =
+                    option.dataset.attributes || "{}";
+                addButton.dataset.price = String(price);
+                addButton.dataset.stock = String(stock);
+                addButton.dataset.sku = sku;
+                addButton.dataset.variantTitle = option.dataset.title || "";
+
+                addButton.disabled = stock <= 0;
+                addButton.innerHTML = stock <= 0 ?
+                    "Out of Stock" :
+                    '<i class="fa-solid fa-cart-plus me-2"></i> Add to Cart';
+            }
+        }
+
+        variantSelect.addEventListener("change", updateSelectedVariant);
+
+        // Sync button data with the initially selected variant.
+        updateSelectedVariant();
+    });
+</script>
 
 
 
