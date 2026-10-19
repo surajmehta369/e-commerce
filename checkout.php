@@ -98,72 +98,77 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
             }
 
             $productSql = "
-                SELECT
-                    id,
-                    title,
-                    image,
-                    price,
-                    stock
-                FROM products
-                WHERE id = :id
-                  AND status = 1
-                LIMIT 1
-            ";
-            $productStmt =
-                $db->prepare($productSql);
+    SELECT id, title, image, price, stock
+    FROM products
+    WHERE id = :id
+      AND status = 1
+    LIMIT 1
+";
 
-
-            $productStmt->execute([
-                'id' => $productId
-            ]);
-            $product =
-                $productStmt->fetch(PDO::FETCH_ASSOC);
-
+            $productStmt = $db->prepare($productSql);
+            $productStmt->execute(['id' => $productId]);
+            $product = $productStmt->fetch(PDO::FETCH_ASSOC);
 
             if (!$product) {
+                throw new Exception("Product not found.");
+            }
 
+            $variantId = (int) ($cartItem['variant_id'] ?? 0);
+            $variant = null;
+
+            if ($variantId > 0) {
+                // Verify that this variant belongs to the selected product.
+                $variantSql = "
+        SELECT id, product_id, variant_title, sku, price, stock
+        FROM product_variants
+        WHERE id = :variant_id
+          AND product_id = :product_id
+          AND status = 1
+        LIMIT 1
+    ";
+
+                $variantStmt = $db->prepare($variantSql);
+                $variantStmt->execute([
+                    'variant_id' => $variantId,
+                    'product_id' => $productId
+                ]);
+
+                $variant = $variantStmt->fetch(PDO::FETCH_ASSOC);
+
+                if (!$variant) {
+                    throw new Exception(
+                        "Selected variant is invalid for: " . $product['title']
+                    );
+                }
+
+                $availableStock = (int) $variant['stock'];
+                $price = (float) $variant['price'];
+
+                $productName = $product['title'] . ' - ' . $variant['variant_title'];
+            } else {
+                $availableStock = (int) $product['stock'];
+                $price = (float) $product['price'];
+
+                $productName = $product['title'];
+            }
+
+            if ($quantity > $availableStock) {
                 throw new Exception(
-                    "Product not found."
+                    "Not enough stock for: " . $productName
                 );
             }
 
-            if (
-                $quantity >
-                (int) $product['stock']
-            ) {
-
-                throw new Exception(
-                    "Not enough stock for: "
-                        . $product['title']
-                );
-            }
-            $price =
-                (float) $product['price'];
-            $subtotal =
-                $price * $quantity;
-
-
+            $subtotal = $price * $quantity;
             $totalAmount += $subtotal;
+
             $orderItems[] = [
-
-                'product_id' =>
-                $product['id'],
-
-                'product_name' =>
-                $product['title'],
-
-                'product_image' =>
-                $product['image'],
-
-                'price' =>
-                $price,
-
-                'quantity' =>
-                $quantity,
-
-                'subtotal' =>
-                $subtotal
-
+                'product_id' => (int) $product['id'],
+                'variant_id' => $variant ? (int) $variant['id'] : null,
+                'product_name' => $productName,
+                'product_image' => $product['image'],
+                'price' => $price,
+                'quantity' => $quantity,
+                'subtotal' => $subtotal
             ];
         }
 
@@ -251,98 +256,90 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
         ]);
         $orderId =
             $db->lastInsertId();
+
         $itemSql = "
+    INSERT INTO order_items (
+        order_id,
+        product_id,
+        variant_id,
+        product_name,
+        product_image,
+        price,
+        quantity,
+        subtotal
+    )
+    VALUES (
+        :order_id,
+        :product_id,
+        :variant_id,
+        :product_name,
+        :product_image,
+        :price,
+        :quantity,
+        :subtotal
+    )
+";
 
-            INSERT INTO order_items (
-
-                order_id,
-                product_id,
-                product_name,
-                product_image,
-                price,
-                quantity,
-                subtotal
-
-            )
-
-            VALUES (
-
-                :order_id,
-                :product_id,
-                :product_name,
-                :product_image,
-                :price,
-                :quantity,
-                :subtotal
-
-            )
-
-        ";
-        $itemStmt =
-            $db->prepare($itemSql);
-
+        $itemStmt = $db->prepare($itemSql);
 
         foreach ($orderItems as $item) {
-
             $itemStmt->execute([
-
-                'order_id' =>
-                $orderId,
-
-                'product_id' =>
-                $item['product_id'],
-
-                'product_name' =>
-                $item['product_name'],
-
-                'product_image' =>
-                $item['product_image'],
-
-                'price' =>
-                $item['price'],
-
-                'quantity' =>
-                $item['quantity'],
-
-                'subtotal' =>
-                $item['subtotal']
-
+                'order_id' => $orderId,
+                'product_id' => $item['product_id'],
+                'variant_id' => $item['variant_id'],
+                'product_name' => $item['product_name'],
+                'product_image' => $item['product_image'],
+                'price' => $item['price'],
+                'quantity' => $item['quantity'],
+                'subtotal' => $item['subtotal']
             ]);
         }
+
         if ($paymentMethod === 'cash_on_delivery') {
+
 
             foreach ($orderItems as $item) {
 
-                $stockSql = "
+                if (!empty($item['variant_id'])) {
+                    $stockSql = "
+            UPDATE product_variants
+            SET stock = stock - :quantity
+            WHERE id = :variant_id
+              AND product_id = :product_id
+              AND status = 1
+              AND stock >= :quantity
+        ";
 
-                    UPDATE products
+                    $stockStmt = $db->prepare($stockSql);
 
-                    SET stock = stock - :quantity
+                    $stockStmt->execute([
+                        'quantity' => $item['quantity'],
+                        'variant_id' => $item['variant_id'],
+                        'product_id' => $item['product_id']
+                    ]);
+                } else {
+                    $stockSql = "
+            UPDATE products
+            SET stock = stock - :quantity
+            WHERE id = :product_id
+              AND stock >= :quantity
+        ";
 
-                    WHERE id = :id
-                      AND stock >= :quantity
+                    $stockStmt = $db->prepare($stockSql);
 
-                ";
-                $stockStmt =
-                    $db->prepare($stockSql);
+                    $stockStmt->execute([
+                        'quantity' => $item['quantity'],
+                        'product_id' => $item['product_id']
+                    ]);
+                }
 
-
-                $stockStmt->execute([
-
-                    'quantity' =>
-                    $item['quantity'],
-
-                    'id' =>
-                    $item['product_id']
-
-                ]);
                 if ($stockStmt->rowCount() !== 1) {
-
                     throw new Exception(
-                        "Unable to update stock for product."
+                        "Unable to update stock for: " . $item['product_name']
                     );
                 }
             }
+
             $db->commit();
 
             $_SESSION['last_order_id'] =
@@ -771,7 +768,7 @@ include "components/header.php";
     <script src="https://www.paypal.com/sdk/js?client-id=BAAHpGX9MgmkZykVaLi0DkQhyZK9d8yaFvCcjk56dMB-392LSaMvXHC6vJ4CgJ89M0rrRfCQbCN-bsLIDE&currency=USD"></script>
 
     <script src="https://checkout.razorpay.com/v1/checkout.js"></script>
- 
+
     <?php include "components/footer.php"; ?>
 </body>
 

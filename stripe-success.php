@@ -1,3 +1,4 @@
+
 <?php
 
 session_start();
@@ -7,59 +8,51 @@ require_once __DIR__ . '/config/stripe.php';
 
 if (
     !isset($_SESSION['user_id']) ||
-    $_SESSION['logged_in'] !== true
+    ($_SESSION['logged_in'] ?? false) !== true
 ) {
-
     header("Location: outh/login.php");
     exit;
 }
 
-$sessionId =
-    $_GET['session_id'] ?? '';
-
+$sessionId = $_GET['session_id'] ?? '';
 
 if ($sessionId === '') {
-
     die("Invalid Stripe payment session.");
 }
-try {
 
-    $checkoutSession =
-        \Stripe\Checkout\Session::retrieve(
-            $sessionId
-        );
+$db = null;
+
+try {
+    // 1. Retrieve and verify the Stripe Checkout Session.
+    $checkoutSession = \Stripe\Checkout\Session::retrieve($sessionId);
 
     if (
-        $checkoutSession->payment_status
-        !== 'paid'
+        $checkoutSession->payment_status !== 'paid' ||
+        $checkoutSession->mode !== 'payment' ||
+        strtolower((string) $checkoutSession->currency) !== 'inr'
     ) {
-
-        die("Payment was not completed.");
+        throw new Exception("Stripe payment is not verified as paid.");
     }
 
-    $orderId =
-        $checkoutSession->metadata->order_id
-        ?? null;
+    $orderId = (int) ($checkoutSession->metadata->order_id ?? 0);
+    $metadataUserId = (int) ($checkoutSession->metadata->user_id ?? 0);
+    $sessionUserId = (int) $_SESSION['user_id'];
 
-
-    if (!$orderId) {
-
-        die("Order information was not found.");
+    if (
+        $orderId <= 0 ||
+        $metadataUserId !== $sessionUserId
+    ) {
+        throw new Exception("Invalid Stripe order or customer information.");
     }
-    $orderId =
-        (int) $orderId;
 
-    $database =
-        new Database();
-
-    $db =
-        $database->connect();
-
+    // 2. Connect to the database.
+    $database = new Database();
+    $db = $database->connect();
 
     $db->beginTransaction();
 
+    // Lock the order to prevent duplicate stock deductions.
     $orderSql = "
-
         SELECT
             id,
             user_id,
@@ -67,176 +60,159 @@ try {
             payment_method,
             payment_status,
             order_status
-
         FROM orders
-
         WHERE id = :order_id
           AND user_id = :user_id
-
         LIMIT 1
-
+        FOR UPDATE
     ";
-    $orderStmt =
-        $db->prepare($orderSql);
 
-
+    $orderStmt = $db->prepare($orderSql);
     $orderStmt->execute([
-
-        'order_id' =>
-        $orderId,
-
-        'user_id' =>
-        $_SESSION['user_id']
-
+        'order_id' => $orderId,
+        'user_id' => $sessionUserId
     ]);
 
-
-    $order =
-        $orderStmt->fetch(
-            PDO::FETCH_ASSOC
-        );
-
+    $order = $orderStmt->fetch(PDO::FETCH_ASSOC);
 
     if (!$order) {
-
-        throw new Exception(
-            "Order not found."
-        );
+        throw new Exception("Order not found.");
     }
 
-    if (
-        $order['payment_status']
-        !== 'paid'
-    ) {
+    if ($order['payment_method'] !== 'stripe') {
+        throw new Exception("This order was not created for Stripe payment.");
+    }
 
+    // Verify that the paid amount matches the order total.
+    $expectedAmount = (int) round((float) $order['total_amount'] * 100);
+    $paidAmount = (int) ($checkoutSession->amount_total ?? -1);
+
+    if ($paidAmount !== $expectedAmount) {
+        throw new Exception("Stripe payment amount does not match the order total.");
+    }
+
+    // 3. If already paid, do not deduct stock again.
+    if ($order['payment_status'] !== 'paid') {
 
         $itemSql = "
-
             SELECT
                 product_id,
-                quantity
-
+                variant_id,
+                quantity,
+                product_name
             FROM order_items
-
             WHERE order_id = :order_id
-
         ";
 
+        $itemStmt = $db->prepare($itemSql);
+        $itemStmt->execute(['order_id' => $orderId]);
 
-        $itemStmt =
-            $db->prepare($itemSql);
+        $items = $itemStmt->fetchAll(PDO::FETCH_ASSOC);
 
+        if (!$items) {
+            throw new Exception("No items were found for this order.");
+        }
 
-        $itemStmt->execute([
-
-            'order_id' =>
-            $orderId
-
-        ]);
-
-
-        $items =
-            $itemStmt->fetchAll(
-                PDO::FETCH_ASSOC
-            );
-
-
+        // 4. Deduct stock from the correct table.
         foreach ($items as $item) {
 
-            $stockSql = "
+            $productId = (int) $item['product_id'];
+            $variantId = (int) ($item['variant_id'] ?? 0);
+            $quantity = (int) $item['quantity'];
 
-                UPDATE products
+            if ($productId <= 0 || $quantity <= 0) {
+                throw new Exception("Invalid order item.");
+            }
 
-                SET stock = stock - :quantity
+            if ($variantId > 0) {
 
-                WHERE id = :id
-                  AND stock >= :quantity
+                // Variant order: deduct from product_variants.
+                $stockSql = "
+                    UPDATE product_variants
+                    SET stock = stock - :quantity
+                    WHERE id = :variant_id
+                      AND product_id = :product_id
+                      AND status = 1
+                      AND stock >= :quantity
+                ";
 
-            ";
+                $stockStmt = $db->prepare($stockSql);
+                $stockStmt->execute([
+                    'quantity' => $quantity,
+                    'variant_id' => $variantId,
+                    'product_id' => $productId
+                ]);
 
+            } else {
 
-            $stockStmt =
-                $db->prepare($stockSql);
+                // Regular product order: deduct from products.
+                $stockSql = "
+                    UPDATE products
+                    SET stock = stock - :quantity
+                    WHERE id = :product_id
+                      AND status = 1
+                      AND stock >= :quantity
+                ";
 
+                $stockStmt = $db->prepare($stockSql);
+                $stockStmt->execute([
+                    'quantity' => $quantity,
+                    'product_id' => $productId
+                ]);
+            }
 
-            $stockStmt->execute([
-
-                'quantity' =>
-                (int) $item['quantity'],
-
-                'id' =>
-                (int) $item['product_id']
-
-            ]);
-
-
-            if (
-                $stockStmt->rowCount()
-                !== 1
-            ) {
-
+            if ($stockStmt->rowCount() !== 1) {
                 throw new Exception(
-                    "Unable to update product stock."
+                    "Insufficient stock or invalid item: " .
+                    $item['product_name']
                 );
             }
         }
 
+        // 5. Mark the order paid in the same transaction.
         $updateSql = "
-
             UPDATE orders
-
-            SET
-                payment_status = 'paid',
+            SET payment_status = 'paid',
                 order_status = 'confirmed'
-
             WHERE id = :order_id
-
+              AND user_id = :user_id
+              AND payment_status <> 'paid'
         ";
 
-
-        $updateStmt =
-            $db->prepare($updateSql);
-
-
+        $updateStmt = $db->prepare($updateSql);
         $updateStmt->execute([
-
-            'order_id' =>
-            $orderId
-
+            'order_id' => $orderId,
+            'user_id' => $sessionUserId
         ]);
+
+        if ($updateStmt->rowCount() !== 1) {
+            throw new Exception("Unable to update the order payment status.");
+        }
     }
+
     $db->commit();
 
-    $_SESSION['last_order_id'] =
-        $orderId;
-
+    $_SESSION['last_order_id'] = $orderId;
 
     unset(
-        $_SESSION['stripe_order_id']
-    );
-
-    unset(
+        $_SESSION['stripe_order_id'],
         $_SESSION['stripe_session_id']
     );
 
-    header(
-        "Location: order-confirmation.php"
-    );
-
+    header("Location: order-confirmation.php");
     exit;
+
 } catch (Exception $e) {
 
-    if (
-        isset($db) &&
-        $db->inTransaction()
-    ) {
-
+    if ($db instanceof PDO && $db->inTransaction()) {
         $db->rollBack();
     }
 
+    error_log("Stripe success processing error: " . $e->getMessage());
 
-    die("Payment verification failed: "
-        . htmlspecialchars(
-            $e->getMessage()
-        ));
+    http_response_code(400);
+    die(
+        "Payment verification or order processing failed. " .
+        "Please contact support with your order ID."
+    );
 }

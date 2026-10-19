@@ -20,6 +20,7 @@ if ($productId <= 0) {
 $database = new Database();
 $db = $database->connect();
 
+
 $sql = "
     SELECT
         p.id,
@@ -60,6 +61,45 @@ $stmt->execute([
 
 $product = $stmt->fetch(PDO::FETCH_ASSOC);
 
+$galleryImages = [];
+if (!empty($image)) {
+    $galleryImages[] = [
+        'image_path' => $image,
+        'alt_text' => $title ?? ''
+    ];
+}
+
+$imageStmt = $db->prepare("
+    SELECT image_path, alt_text
+    FROM product_images
+    WHERE product_id = :product_id
+      AND status = 1
+    ORDER BY sort_order ASC, id ASC
+");
+
+$imageStmt->execute([
+    ':product_id' => $productId
+]);
+
+$additionalImages = $imageStmt->fetchAll(PDO::FETCH_ASSOC);
+
+foreach ($additionalImages as $galleryImage) {
+    if (empty($galleryImage['image_path'])) {
+        continue;
+    }
+    $alreadyExists = false;
+
+    foreach ($galleryImages as $existingImage) {
+        if ($existingImage['image_path'] === $galleryImage['image_path']) {
+            $alreadyExists = true;
+            break;
+        }
+    }
+
+    if (!$alreadyExists) {
+        $galleryImages[] = $galleryImage;
+    }
+}
 
 if (!$product) {
 
@@ -206,46 +246,271 @@ include "components/sidebar.php";
 
 ?>
 
+<style>
+    /* Product details page */
+    .product-details-card {
+        border: 1px solid #e5e7eb;
+        border-radius: 16px;
+        padding: 28px;
+        background: #fff;
+    }
+
+    /* Main product image */
+    .product-details-image {
+        min-height: 420px;
+        max-height: 560px;
+        overflow: hidden;
+        position: relative;
+        background: #f8f9fa !important;
+        border: 1px solid #e9ecef;
+        border-radius: 14px;
+        cursor: zoom-in;
+    }
+
+    .product-details-image img {
+        width: 100%;
+        height: 420px;
+        object-fit: contain;
+        transition: transform 0.3s ease;
+    }
+
+    .product-details-image:hover img {
+        transform: scale(1.06);
+    }
+
+    /* Product information */
+    .product-info-panel {
+        padding: 8px 12px;
+    }
+
+    .product-info-panel h1 {
+        font-size: clamp(1.5rem, 2.2vw, 2rem);
+        line-height: 1.4;
+        color: #212529;
+    }
+
+    .product-brand-badge {
+        display: inline-block;
+        background: #f1f5f9;
+        color: #334155;
+        border: 1px solid #e2e8f0;
+        padding: 7px 12px;
+        border-radius: 20px;
+        font-size: 0.85rem;
+        font-weight: 600;
+    }
+
+    #productPrice {
+        color: #b12704 !important;
+        font-size: 2rem;
+    }
+
+    #productVariant {
+        min-height: 46px;
+        border-color: #adb5bd;
+    }
+
+    #productVariant:focus {
+        border-color: #f0ad4e;
+        box-shadow: 0 0 0 3px rgba(240, 173, 78, 0.2);
+    }
+
+    #productStock {
+        display: inline-block;
+        font-size: 0.95rem;
+    }
+
+    .shop-btn.add-to-cart {
+        min-height: 46px;
+        width: 100%;
+        border: 0;
+        border-radius: 24px;
+        font-weight: 600;
+        transition: opacity 0.2s ease;
+    }
+
+    .shop-btn.add-to-cart:disabled {
+        cursor: not-allowed;
+        opacity: 0.6;
+    }
+
+    @media (max-width: 767px) {
+        .product-details-card {
+            padding: 14px;
+        }
+
+        .product-details-image {
+            min-height: 280px;
+        }
+
+        .product-details-image img {
+            height: 280px;
+        }
+
+        .product-info-panel {
+            padding: 8px 0;
+        }
+    }
+
+
+    .product-gallery {
+        display: flex;
+        align-items: flex-start;
+        gap: 14px;
+        width: 100%;
+    }
+
+    .product-thumbnails {
+        display: flex;
+        flex-direction: column;
+        gap: 10px;
+        width: 68px;
+        flex-shrink: 0;
+        max-height: 430px;
+        overflow-y: auto;
+        padding: 2px;
+    }
+
+    .product-thumbnail {
+        width: 64px;
+        height: 64px;
+        padding: 4px;
+        border: 1px solid #d5d9d9;
+        border-radius: 8px;
+        background: #fff;
+        cursor: pointer;
+        flex-shrink: 0;
+    }
+
+    .product-thumbnail img {
+        width: 100%;
+        height: 100%;
+        object-fit: contain;
+    }
+
+    .product-thumbnail:hover,
+    .product-thumbnail.active,
+    .product-thumbnail:focus-visible {
+        border: 2px solid #f0ad4e;
+        outline: none;
+    }
+
+    .product-details-image {
+        flex: 1;
+        min-width: 0;
+        min-height: 420px;
+        display: flex;
+        justify-content: center;
+        align-items: center;
+        padding: 16px;
+        overflow: hidden;
+        background: #f8f9fa;
+        border: 1px solid #e9ecef;
+        border-radius: 12px;
+    }
+
+    .product-details-image img {
+        width: 100%;
+        height: 420px;
+        object-fit: contain;
+        transition: transform 0.25s ease;
+    }
+
+    .product-details-image:hover img {
+        transform: scale(1.04);
+    }
+
+    @media (max-width: 767px) {
+        .product-gallery {
+            flex-direction: column-reverse;
+        }
+
+        .product-thumbnails {
+            flex-direction: row;
+            width: 100%;
+            max-width: 100%;
+            max-height: none;
+            overflow-x: auto;
+            overflow-y: hidden;
+        }
+
+        .product-details-image {
+            width: 100%;
+            min-height: 280px;
+        }
+
+        .product-details-image img {
+            height: 280px;
+        }
+    }
+</style>
+
 <main class="container-fluid" style="margin-top:100px;">
 
     <div class="container-fluid">
 
-        <div class="card border-0 shadow-sm rounded-4 p-4">
+        <div class="card product-details-card shadow-sm">
 
             <div class="row g-5 align-items-start">
 
 
                 <div class="col-lg-6 col-md-6">
 
-                    <div
-                        class="product-details-image
-                               d-flex
-                               justify-content-center
-                               align-items-center
-                               bg-light
-                               rounded-4
-                               p-4">
 
-                        <img
-                            src="<?= htmlspecialchars($image); ?>"
-                            alt="<?= htmlspecialchars($title); ?>"
-                            class="img-fluid"
-                            style="
-                                max-height:500px;
-                                width:100%;
-                                object-fit:contain;
-                            ">
+                    <div class="product-gallery">
+                        <div class="product-thumbnails" id="productThumbnails">
+                            <?php foreach ($galleryImages as $index => $galleryImage): ?>
+                                <button
+                                    type="button"
+                                    class="product-thumbnail <?= $index === 0 ? 'active' : ''; ?>"
+                                    data-image="<?= htmlspecialchars(
+                                                    $galleryImage['image_path'],
+                                                    ENT_QUOTES,
+                                                    'UTF-8'
+                                                ); ?>"
+                                    data-alt="<?= htmlspecialchars(
+                                                    $galleryImage['alt_text'] ?: $title,
+                                                    ENT_QUOTES,
+                                                    'UTF-8'
+                                                ); ?>"
+                                    aria-label="View product image <?= $index + 1; ?>"
+                                    aria-pressed="<?= $index === 0 ? 'true' : 'false'; ?>">
 
+                                    <img
+                                        src="<?= htmlspecialchars(
+                                                    $galleryImage['image_path'],
+                                                    ENT_QUOTES,
+                                                    'UTF-8'
+                                                ); ?>"
+                                        alt="<?= htmlspecialchars(
+                                                    $galleryImage['alt_text'] ?: $title,
+                                                    ENT_QUOTES,
+                                                    'UTF-8'
+                                                ); ?>"
+                                        loading="lazy">
+                                </button>
+                            <?php endforeach; ?>
+                        </div>
+
+                        <div class="product-details-image" id="productImageViewer">
+                            <img
+                                id="mainProductImage"
+                                src="<?= htmlspecialchars($image ?? '', ENT_QUOTES, 'UTF-8'); ?>"
+                                alt="<?= htmlspecialchars($title ?? '', ENT_QUOTES, 'UTF-8'); ?>"
+                                loading="eager">
+                        </div>
                     </div>
+
+
 
                 </div>
 
 
-                <div class="col-lg-6 col-md-6">
+                <div class="col-lg-6 col-md-6 product-info-panel">
 
                     <div class="mb-2">
 
-                        <span class="badge bg-secondary">
+                        <span class="product-brand-badge">
 
                             <?= htmlspecialchars($brandName); ?>
 
@@ -333,46 +598,37 @@ include "components/sidebar.php";
 
                     <hr>
 
+
+                    <?php
+                    $displayDiscount = $originalPrice > $price
+                        ? (int) round((($originalPrice - $price) / $originalPrice) * 100)
+                        : 0;
+                    ?>
+
                     <div class="mb-3">
+                        <div class="d-flex align-items-center flex-wrap gap-2">
 
-                        <span id="productPrice"
-                            class="fs-2
-                                   fw-bold
-                                   text-primary">
-
-                            ₹<?= number_format($price, 2); ?>
-
-                        </span>
-
-
-                        <?php if ($originalPrice > $price): ?>
-
-                            <span
-                                class="text-muted
-                                       text-decoration-line-through
-                                       ms-2">
-
-                                ₹<?= number_format($originalPrice, 2); ?>
-
+                            <span id="productPrice" class="fs-2 fw-bold text-primary">
+                                ₹<?= number_format($price, 2); ?>
                             </span>
 
-                        <?php endif; ?>
-
-
-                        <?php if ($discount > 0): ?>
-
                             <span
-                                class="badge
-                                       bg-danger
-                                       ms-2">
-
-                                <?= number_format($discount, 0); ?>% OFF
-
+                                id="productOriginalPrice"
+                                class="text-muted text-decoration-line-through <?= $originalPrice > $price ? '' : 'd-none'; ?>">
+                                <?= $originalPrice > $price
+                                    ? '₹' . number_format($originalPrice, 2)
+                                    : ''; ?>
                             </span>
 
-                        <?php endif; ?>
+                            <span
+                                id="productDiscount"
+                                class="badge bg-danger <?= $displayDiscount > 0 ? '' : 'd-none'; ?>">
+                                <?= $displayDiscount > 0 ? $displayDiscount . '% OFF' : ''; ?>
+                            </span>
 
+                        </div>
                     </div>
+
 
                     <div class="mb-4">
 
@@ -422,21 +678,9 @@ include "components/sidebar.php";
                                 data-image="<?= htmlspecialchars($image ?? '', ENT_QUOTES, 'UTF-8'); ?>"
                                 data-stock="<?= (int)$stock; ?>"
                                 data-variant-id="<?= $hasVariants ? (int)$selectedVariant['id'] : ''; ?>"
-                                data-variant-title="<?= htmlspecialchars(
-                                                        $hasVariants ? ($selectedVariant['variant_title'] ?? '') : '',
-                                                        ENT_QUOTES,
-                                                        'UTF-8'
-                                                    ); ?>"
-                                data-sku="<?= htmlspecialchars(
-                                                $hasVariants ? ($selectedVariant['sku'] ?? '') : ($sku ?? ''),
-                                                ENT_QUOTES,
-                                                'UTF-8'
-                                            ); ?>"
-                                data-variant-options="<?= htmlspecialchars(
-                                                            $hasVariants ? ($selectedVariant['attributes'] ?? '{}') : '{}',
-                                                            ENT_QUOTES,
-                                                            'UTF-8'
-                                                        ); ?>">
+                                data-variant-title="<?= htmlspecialchars($hasVariants ? ($selectedVariant['variant_title'] ?? '') : '', ENT_QUOTES, 'UTF-8'); ?>"
+                                data-variant-options="<?= htmlspecialchars($hasVariants ? ($selectedVariant['attributes'] ?? '{}') : '{}', ENT_QUOTES, 'UTF-8'); ?>"
+                                data-sku="<?= htmlspecialchars($hasVariants ? ($selectedVariant['sku'] ?? '') : ($sku ?? ''), ENT_QUOTES, 'UTF-8'); ?>">
                                 <i class="fa-solid fa-cart-plus me-2"></i>
                                 Add to Cart
                             </button>
@@ -635,88 +879,143 @@ include "components/sidebar.php";
 <script>
     document.addEventListener("DOMContentLoaded", function() {
         const variantSelect = document.getElementById("productVariant");
+        const addButton = document.querySelector(".add-to-cart");
 
-        if (!variantSelect) {
-            return; // Ordinary products keep working normally.
+        if (!variantSelect || !addButton) {
+            return;
         }
 
-        const addButton = document.querySelector(
-            ".add-to-cart[data-id]"
-        );
-
-        const priceElement = document.getElementById("productPrice");
-        const originalPriceElement = document.getElementById("productOriginalPrice");
-        const skuElement = document.getElementById("productSku");
-        const stockElement = document.getElementById("productStock");
 
         function updateSelectedVariant() {
-            const option = variantSelect.selectedOptions[0];
+            const option = variantSelect.options[variantSelect.selectedIndex];
 
             if (!option) return;
 
-            const price = Number(option.dataset.price) || 0;
-            const originalPrice = Number(option.dataset.originalPrice) || 0;
-            const stock = Number(option.dataset.stock) || 0;
-            const sku = option.dataset.sku || "";
-            const variantId = option.value;
-
-            if (priceElement) {
-                priceElement.textContent =
-                    "₹" + price.toLocaleString("en-IN", {
-                        minimumFractionDigits: 2,
-                        maximumFractionDigits: 2
-                    });
-            }
+            const price = Number(option.dataset.price || 0);
+            const originalPrice = Number(option.dataset.originalPrice || 0);
+            const stock = Number(option.dataset.stock || 0);
+            addButton.dataset.variantId = option.value;
+            addButton.dataset.variantTitle = option.dataset.title || "";
+            addButton.dataset.sku = option.dataset.sku || "";
+            addButton.dataset.variantOptions = option.dataset.attributes || "{}";
+            addButton.dataset.price = String(price);
+            addButton.dataset.stock = String(stock);
+            document.getElementById("productPrice").textContent =
+                "₹" + price.toLocaleString("en-IN", {
+                    minimumFractionDigits: 2,
+                    maximumFractionDigits: 2
+                });
+            const originalPriceElement =
+                document.getElementById("productOriginalPrice");
 
             if (originalPriceElement) {
-                originalPriceElement.textContent = originalPrice > price ?
-                    "₹" + originalPrice.toLocaleString("en-IN", {
-                        minimumFractionDigits: 2,
-                        maximumFractionDigits: 2
-                    }) :
-                    "";
-                originalPriceElement.hidden = originalPrice <= price;
-            }
+                if (originalPrice > price) {
+                    originalPriceElement.textContent =
+                        "₹" + originalPrice.toLocaleString("en-IN", {
+                            minimumFractionDigits: 2,
+                            maximumFractionDigits: 2
+                        });
 
-            if (skuElement) {
-                skuElement.textContent = sku;
-            }
-
-            if (stockElement) {
-                if (stock <= 0) {
-                    stockElement.textContent = "Out of Stock";
-                    stockElement.className = "text-danger";
-                } else if (stock <= 5) {
-                    stockElement.textContent =
-                        "Only " + stock + " left in stock";
-                    stockElement.className = "text-warning";
+                    originalPriceElement.classList.remove("d-none");
                 } else {
-                    stockElement.textContent = "In Stock";
-                    stockElement.className = "text-success";
+                    originalPriceElement.textContent = "";
+                    originalPriceElement.classList.add("d-none");
                 }
             }
+            const discountElement = document.getElementById("productDiscount");
+            const discount = originalPrice > price ?
+                Math.round(((originalPrice - price) / originalPrice) * 100) :
+                0;
 
-            if (addButton) {
-                addButton.dataset.variantId = variantId;
-                addButton.dataset.variantOptions =
-                    option.dataset.attributes || "{}";
-                addButton.dataset.price = String(price);
-                addButton.dataset.stock = String(stock);
-                addButton.dataset.sku = sku;
-                addButton.dataset.variantTitle = option.dataset.title || "";
+            if (discountElement) {
+                discountElement.textContent = discount > 0 ?
+                    discount + "% OFF" :
+                    "";
 
-                addButton.disabled = stock <= 0;
-                addButton.innerHTML = stock <= 0 ?
-                    "Out of Stock" :
-                    '<i class="fa-solid fa-cart-plus me-2"></i> Add to Cart';
+                discountElement.classList.toggle("d-none", discount <= 0);
             }
+            const skuElement = document.getElementById("productSku");
+
+            if (skuElement) {
+                skuElement.textContent = option.dataset.sku || "";
+            }
+            const stockElement = document.getElementById("productStock");
+
+            if (stockElement) {
+                stockElement.classList.remove(
+                    "text-success",
+                    "text-warning",
+                    "text-danger"
+                );
+
+                if (stock <= 0) {
+                    stockElement.textContent = "Out of Stock";
+                    stockElement.classList.add("text-danger");
+                } else if (stock <= 5) {
+                    stockElement.textContent = `Only ${stock} left in stock`;
+                    stockElement.classList.add("text-warning");
+                } else {
+                    stockElement.textContent = "In Stock";
+                    stockElement.classList.add("text-success");
+                }
+            }
+            addButton.disabled = stock <= 0;
+
+            const buttonLabel = addButton.querySelector(".add-to-cart-label");
+
+            if (buttonLabel) {
+                buttonLabel.textContent = stock <= 0 ?
+                    "Out of Stock" :
+                    "Add to Cart";
+            }
+
+            console.log("Selected variant:", {
+                variant_id: option.value,
+                variant_title: option.dataset.title,
+                price: price,
+                original_price: originalPrice,
+                stock: stock,
+                sku: option.dataset.sku
+            });
         }
 
-        variantSelect.addEventListener("change", updateSelectedVariant);
 
-        // Sync button data with the initially selected variant.
+        variantSelect.addEventListener("change", updateSelectedVariant);
         updateSelectedVariant();
     });
+
+    
+document.addEventListener("DOMContentLoaded", function () {
+    const thumbnails = document.querySelectorAll(".product-thumbnail");
+    const mainImage = document.getElementById("mainProductImage");
+
+    if (!mainImage || thumbnails.length === 0) {
+        return;
+    }
+
+    thumbnails.forEach(function (thumbnail) {
+        thumbnail.addEventListener("click", function () {
+            const imagePath = thumbnail.dataset.image;
+            const imageAlt = thumbnail.dataset.alt || "";
+
+            if (!imagePath) {
+                return;
+            }
+
+            mainImage.src = imagePath;
+            mainImage.alt = imageAlt;
+
+            thumbnails.forEach(function (item) {
+                item.classList.remove("active");
+                item.setAttribute("aria-pressed", "false");
+            });
+
+            thumbnail.classList.add("active");
+            thumbnail.setAttribute("aria-pressed", "true");
+        });
+    });
+});
+
 </script>
 
 
