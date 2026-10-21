@@ -295,60 +295,107 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
             ]);
         }
 
-        if ($paymentMethod === 'cash_on_delivery') {
 
+if ($paymentMethod === 'cash_on_delivery') {
 
-            foreach ($orderItems as $item) {
+    // Keep track of products whose variant stock changed.
+    $updatedVariantProductIds = [];
 
-                if (!empty($item['variant_id'])) {
-                    $stockSql = "
-            UPDATE product_variants
-            SET stock = stock - :quantity
-            WHERE id = :variant_id
-              AND product_id = :product_id
-              AND status = 1
-              AND stock >= :quantity
-        ";
+    foreach ($orderItems as $item) {
 
-                    $stockStmt = $db->prepare($stockSql);
+        if (!empty($item['variant_id'])) {
 
-                    $stockStmt->execute([
-                        'quantity' => $item['quantity'],
-                        'variant_id' => $item['variant_id'],
-                        'product_id' => $item['product_id']
-                    ]);
-                } else {
-                    $stockSql = "
-            UPDATE products
-            SET stock = stock - :quantity
-            WHERE id = :product_id
-              AND stock >= :quantity
-        ";
+            // Reduce stock for the selected variant only.
+            $stockSql = "
+                UPDATE product_variants
+                SET stock = stock - :quantity
+                WHERE id = :variant_id
+                  AND product_id = :product_id
+                  AND status = 1
+                  AND stock >= :quantity
+            ";
 
-                    $stockStmt = $db->prepare($stockSql);
+            $stockStmt = $db->prepare($stockSql);
 
-                    $stockStmt->execute([
-                        'quantity' => $item['quantity'],
-                        'product_id' => $item['product_id']
-                    ]);
-                }
+            $stockStmt->execute([
+                'quantity'   => $item['quantity'],
+                'variant_id' => $item['variant_id'],
+                'product_id' => $item['product_id']
+            ]);
 
-                if ($stockStmt->rowCount() !== 1) {
-                    throw new Exception(
-                        "Unable to update stock for: " . $item['product_name']
-                    );
-                }
+            if ($stockStmt->rowCount() !== 1) {
+                throw new Exception(
+                    "Unable to update stock for: " . $item['product_name']
+                );
             }
 
-            $db->commit();
+            // Remember this parent product for stock recalculation.
+            $updatedVariantProductIds[] = (int) $item['product_id'];
 
-            $_SESSION['last_order_id'] =
-                $orderId;
-            header(
-                "Location: order-confirmation.php"
-            );
-            exit;
+        } else {
+
+            // Products without variants use their own stock.
+            $stockSql = "
+                UPDATE products
+                SET stock = stock - :quantity
+                WHERE id = :product_id
+                  AND stock >= :quantity
+            ";
+
+            $stockStmt = $db->prepare($stockSql);
+
+            $stockStmt->execute([
+                'quantity'   => $item['quantity'],
+                'product_id' => $item['product_id']
+            ]);
+
+            if ($stockStmt->rowCount() !== 1) {
+                throw new Exception(
+                    "Unable to update stock for: " . $item['product_name']
+                );
+            }
         }
+    }
+
+    // Recalculate parent stock after all variant deductions.
+    $updatedVariantProductIds = array_unique(
+        $updatedVariantProductIds
+    );
+
+    $sumStockStmt = $db->prepare("
+        SELECT COALESCE(SUM(stock), 0)
+        FROM product_variants
+        WHERE product_id = :product_id
+          AND status = 1
+    ");
+
+    $updateProductStockStmt = $db->prepare("
+        UPDATE products
+        SET stock = :stock
+        WHERE id = :product_id
+    ");
+
+    foreach ($updatedVariantProductIds as $productId) {
+
+        $sumStockStmt->execute([
+            'product_id' => $productId
+        ]);
+
+        $totalVariantStock = (int) $sumStockStmt->fetchColumn();
+
+        $updateProductStockStmt->execute([
+            'stock'      => $totalVariantStock,
+            'product_id' => $productId
+        ]);
+    }
+    $db->commit();
+
+    $_SESSION['last_order_id'] = $orderId;
+
+    header("Location: order-confirmation.php");
+    exit;
+}
+
 
         if ($paymentMethod === 'stripe') {
 

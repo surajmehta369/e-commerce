@@ -137,6 +137,98 @@
 
     $todayDeals =
         $todayDealsStmt->fetchAll(PDO::FETCH_ASSOC);
+    $allHomeProducts = array_merge(
+        $products,
+        $recommendationProducts,
+        $smartphoneProducts,
+        $dealProducts,
+        $todayDeals
+    );
+
+    $homeProductIds = [];
+
+    foreach ($allHomeProducts as $homeProduct) {
+        $homeProductIds[] = (int) $homeProduct['id'];
+    }
+
+    $homeProductIds = array_values(array_unique($homeProductIds));
+
+    $variantFallbackImages = [];
+
+    if (!empty($homeProductIds)) {
+        $placeholders = implode(
+            ',',
+            array_fill(0, count($homeProductIds), '?')
+        );
+
+        $fallbackStmt = $db->prepare("
+        SELECT
+            v.product_id,
+            vi.image_path
+        FROM product_variants v
+        INNER JOIN product_variant_images vi
+            ON vi.variant_id = v.id
+        WHERE v.product_id IN ($placeholders)
+          AND v.status = 1
+          AND vi.status = 1
+          AND vi.image_path <> ''
+        ORDER BY
+            v.product_id ASC,
+            v.id ASC,
+            vi.sort_order ASC,
+            vi.id ASC
+    ");
+
+        $fallbackStmt->execute($homeProductIds);
+
+        foreach ($fallbackStmt->fetchAll(PDO::FETCH_ASSOC) as $row) {
+            $fallbackProductId = (int) $row['product_id'];
+            if (!isset($variantFallbackImages[$fallbackProductId])) {
+                $variantFallbackImages[$fallbackProductId] = $row['image_path'];
+            }
+        }
+    }
+    $applyImageFallback = function (&$productList) use ($variantFallbackImages) {
+        foreach ($productList as &$product) {
+            $productId = (int) $product['id'];
+
+            if (isset($variantFallbackImages[$productId])) {
+                $product['image'] = $variantFallbackImages[$productId];
+            }
+        }
+
+        unset($product);
+    };
+
+    $applyImageFallback($products);
+    $applyImageFallback($recommendationProducts);
+    $applyImageFallback($smartphoneProducts);
+    $applyImageFallback($dealProducts);
+    $applyImageFallback($todayDeals);
+
+    $productsWithVariants = [];
+
+    if (!empty($homeProductIds)) {
+        $placeholders = implode(
+            ',',
+            array_fill(0, count($homeProductIds), '?')
+        );
+
+        $variantCheckStmt = $db->prepare("
+        SELECT DISTINCT product_id
+        FROM product_variants
+        WHERE status = 1
+          AND product_id IN ($placeholders)
+    ");
+
+        $variantCheckStmt->execute($homeProductIds);
+
+        $productsWithVariants = array_map(
+            'intval',
+            $variantCheckStmt->fetchAll(PDO::FETCH_COLUMN)
+        );
+    }
+
 
     ?>
 
@@ -365,23 +457,39 @@
                                                 Out of Stock
                                             </button>
 
+
                                         <?php else: ?>
 
-                                            <button
-                                                type="button"
-                                                class="shop-btn add-to-cart"
-                                                data-id="<?= (int)$product['id']; ?>"
-                                                data-title="<?= htmlspecialchars($product['title']); ?>"
-                                                data-price="<?= htmlspecialchars($product['price']); ?>"
-                                                data-image="<?= htmlspecialchars($product['image']); ?>">
+                                            <?php if (in_array((int)$product['id'], $productsWithVariants, true)): ?>
 
-                                                <i class="fa-solid fa-cart-plus"></i>
+                                                <a
+                                                    href="product-details.php?id=<?= (int)$product['id']; ?>"
+                                                    class="shop-btn">
 
-                                                Add to Cart
+                                                    <i class="fa-solid fa-sliders me-2"></i>
+                                                    Choose Options
 
-                                            </button>
+                                                </a>
+
+                                            <?php else: ?>
+
+                                                <button
+                                                    type="button"
+                                                    class="shop-btn add-to-cart"
+                                                    data-id="<?= (int)$product['id']; ?>"
+                                                    data-title="<?= htmlspecialchars($product['title'], ENT_QUOTES, 'UTF-8'); ?>"
+                                                    data-price="<?= htmlspecialchars((string)$product['price'], ENT_QUOTES, 'UTF-8'); ?>"
+                                                    data-image="<?= htmlspecialchars($product['image'] ?? '', ENT_QUOTES, 'UTF-8'); ?>">
+
+                                                    <i class="fa-solid fa-cart-plus"></i>
+                                                    Add to Cart
+
+                                                </button>
+
+                                            <?php endif; ?>
 
                                         <?php endif; ?>
+
 
                                     </div>
 
@@ -786,19 +894,34 @@
                                                         <?php endif; ?>
 
 
-                                                        <button
-                                                            type="button"
-                                                            class="shop-btn add-to-cart mt-2"
-                                                            data-id="<?= (int)$product['id']; ?>"
-                                                            data-title="<?= htmlspecialchars($product['title']); ?>"
-                                                            data-price="<?= htmlspecialchars($product['price']); ?>"
-                                                            data-image="<?= htmlspecialchars($product['image']); ?>">
+                                                        <?php if (in_array((int)$product['id'], $productsWithVariants, true)): ?>
 
-                                                            <i class="fa-solid fa-cart-plus"></i>
+                                                            <a
+                                                                href="product-details.php?id=<?= (int)$product['id']; ?>"
+                                                                class="shop-btn mt-2">
 
-                                                            Add to Cart
+                                                                <i class="fa-solid fa-sliders me-2"></i>
+                                                                Choose Options
 
-                                                        </button>
+                                                            </a>
+
+                                                        <?php else: ?>
+
+                                                            <button
+                                                                type="button"
+                                                                class="shop-btn add-to-cart mt-2"
+                                                                data-id="<?= (int)$product['id']; ?>"
+                                                                data-title="<?= htmlspecialchars($product['title'], ENT_QUOTES, 'UTF-8'); ?>"
+                                                                data-price="<?= htmlspecialchars((string)$product['price'], ENT_QUOTES, 'UTF-8'); ?>"
+                                                                data-image="<?= htmlspecialchars($product['image'] ?? '', ENT_QUOTES, 'UTF-8'); ?>">
+
+                                                                <i class="fa-solid fa-cart-plus"></i>
+                                                                Add to Cart
+
+                                                            </button>
+
+                                                        <?php endif; ?>
+
 
                                                     </article>
 
