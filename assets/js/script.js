@@ -238,21 +238,29 @@ document.addEventListener("DOMContentLoaded", function () {
                 price: Number(button.dataset.price) || 0,
                 image: button.dataset.image || "",
                 stock: Number(button.dataset.stock) || 0,
+
                 variant_id: button.dataset.variantId
                     ? Number(button.dataset.variantId)
                     : null,
+
+                variant_title: button.dataset.variantTitle || "",
+
                 variant_options: (() => {
                     try {
-                        return JSON.parse(button.dataset.variantOptions || "{}");
+                        return JSON.parse(
+                            button.dataset.variantOptions || "{}"
+                        );
                     } catch (error) {
                         return {};
                     }
                 })(),
-                variant_title: button.dataset.variantTitle || "",
+
                 sku: button.dataset.sku || ""
             };
 
+            console.log("Add to Cart clicked:", selectedProduct);
 
+            console.log("PRODUCT SENT TO CART:", selectedProduct);
 
             console.log(
                 "Add to Cart clicked:",
@@ -556,12 +564,8 @@ document.addEventListener("DOMContentLoaded", function () {
 
         // Match BOTH the main product ID and the variant ID.
         const existingProduct = cart.find(function (item) {
-            const itemVariantId = item.variant_id == null
-                ? ""
-                : String(item.variant_id);
-
             return String(item.id) === productId &&
-                itemVariantId === variantId;
+                String(item.variant_id ?? "") === variantId;
         });
 
         if (existingProduct) {
@@ -776,7 +780,11 @@ document.addEventListener("DOMContentLoaded", function () {
                         <div class="ms-3">
 
                             <h5 class="mb-1">
-                                ${product.title}
+                              ${product.variant_title
+                    ? `<div class="text-muted small mb-1">
+           Variant: ${escapeHtml(product.variant_title)}
+       </div>`
+                    : ""}
                             </h5>
 
 
@@ -799,6 +807,7 @@ document.addEventListener("DOMContentLoaded", function () {
         type="button"
         class="btn btn-outline-secondary btn-sm cart-quantity-minus"
         data-id="${product.id}"
+        data-variant-id="${product.variant_id ?? ""}"
         style="width:32px; height:32px;"
     >
         −
@@ -817,6 +826,7 @@ document.addEventListener("DOMContentLoaded", function () {
         type="button"
         class="btn btn-outline-primary btn-sm cart-quantity-plus"
         data-id="${product.id}"
+       data-variant-id="${product.variant_id ?? ""}"
         style="width:32px; height:32px;"
     >
         +
@@ -844,7 +854,8 @@ document.addEventListener("DOMContentLoaded", function () {
                             type="button"
                             class="btn btn-danger
                                    btn-sm remove-from-cart"
-                            data-id="${product.id}"
+                                   data-id="${product.id}"
+                            data-variant-id="${product.variant_id ?? ""}"
                         >
 
                             <i class="fa-solid fa-trash"></i>
@@ -920,30 +931,20 @@ document.addEventListener("DOMContentLoaded", function () {
                 "click",
                 function () {
 
-                    const productId =
-                        this.dataset.id;
+                    const productId = String(button.dataset.id);
+                    const variantId = String(button.dataset.variantId ?? "");
 
+                    let updatedCart = getCart();
 
-                    let updatedCart =
-                        getCart();
-
-
-                    updatedCart =
-                        updatedCart.filter(
-                            function (product) {
-
-                                return product.id !==
-                                    productId;
-
-                            }
+                    updatedCart = updatedCart.filter(function (product) {
+                        return !(
+                            String(product.id) === productId &&
+                            String(product.variant_id ?? "") === variantId
                         );
-
+                    });
 
                     saveCart(updatedCart);
-
                     updateCartCount();
-
-
                     displayCart();
 
                 }
@@ -951,100 +952,67 @@ document.addEventListener("DOMContentLoaded", function () {
 
         });
 
-        const plusButtons =
-            document.querySelectorAll(".cart-quantity-plus");
-
+        const plusButtons = document.querySelectorAll(".cart-quantity-plus");
 
         plusButtons.forEach(function (button) {
-
             button.addEventListener("click", function () {
-
-                const productId =
-                    this.dataset.id;
-
+                const productId = String(button.dataset.id);
+                const variantId = String(button.dataset.variantId ?? "");
 
                 let updatedCart = getCart();
 
+                const product = updatedCart.find(function (item) {
+                    return String(item.id) === productId &&
+                        String(item.variant_id ?? "") === variantId;
+                });
 
-                const product =
-                    updatedCart.find(function (item) {
+                if (!product) return;
 
-                        return item.id === productId;
+                const stock = Number(product.stock);
 
-                    });
-
-
-                if (product) {
-                    const stock = Number(product.stock);
-
-                    if (!Number.isFinite(stock) || stock <= 0) {
-                        alert("Sorry, this product is out of stock.");
-                        return;
-                    }
-
-                    if (Number(product.quantity) >= stock) {
-                        alert("Only " + stock + " items are available in stock.");
-                        return;
-                    }
-
-                    product.quantity = Number(product.quantity) + 1;
+                if (!Number.isFinite(stock) || stock <= 0) {
+                    alert("Sorry, this product is out of stock.");
+                    return;
                 }
 
+                if (Number(product.quantity) >= stock) {
+                    alert("Only " + stock + " items are available in stock.");
+                    return;
+                }
+
+                product.quantity = Number(product.quantity) + 1;
 
                 saveCart(updatedCart);
-
                 updateCartCount();
-
                 displayCart();
-
             });
-
         });
 
 
-        const minusButtons =
-            document.querySelectorAll(".cart-quantity-minus");
-
+        const minusButtons = document.querySelectorAll(".cart-quantity-minus");
 
         minusButtons.forEach(function (button) {
-
             button.addEventListener("click", function () {
-
-                const productId =
-                    this.dataset.id;
-
+                const productId = String(button.dataset.id);
+                const variantId = String(button.dataset.variantId ?? "");
 
                 let updatedCart = getCart();
 
+                const product = updatedCart.find(function (item) {
+                    return String(item.id) === productId &&
+                        String(item.variant_id ?? "") === variantId;
+                });
 
-                const product =
-                    updatedCart.find(function (item) {
+                if (!product) return;
 
-                        return item.id === productId;
+                if (Number(product.quantity) > 1) {
+                    product.quantity = Number(product.quantity) - 1;
 
-                    });
-
-
-                if (product) {
-
-
-                    if (product.quantity > 1) {
-
-                        product.quantity--;
-
-                    }
-
+                    saveCart(updatedCart);
+                    updateCartCount();
+                    displayCart();
                 }
-
-
-                saveCart(updatedCart);
-
-                updateCartCount();
-
-                displayCart();
-
             });
-
         });
 
 
@@ -1882,21 +1850,19 @@ document.addEventListener("DOMContentLoaded", function () {
 
     }
 
-
-
-    function escapeHtml(value) {
-
-        const div =
-            document.createElement("div");
-
-        div.textContent =
-            value ?? "";
-
-        return div.innerHTML;
-
-    }
-
 });
+
+function escapeHtml(value) {
+
+    const div =
+        document.createElement("div");
+
+    div.textContent =
+        value ?? "";
+
+    return div.innerHTML;
+
+}
 
 
 
