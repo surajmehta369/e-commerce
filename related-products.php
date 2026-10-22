@@ -705,25 +705,42 @@ require_once "components/sidebar.php";
                             </div>
 
 
-                     <button
-    type="button"
-    class="shop-btn add-to-cart"
-    data-id="${product.id}"
-    data-title="${escapeHtml(product.title)}"
-    data-price="${product.price}"
-    data-image="${escapeHtml(product.image)}"
-    data-stock="${product.stock}"
->
-
-                                <i
-                                    class="fa-solid
-                                           fa-cart-plus
-                                           me-2"
-                                ></i>
-
-                                Add to Cart
-
-                            </button>
+  ${
+    Number(product.has_variants) === 1
+        ? `
+            <a
+                href="product-details.php?id=${Number(product.id)}"
+                class="shop-btn d-block text-center text-decoration-none"
+            >
+                <i class="fa-solid fa-sliders me-2"></i>
+                Choose Options
+            </a>
+        `
+        : Number(product.stock) > 0
+            ? `
+                <button
+                    type="button"
+                    class="shop-btn add-to-cart"
+                    data-id="${Number(product.id)}"
+                    data-title="${escapeHtml(product.title)}"
+                    data-price="${Number(product.price)}"
+                    data-image="${escapeHtml(product.image || '')}"
+                    data-stock="${Number(product.stock)}"
+                >
+                    <i class="fa-solid fa-cart-plus me-2"></i>
+                    Add to Cart
+                </button>
+            `
+            : `
+                <button
+                    type="button"
+                    class="shop-btn"
+                    disabled
+                >
+                    Out of Stock
+                </button>
+            `
+}
 
                         </div>
 

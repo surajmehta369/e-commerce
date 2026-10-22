@@ -8,10 +8,22 @@ require_once "../zoho/zoho_functions.php";
 $database = new Database();
 $db = $database->connect();
 
-syncShopifyProductsToDatabase();
+// TEMPORARY: Enable JSON testing without saving products.
+$testStockJson = isset($_GET['test_stock']) &&
+    $_GET['test_stock'] === '1';
 
 $message = "";
 $messageType = "";
+
+$sku = "";
+$title = "";
+$description = "";
+$price = "";
+$originalPrice = "";
+$stock = "";
+$categoryId = 0;
+$brandId = 0;
+$status = 1;
 
 $categoryStmt = $db->prepare("
     SELECT id, name, parent_id
@@ -19,12 +31,8 @@ $categoryStmt = $db->prepare("
     WHERE status = 1
     ORDER BY name ASC
 ");
-
 $categoryStmt->execute();
-
-$categories =
-    $categoryStmt->fetchAll(PDO::FETCH_ASSOC);
-
+$categories = $categoryStmt->fetchAll(PDO::FETCH_ASSOC);
 
 $brandStmt = $db->prepare("
     SELECT id, name
@@ -32,625 +40,900 @@ $brandStmt = $db->prepare("
     WHERE status = 1
     ORDER BY name ASC
 ");
-
 $brandStmt->execute();
-
-$brands =
-    $brandStmt->fetchAll(PDO::FETCH_ASSOC);
-
+$brands = $brandStmt->fetchAll(PDO::FETCH_ASSOC);
 
 if ($_SERVER['REQUEST_METHOD'] === 'POST') {
 
-    $sku =
-        trim(
-            $_POST['sku'] ?? ''
-        );
+    $sku = trim($_POST['sku'] ?? '');
+    $title = trim($_POST['title'] ?? '');
+    $description = trim($_POST['description'] ?? '');
+    $price = trim($_POST['price'] ?? '');
+    $originalPrice = trim($_POST['original_price'] ?? '');
+    $stock = trim($_POST['stock'] ?? '');
 
-    $title =
-        trim(
-            $_POST['title'] ?? ''
-        );
+    $categoryId = (int) ($_POST['category_id'] ?? 0);
+    $brandId = (int) ($_POST['brand_id'] ?? 0);
 
-    $description =
-        trim(
-            $_POST['description'] ?? ''
-        );
-
-    $price =
-        trim(
-            $_POST['price'] ?? ''
-        );
-
-    $originalPrice =
-        trim(
-            $_POST['original_price'] ?? ''
-        );
-
-    $stock =
-        trim(
-            $_POST['stock'] ?? ''
-        );
-
-    $categoryId =
-        (int) (
-            $_POST['category_id'] ?? 0
-        );
-
-    $brandId =
-        (int) (
-            $_POST['brand_id'] ?? 0
-        );
-
-    $status =
-        isset($_POST['status'])
+    $status = isset($_POST['status'])
         ? (int) $_POST['status']
         : 1;
 
-    if ($sku === '') {
+    $uploadedPaths = [];
+    $uploadedVariantPaths = [];
+    $imageName = null;
+    $variantsToSave = [];
 
-        $message =
-            "SKU is required.";
 
-        $messageType =
-            "danger";
-    } elseif ($title === '') {
+    try {
 
-        $message =
-            "Product title is required.";
+        if ($sku === '' || strlen($sku) > 100) {
+            throw new RuntimeException(
+                "Please enter a valid SKU (maximum 100 characters)."
+            );
+        }
 
-        $messageType =
-            "danger";
-    } elseif (
-        $price === '' ||
-        !is_numeric($price) ||
-        $price < 0
-    ) {
+        if ($title === '') {
+            throw new RuntimeException(
+                "Product title is required."
+            );
+        }
 
-        $message =
-            "Please enter a valid price.";
+        if (
+            $price === '' ||
+            !is_numeric($price) ||
+            !is_finite((float) $price) ||
+            (float) $price < 0 ||
+            (float) $price > 99999999.99
+        ) {
+            throw new RuntimeException(
+                "Please enter a valid selling price."
+            );
+        }
 
-        $messageType =
-            "danger";
-    } elseif (
-        $originalPrice !== '' &&
-        (
-            !is_numeric($originalPrice) ||
-            $originalPrice < 0
-        )
-    ) {
+        if (
+            $originalPrice !== '' &&
+            (
+                !is_numeric($originalPrice) ||
+                !is_finite((float) $originalPrice) ||
+                (float) $originalPrice < 0 ||
+                (float) $originalPrice > 99999999.99
+            )
+        ) {
+            throw new RuntimeException(
+                "Please enter a valid original price."
+            );
+        }
+        if ($categoryId <= 0) {
+            throw new RuntimeException(
+                "Please select a category."
+            );
+        }
 
-        $message =
-            "Please enter a valid original price.";
+        if ($brandId <= 0) {
+            throw new RuntimeException(
+                "Please select a brand."
+            );
+        }
 
-        $messageType =
-            "danger";
-    } elseif (
-        $stock === '' ||
-        !is_numeric($stock) ||
-        $stock < 0
-    ) {
+        if (!in_array($status, [0, 1], true)) {
+            throw new RuntimeException(
+                "Please select a valid product status."
+            );
+        }
 
-        $message =
-            "Please enter a valid stock quantity.";
+        $priceValue = round((float) $price, 2);
 
-        $messageType =
-            "danger";
-    } elseif ($categoryId <= 0) {
+        $originalPriceValue = $originalPrice !== ''
+            ? round((float) $originalPrice, 2)
+            : $priceValue;
 
-        $message =
-            "Please select a category.";
+        $stockValue = (int) $stock;
 
-        $messageType =
-            "danger";
-    } elseif ($brandId <= 0) {
+        $discount = 0;
 
-        $message =
-            "Please select a brand.";
-
-        $messageType =
-            "danger";
-    } else {
+        if (
+            $originalPriceValue > 0 &&
+            $originalPriceValue > $priceValue
+        ) {
+            $discount = round(
+                (
+                    ($originalPriceValue - $priceValue)
+                    / $originalPriceValue
+                ) * 100,
+                2
+            );
+        }
 
         $skuStmt = $db->prepare("
             SELECT id
             FROM products
             WHERE sku = :sku
+
+            UNION ALL
+
+            SELECT id
+            FROM product_variants
+            WHERE sku = :variant_sku
+
             LIMIT 1
         ");
 
         $skuStmt->execute([
-            ':sku' => $sku
+            ':sku' => $sku,
+            ':variant_sku' => $sku
         ]);
 
-
-        if ($skuStmt->fetch()) {
-
-            $message =
-                "This SKU already exists.";
-
-            $messageType =
-                "danger";
-        } else {
-
-            $priceValue =
-                (float) $price;
+        if ($skuStmt->fetch(PDO::FETCH_ASSOC)) {
+            throw new RuntimeException(
+                "This SKU already exists in a product or variant."
+            );
+        }
 
 
-            $originalPriceValue =
-                $originalPrice !== ''
-                ? (float) $originalPrice
-                : $priceValue;
+        $submittedVariants = $_POST['variants'] ?? [];
 
+        if (!is_array($submittedVariants)) {
+            throw new RuntimeException(
+                "Invalid variant information."
+            );
+        }
 
-            $discount = 0;
+        $seenVariantSkus = [strtolower($sku) => true];
 
+        foreach ($submittedVariants as $formIndex => $variant) {
 
-            if (
-                $originalPriceValue > 0 &&
-                $originalPriceValue > $priceValue
-            ) {
-
-                $discount =
-                    round(
-                        (
-                            (
-                                $originalPriceValue -
-                                $priceValue
-                            )
-                            /
-                            $originalPriceValue
-                        ) * 100,
-                        2
-                    );
+            if (!is_array($variant)) {
+                continue;
             }
 
-            $slug =
-                createUniqueSlug(
-                    $db,
-                    $title
-                );
-
-            $imageName = null;
-
+            $variantTitle = trim($variant['title'] ?? '');
+            $variantSku = trim($variant['sku'] ?? '');
+            $variantPrice = trim($variant['price'] ?? '');
+            $variantOriginal = trim(
+                $variant['original_price'] ?? ''
+            );
+            $variantStock = trim($variant['stock'] ?? '');
+            $attributeText = trim($variant['attributes'] ?? '');
+            if (
+                $variantTitle === '' &&
+                $variantSku === '' &&
+                $variantPrice === '' &&
+                $variantOriginal === '' &&
+                $variantStock === '' &&
+                $attributeText === ''
+            ) {
+                continue;
+            }
 
             if (
-                isset($_FILES['image']) &&
-                $_FILES['image']['error'] !== UPLOAD_ERR_NO_FILE
+                $variantTitle === '' ||
+                strlen($variantTitle) > 255
             ) {
+                throw new RuntimeException(
+                    "Every variant needs a title of at most 255 characters."
+                );
+            }
 
-                if (
-                    $_FILES['image']['error'] !==
-                    UPLOAD_ERR_OK
-                ) {
+            if (
+                $variantSku === '' ||
+                strlen($variantSku) > 100
+            ) {
+                throw new RuntimeException(
+                    "Every variant needs a SKU of at most 100 characters."
+                );
+            }
 
-                    $message =
-                        "There was an error uploading the image.";
+            $normalizedSku = strtolower($variantSku);
 
-                    $messageType =
-                        "danger";
-                } else {
+            if (isset($seenVariantSkus[$normalizedSku])) {
+                throw new RuntimeException(
+                    "The main product SKU and variant SKUs must all be unique."
+                );
+            }
 
-                    $allowedTypes = [
-                        'image/jpeg',
-                        'image/png',
-                        'image/webp'
-                    ];
+            $seenVariantSkus[$normalizedSku] = true;
 
+            if (
+                $variantPrice === '' ||
+                !is_numeric($variantPrice) ||
+                !is_finite((float) $variantPrice) ||
+                (float) $variantPrice < 0 ||
+                (float) $variantPrice > 99999999.99
+            ) {
+                throw new RuntimeException(
+                    "Enter a valid selling price for every variant."
+                );
+            }
 
-                    $fileType =
-                        mime_content_type(
-                            $_FILES['image']['tmp_name']
-                        );
+            if (
+                $variantOriginal !== '' &&
+                (
+                    !is_numeric($variantOriginal) ||
+                    !is_finite((float) $variantOriginal) ||
+                    (float) $variantOriginal < 0 ||
+                    (float) $variantOriginal > 99999999.99
+                )
+            ) {
+                throw new RuntimeException(
+                    "Enter a valid original price for every variant."
+                );
+            }
 
+            if (
+                $variantStock === '' ||
+                filter_var(
+                    $variantStock,
+                    FILTER_VALIDATE_INT
+                ) === false ||
+                (int) $variantStock < 0
+            ) {
+                throw new RuntimeException(
+                    "Enter a valid whole-number stock for every variant."
+                );
+            }
+            $attributes = [];
 
-                    if (
-                        !in_array(
-                            $fileType,
-                            $allowedTypes,
-                            true
-                        )
-                    ) {
+            if ($attributeText !== '') {
 
-                        $message =
-                            "Only JPG, PNG and WEBP images are allowed.";
+                $attributeParts = preg_split(
+                    '/[,;\r\n]+/',
+                    $attributeText
+                );
 
-                        $messageType =
-                            "danger";
-                    } elseif (
-                        $_FILES['image']['size'] >
-                        5 * 1024 * 1024
-                    ) {
+                foreach ($attributeParts as $part) {
 
-                        $message =
-                            "Image size must not exceed 5MB.";
+                    $part = trim($part);
 
-                        $messageType =
-                            "danger";
-                    } else {
+                    if ($part === '') {
+                        continue;
+                    }
 
-                        $extension =
-                            strtolower(
-                                pathinfo(
-                                    $_FILES['image']['name'],
-                                    PATHINFO_EXTENSION
-                                )
-                            );
+                    $separator = strpos($part, ':');
 
+                    if ($separator === false) {
+                        $attributes['Options'] = $part;
+                        continue;
+                    }
 
-                        $fileName =
-                            uniqid(
-                                'product_',
-                                true
-                            ) .
-                            '.' .
-                            $extension;
+                    $key = trim(substr($part, 0, $separator));
+                    $value = trim(substr($part, $separator + 1));
 
-
-                        $uploadDirectory =
-                            "../assets/uploads/";
-
-
-                        if (
-                            !is_dir(
-                                $uploadDirectory
-                            )
-                        ) {
-
-                            mkdir(
-                                $uploadDirectory,
-                                0755,
-                                true
-                            );
-                        }
-
-
-                        $uploadPath =
-                            $uploadDirectory .
-                            $fileName;
-
-
-                        if (
-                            !move_uploaded_file(
-                                $_FILES['image']['tmp_name'],
-                                $uploadPath
-                            )
-                        ) {
-
-                            $message =
-                                "Failed to upload product image.";
-
-                            $messageType =
-                                "danger";
-                        } else {
-
-                            $imageName =
-                                "assets/uploads/" .
-                                $fileName;
-                        }
+                    if ($key !== '' && $value !== '') {
+                        $attributes[$key] = $value;
                     }
                 }
             }
 
-            if ($message === "") {
-
-                try {
-
-                    $stmt = $db->prepare("
-                        INSERT INTO products
-                        (
-                            sku,
-                            title,
-                            slug,
-                            description,
-                            image,
-                            price,
-                            original_price,
-                            discount,
-                            stock,
-                            category_id,
-                            brand_id,
-                            status,
-                            vendor_id
-                        )
-                        VALUES
-                        (
-                            :sku,
-                            :title,
-                            :slug,
-                            :description,
-                            :image,
-                            :price,
-                            :original_price,
-                            :discount,
-                            :stock,
-                            :category_id,
-                            :brand_id,
-                            :status,
-                            NULL
-                        )
-                    ");
+            $variantsToSave[] = [
+                'form_index' => (string) $formIndex,
+                'title' => $variantTitle,
+                'sku' => $variantSku,
+                'price' => round((float) $variantPrice, 2),
+                'original_price' => $variantOriginal !== ''
+                    ? round((float) $variantOriginal, 2)
+                    : null,
+                'stock' => (int) $variantStock,
+                'attributes' => $attributes
+                    ? json_encode(
+                        $attributes,
+                        JSON_UNESCAPED_UNICODE
+                    )
+                    : null
+            ];
+        }
+
+
+        if (!empty($variantsToSave)) {
+
+            $stockValue = array_sum(
+                array_column($variantsToSave, 'stock')
+            );
+        } else {
+
+            if (
+                $stock === '' ||
+                filter_var($stock, FILTER_VALIDATE_INT) === false ||
+                (int) $stock < 0
+            ) {
+                throw new RuntimeException(
+                    "Please enter a valid whole-number stock quantity."
+                );
+            }
+
+            $stockValue = (int) $stock;
+        }
+
+        // TEMPORARY JSON TEST: Do not save or sync anything.
+        if ($testStockJson) {
+
+            if (!empty($variantsToSave)) {
+                $stockValue = array_sum(
+                    array_column($variantsToSave, 'stock')
+                );
+            } else {
+                if (
+                    $stock === '' ||
+                    filter_var($stock, FILTER_VALIDATE_INT) === false ||
+                    (int) $stock < 0
+                ) {
+                    throw new RuntimeException(
+                        "Please enter a valid whole-number stock quantity."
+                    );
+                }
+
+                $stockValue = (int) $stock;
+            }
+
+            header('Content-Type: application/json; charset=utf-8');
+
+            echo json_encode([
+                'test_mode' => true,
+                'database_saved' => false,
+                'shopify_synced' => false,
+                'zoho_synced' => false,
+                'product' => [
+                    'sku' => $sku,
+                    'title' => $title,
+                    'main_stock' => $stockValue
+                ],
+                'variants' => array_map(function ($variant) {
+                    return [
+                        'title' => $variant['title'],
+                        'sku' => $variant['sku'],
+                        'stock' => $variant['stock']
+                    ];
+                }, $variantsToSave),
+                'variant_stock_total' => array_sum(
+                    array_column($variantsToSave, 'stock')
+                ),
+                'stock_matches' => empty($variantsToSave)
+                    ? true
+                    : $stockValue === array_sum(
+                        array_column($variantsToSave, 'stock')
+                    )
+            ], JSON_PRETTY_PRINT | JSON_UNESCAPED_UNICODE);
+
+            exit;
+        }
+
+        if ($variantsToSave) {
+
+            $checkVariantSku = $db->prepare("
+                SELECT id
+                FROM products
+                WHERE sku = :product_sku
+
+                UNION ALL
+
+                SELECT id
+                FROM product_variants
+                WHERE sku = :variant_sku
 
+                LIMIT 1
+            ");
 
-                    $stmt->execute([
+            foreach ($variantsToSave as $variant) {
 
-                        ':sku' =>
-                        $sku,
+                $checkVariantSku->execute([
+                    ':product_sku' => $variant['sku'],
+                    ':variant_sku' => $variant['sku']
+                ]);
 
-                        ':title' =>
-                        $title,
-
-                        ':slug' =>
-                        $slug,
-
-                        ':description' =>
-                        $description,
-
-                        ':image' =>
-                        $imageName,
-
-                        ':price' =>
-                        $priceValue,
-
-                        ':original_price' =>
-                        $originalPriceValue,
-
-                        ':discount' =>
-                        $discount,
-
-                        ':stock' =>
-                        (int) $stock,
-
-                        ':category_id' =>
-                        $categoryId,
-
-                        ':brand_id' =>
-                        $brandId,
-
-                        ':status' =>
-                        $status
-                    ]);
-
-
-                    $localProductId =
-                        (int) $db->lastInsertId();
-
-                    $shopifyResult =
-                        createShopifyProduct([
-                            'title' =>
-                            $title,
-
-                            'description' =>
-                            $description,
-
-                            'slug' =>
-                            $slug,
-
-                            'status' =>
-                            $status
-                        ]);
-
-
-                    if (
-                        !empty($shopifyResult['success'])
-                    ) {
-
-                        $shopifyProductId =
-                            $shopifyResult['data']['id']
-                            ?? null;
-
-
-                        if (!$shopifyProductId) {
-
-                            $message =
-                                "Shopify product was created, but Shopify Product ID was not returned.";
-
-                            $messageType =
-                                "warning";
-                        } else {
-
-                            $shopifyUpdate =
-                                $db->prepare("
-                                    UPDATE products
-                                    SET
-                                        shopify_product_id =
-                                            :shopify_product_id,
-
-                                        shopify_status =
-                                            :shopify_status,
-
-                                        shopify_synced_at =
-                                            NOW()
-
-                                    WHERE id = :id
-                                ");
-
-
-                            $shopifyUpdate->execute([
-
-                                ':shopify_product_id' =>
-                                $shopifyProductId,
-
-                                ':shopify_status' =>
-                                $status
-                                    ? 'ACTIVE'
-                                    : 'DRAFT',
-
-                                ':id' =>
-                                $localProductId
-                            ]);
-                            $variantResult =
-                                updateShopifyProductVariant(
-                                    $shopifyProductId,
-                                    $price,
-                                    $originalPrice,
-                                    $sku
-                                );
-
-                            $inventoryResult =
-                                updateShopifyInventory(
-                                    $shopifyProductId,
-                                    (int) $stock
-                                );
-
-
-                            $variantSuccess =
-                                !empty($variantResult['success']);
-
-
-                            $inventorySuccess =
-                                !empty($inventoryResult['success']);
-
-
-                            if (
-                                $variantSuccess &&
-                                $inventorySuccess
-                            ) {
-
-                                $message =
-                                    "Product created successfully and fully synced to Shopify.";
-
-                                $messageType =
-                                    "success";
-                            } elseif ($variantSuccess) {
-
-                                $message =
-                                    "Product created and variant synced, but inventory sync failed.";
-
-                                $messageType =
-                                    "warning";
-                            } elseif ($inventorySuccess) {
-
-                                $message =
-                                    "Product created and inventory synced, but variant sync failed.";
-
-                                $messageType =
-                                    "warning";
-                            } else {
-
-                                $message =
-                                    "Product created in Shopify, but price, SKU and inventory synchronization failed.";
-
-                                $messageType =
-                                    "warning";
-                            }
-                        }
-                    } else {
-
-                        $message =
-                            "Product created locally, but Shopify product creation failed.";
-
-                        $messageType =
-                            "warning";
-                    }
-
-                    $zohoResult = syncProductToZoho([
-                        'name' => $title,
-                        'sku' => $sku,
-                        'description' => $description,
-                        'rate' => $priceValue,
-                        'purchase_rate' => $originalPriceValue,
-                        'stock' => (int) $stock
-                    ]);
-
-                    $zohoItemId = trim((string) (
-                        $zohoResult['item_id']
-                        ?? $zohoResult['item']['item_id']
-                        ?? $zohoResult['response']['item']['item_id']
-                        ?? ''
-                    ));
-                    if (!empty($zohoResult['success']) && $zohoItemId === '') {
-                        $lookupResult = findZohoItemBySKU($sku);
-
-                        if (
-                            !empty($lookupResult['success']) &&
-                            !empty($lookupResult['found'])
-                        ) {
-                            $zohoItemId = trim((string) (
-                                $lookupResult['item']['item_id'] ?? ''
-                            ));
-                        }
-                    }
-                    if (!empty($zohoResult['success']) && $zohoItemId !== '') {
-                        try {
-                            $saveZohoId = $db->prepare("
-                            UPDATE products
-                            SET zoho_item_id = :zoho_item_id
-                            WHERE id = :id
-                        ");
-
-                            $saveZohoId->execute([
-                                ':zoho_item_id' => $zohoItemId,
-                                ':id' => $localProductId
-                            ]);
-
-                            if ($message !== '') {
-                                $message .= " Zoho Inventory item synced and ID saved.";
-                            } else {
-                                $message = "Product synced successfully to Zoho Inventory.";
-                            }
-
-                            if ($messageType === '') {
-                                $messageType = "success";
-                            }
-                        } catch (PDOException $e) {
-                            $message .= " Zoho item synced, but its ID could not be saved locally.";
-                            $messageType = "warning";
-                        }
-                    } elseif (!empty($zohoResult['success'])) {
-                        $message .= " Zoho sync reported success, but the Zoho item ID could not be retrieved.";
-                        $messageType = "warning";
-                    } else {
-                        $zohoError = $zohoResult['message']
-                            ?? 'Unknown Zoho synchronization error.';
-
-                        $message .= " Zoho Inventory sync failed: " . $zohoError;
-                        $messageType = "warning";
-                    }
-
-
-                    $sku = "";
-                    $title = "";
-                    $description = "";
-                    $price = "";
-                    $originalPrice = "";
-                    $stock = "";
-                    $categoryId = 0;
-                    $brandId = 0;
-                    $status = 1;
-                } catch (PDOException $e) {
-
-                    if ($imageName) {
-
-                        $uploadedFile =
-                            "../" .
-                            $imageName;
-
-
-                        if (
-                            file_exists(
-                                $uploadedFile
-                            )
-                        ) {
-
-                            unlink(
-                                $uploadedFile
-                            );
-                        }
-                    }
-
-
-                    $message =
-                        "Unable to create product. Please try again.";
-
-                    $messageType =
-                        "danger";
+                if ($checkVariantSku->fetch(PDO::FETCH_ASSOC)) {
+                    throw new RuntimeException(
+                        "Variant SKU already exists: " .
+                            $variant['sku']
+                    );
                 }
             }
         }
+
+        $imageFiles = [];
+
+        if (
+            isset($_FILES['images']) &&
+            is_array($_FILES['images']['name'])
+        ) {
+            $fileCount = count($_FILES['images']['name']);
+
+            for ($i = 0; $i < $fileCount; $i++) {
+
+                $error = $_FILES['images']['error'][$i];
+
+                if ($error === UPLOAD_ERR_NO_FILE) {
+                    continue;
+                }
+
+                if ($error !== UPLOAD_ERR_OK) {
+                    throw new RuntimeException(
+                        "An image upload failed. Please check your PHP upload limits."
+                    );
+                }
+
+                $imageFiles[] = [
+                    'tmp_name' => $_FILES['images']['tmp_name'][$i],
+                    'size' => (int) $_FILES['images']['size'][$i]
+                ];
+            }
+        }
+
+        $uploadDirectory = "../assets/uploads/";
+
+        if (
+            !is_dir($uploadDirectory) &&
+            !mkdir($uploadDirectory, 0755, true) &&
+            !is_dir($uploadDirectory)
+        ) {
+            throw new RuntimeException(
+                "Could not create the image upload directory."
+            );
+        }
+
+        $finfo = new finfo(FILEINFO_MIME_TYPE);
+
+        $allowedMimeTypes = [
+            'image/jpeg' => 'jpg',
+            'image/png' => 'png',
+            'image/webp' => 'webp'
+        ];
+
+        foreach ($imageFiles as $file) {
+
+            if ($file['size'] > 5 * 1024 * 1024) {
+                throw new RuntimeException(
+                    "Each image must not exceed 5MB."
+                );
+            }
+
+            if (!is_uploaded_file($file['tmp_name'])) {
+                throw new RuntimeException(
+                    "Invalid image upload."
+                );
+            }
+
+            $mimeType = $finfo->file($file['tmp_name']);
+
+            if (!isset($allowedMimeTypes[$mimeType])) {
+                throw new RuntimeException(
+                    "Only JPG, PNG and WEBP images are allowed."
+                );
+            }
+
+            $extension = $allowedMimeTypes[$mimeType];
+
+            $fileName = bin2hex(random_bytes(16))
+                . '.'
+                . $extension;
+
+            $destination = $uploadDirectory . $fileName;
+
+            if (
+                !move_uploaded_file(
+                    $file['tmp_name'],
+                    $destination
+                )
+            ) {
+                throw new RuntimeException(
+                    "Failed to save an uploaded image."
+                );
+            }
+
+            $relativePath = "assets/uploads/" . $fileName;
+
+            $uploadedPaths[] = $relativePath;
+        }
+        if ($uploadedPaths) {
+            $imageName = $uploadedPaths[0];
+        }
+
+        $slug = createUniqueSlug($db, $title);
+
+        $db->beginTransaction();
+
+        $insertProduct = $db->prepare("
+            INSERT INTO products (
+                sku,
+                title,
+                slug,
+                description,
+                image,
+                price,
+                original_price,
+                discount,
+                stock,
+                category_id,
+                brand_id,
+                status,
+                vendor_id
+            ) VALUES (
+                :sku,
+                :title,
+                :slug,
+                :description,
+                :image,
+                :price,
+                :original_price,
+                :discount,
+                :stock,
+                :category_id,
+                :brand_id,
+                :status,
+                NULL
+            )
+        ");
+
+        $insertProduct->execute([
+            ':sku' => $sku,
+            ':title' => $title,
+            ':slug' => $slug,
+            ':description' => $description,
+            ':image' => $imageName,
+            ':price' => $priceValue,
+            ':original_price' => $originalPriceValue,
+            ':discount' => $discount,
+            ':stock' => $stockValue,
+            ':category_id' => $categoryId,
+            ':brand_id' => $brandId,
+            ':status' => $status
+        ]);
+
+        $localProductId = (int) $db->lastInsertId();
+        $insertImage = $db->prepare("
+            INSERT INTO product_images (
+                product_id,
+                image_path,
+                alt_text,
+                sort_order,
+                status
+            ) VALUES (
+                :product_id,
+                :image_path,
+                :alt_text,
+                :sort_order,
+                1
+            )
+        ");
+
+        for ($i = 1; $i < count($uploadedPaths); $i++) {
+
+            $insertImage->execute([
+                ':product_id' => $localProductId,
+                ':image_path' => $uploadedPaths[$i],
+                ':alt_text' => $title,
+                ':sort_order' => $i
+            ]);
+        }
+        $insertVariant = $db->prepare("
+            INSERT INTO product_variants (
+                product_id,
+                variant_title,
+                sku,
+                price,
+                original_price,
+                stock,
+                attributes,
+                status
+            ) VALUES (
+                :product_id,
+                :variant_title,
+                :sku,
+                :price,
+                :original_price,
+                :stock,
+                :attributes,
+                1
+            )
+        ");
+
+
+        $insertVariantImage = $db->prepare("
+    INSERT INTO product_variant_images (
+        variant_id,
+        image_path,
+        alt_text,
+        sort_order,
+        status
+    ) VALUES (
+        :variant_id,
+        :image_path,
+        :alt_text,
+        :sort_order,
+        1
+    )
+");
+
+        $finfo = new finfo(FILEINFO_MIME_TYPE);
+
+        $allowedVariantImageTypes = [
+            'image/jpeg' => 'jpg',
+            'image/png'  => 'png',
+            'image/webp' => 'webp'
+        ];
+
+        $variantUploadDirectory = "../assets/uploads/";
+
+        foreach ($variantsToSave as $variant) {
+            $insertVariant->execute([
+                ':product_id' => $localProductId,
+                ':variant_title' => $variant['title'],
+                ':sku' => $variant['sku'],
+                ':price' => $variant['price'],
+                ':original_price' => $variant['original_price'],
+                ':stock' => $variant['stock'],
+                ':attributes' => $variant['attributes']
+            ]);
+
+            $variantId = (int) $db->lastInsertId();
+            $formIndex = $variant['form_index'];
+            if (
+                !isset($_FILES['variant_images']['name'][$formIndex]) ||
+                !is_array($_FILES['variant_images']['name'][$formIndex])
+            ) {
+                continue;
+            }
+
+            $files = $_FILES['variant_images'];
+            $fileCount = count($files['name'][$formIndex]);
+
+            for ($i = 0; $i < $fileCount; $i++) {
+
+                $error = $files['error'][$formIndex][$i];
+
+                if ($error === UPLOAD_ERR_NO_FILE) {
+                    continue;
+                }
+
+                if ($error !== UPLOAD_ERR_OK) {
+                    throw new RuntimeException(
+                        "A variant image upload failed. Check PHP upload limits."
+                    );
+                }
+
+                $tmpName = $files['tmp_name'][$formIndex][$i];
+                $fileSize = (int) $files['size'][$formIndex][$i];
+
+                if ($fileSize <= 0 || $fileSize > 5 * 1024 * 1024) {
+                    throw new RuntimeException(
+                        "Each variant image must be smaller than or equal to 5MB."
+                    );
+                }
+
+                if (!is_uploaded_file($tmpName)) {
+                    throw new RuntimeException(
+                        "Invalid variant image upload."
+                    );
+                }
+
+                $mimeType = $finfo->file($tmpName);
+
+                if (!isset($allowedVariantImageTypes[$mimeType])) {
+                    throw new RuntimeException(
+                        "Variant images must be JPG, PNG, or WEBP."
+                    );
+                }
+
+                $extension = $allowedVariantImageTypes[$mimeType];
+
+                $fileName = bin2hex(random_bytes(16)) . '.' . $extension;
+
+                $destination = $variantUploadDirectory . $fileName;
+
+                if (!move_uploaded_file($tmpName, $destination)) {
+                    throw new RuntimeException(
+                        "Failed to save a variant image."
+                    );
+                }
+
+                $relativePath = "assets/uploads/" . $fileName;
+
+                $uploadedVariantPaths[] = $relativePath;
+
+                $insertVariantImage->execute([
+                    ':variant_id' => $variantId,
+                    ':image_path' => $relativePath,
+                    ':alt_text' => $variant['title'],
+                    ':sort_order' => $i
+                ]);
+            }
+        }
+
+
+        $db->commit();
+        $syncMessages = [];
+        $syncWarning = false;
+
+        try {
+
+            $shopifyResult = createShopifyProduct([
+                'title' => $title,
+                'description' => $description,
+                'slug' => $slug,
+                'status' => $status
+            ]);
+
+            if (!empty($shopifyResult['success'])) {
+
+                $shopifyProductId =
+                    $shopifyResult['data']['id'] ?? null;
+
+                if ($shopifyProductId) {
+
+                    $shopifyUpdate = $db->prepare("
+                        UPDATE products
+                        SET
+                            shopify_product_id = :shopify_product_id,
+                            shopify_status = :shopify_status,
+                            shopify_synced_at = NOW()
+                        WHERE id = :id
+                    ");
+
+                    $shopifyUpdate->execute([
+                        ':shopify_product_id' => $shopifyProductId,
+                        ':shopify_status' => $status ? 'ACTIVE' : 'DRAFT',
+                        ':id' => $localProductId
+                    ]);
+
+                    $variantResult = updateShopifyProductVariant(
+                        $shopifyProductId,
+                        $priceValue,
+                        $originalPriceValue,
+                        $sku
+                    );
+
+                    $inventoryResult = updateShopifyInventory(
+                        $shopifyProductId,
+                        $stockValue
+                    );
+
+                    if (
+                        !empty($variantResult['success']) &&
+                        !empty($inventoryResult['success'])
+                    ) {
+                        $syncMessages[] =
+                            "Parent product synced to Shopify.";
+                    } else {
+                        $syncMessages[] =
+                            "Shopify product was created, but price/SKU or inventory sync needs checking.";
+                        $syncWarning = true;
+                    }
+                } else {
+                    $syncMessages[] =
+                        "Shopify created a product but did not return its product ID.";
+                    $syncWarning = true;
+                }
+            } else {
+                $syncMessages[] =
+                    "Shopify sync failed; the product is saved locally.";
+                $syncWarning = true;
+            }
+        } catch (Throwable $e) {
+
+            error_log("Shopify product sync error: " . $e->getMessage());
+
+            $syncMessages[] =
+                "Shopify sync encountered an error; the product is saved locally.";
+            $syncWarning = true;
+        }
+
+        try {
+
+            $zohoResult = syncProductToZoho([
+                'name' => $title,
+                'sku' => $sku,
+                'description' => $description,
+                'rate' => $priceValue,
+                'purchase_rate' => $originalPriceValue,
+                'stock' => $stockValue
+            ]);
+
+            $zohoItemId = trim((string) (
+                $zohoResult['item_id']
+                ?? $zohoResult['item']['item_id']
+                ?? $zohoResult['response']['item']['item_id']
+                ?? ''
+            ));
+
+            if (
+                !empty($zohoResult['success']) &&
+                $zohoItemId === ''
+            ) {
+                $lookupResult = findZohoItemBySKU($sku);
+
+                if (
+                    !empty($lookupResult['success']) &&
+                    !empty($lookupResult['found'])
+                ) {
+                    $zohoItemId = trim((string) (
+                        $lookupResult['item']['item_id'] ?? ''
+                    ));
+                }
+            }
+
+            if (
+                !empty($zohoResult['success']) &&
+                $zohoItemId !== ''
+            ) {
+                $saveZohoId = $db->prepare("
+                    UPDATE products
+                    SET zoho_item_id = :zoho_item_id
+                    WHERE id = :id
+                ");
+
+                $saveZohoId->execute([
+                    ':zoho_item_id' => $zohoItemId,
+                    ':id' => $localProductId
+                ]);
+
+                $syncMessages[] = "Zoho item synced.";
+            } else {
+                $syncMessages[] =
+                    "Zoho sync failed or its item ID could not be retrieved.";
+                $syncWarning = true;
+            }
+        } catch (Throwable $e) {
+
+            error_log("Zoho product sync error: " . $e->getMessage());
+
+            $syncMessages[] =
+                "Zoho sync encountered an error; the product is saved locally.";
+            $syncWarning = true;
+        }
+
+        $message = "Product saved locally with "
+            . count($uploadedPaths)
+            . " image(s) and "
+            . count($variantsToSave)
+            . " variant(s). "
+            . implode(' ', $syncMessages);
+
+        $messageType = $syncWarning ? "warning" : "success";
+        $sku = "";
+        $title = "";
+        $description = "";
+        $price = "";
+        $originalPrice = "";
+        $stock = "";
+        $categoryId = 0;
+        $brandId = 0;
+        $status = 1;
+    } catch (Throwable $e) {
+
+        if ($db->inTransaction()) {
+            $db->rollBack();
+        }
+        foreach ($uploadedPaths as $relativePath) {
+
+            $fullPath = "../" . $relativePath;
+
+            if (is_file($fullPath)) {
+                unlink($fullPath);
+            }
+        }
+        foreach ($uploadedVariantPaths as $relativePath) {
+
+            $fullPath = "../" . $relativePath;
+
+            if (is_file($fullPath)) {
+                unlink($fullPath);
+            }
+        }
+
+        if ($e instanceof RuntimeException) {
+            $message = $e->getMessage();
+        } else {
+            error_log("Admin product creation error: " . $e->getMessage());
+
+            $message =
+                "Unable to save the product. Please check the server error log.";
+        }
+
+        $messageType = "danger";
     }
 }
 
 ?>
+
 
 <!DOCTYPE html>
 <html lang="en">
@@ -1018,11 +1301,15 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
                                     <input
                                         type="number"
                                         name="stock"
+                                        id="productStock"
                                         class="form-control"
                                         min="0"
                                         value="<?= htmlspecialchars($stock ?? ''); ?>"
                                         placeholder="0"
                                         required>
+                                    <div class="image-note mt-1">
+                                        When variants are added, total stock is calculated automatically.
+                                    </div>
 
                                 </div>
 
@@ -1038,23 +1325,29 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
                                         placeholder="Enter product description"><?= htmlspecialchars($description ?? ''); ?></textarea>
 
                                 </div>
-                                <div class="col-md-8">
 
-                                    <label class="form-label">
-                                        Product Image
+
+                                <div class="col-12">
+                                    <label for="productImages" class="form-label">
+                                        Select Product Images
                                     </label>
 
                                     <input
                                         type="file"
-                                        name="image"
+                                        name="images[]"
+                                        id="productImages"
                                         class="form-control"
-                                        accept=".jpg,.jpeg,.png,.webp">
+                                        accept="image/jpeg,image/png,image/webp"
+                                        multiple>
 
-                                    <div class="image-note mt-1">
-                                        JPG, PNG or WEBP. Maximum size: 5MB.
-                                    </div>
+                                    <small class="text-muted">
+                                        You can select multiple images at once.
+                                    </small>
 
+                                    <div id="imagePreview" class="d-flex flex-wrap gap-3 mt-3"></div>
                                 </div>
+
+
                                 <div class="col-md-4">
 
                                     <label class="form-label">
@@ -1082,6 +1375,132 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
                                 </div>
 
                             </div>
+
+
+
+                            <hr class="my-4">
+
+                            <div class="d-flex justify-content-between align-items-center mb-3">
+                                <div>
+                                    <h5 class="mb-1">Product Variants</h5>
+                                    <p class="text-muted small mb-0">
+                                        Optional. Add variants such as Small/Red or Large/Blue.
+                                    </p>
+                                </div>
+
+                                <button
+                                    type="button"
+                                    class="btn btn-outline-primary"
+                                    id="addVariantBtn">
+                                    <i class="bi bi-plus-circle me-1"></i>
+                                    Add Variant
+                                </button>
+                            </div>
+
+                            <div id="variantsContainer"></div>
+
+                            <template id="variantTemplate">
+                                <div class="variant-card border rounded-3 p-3 mb-3">
+
+                                    <div class="d-flex justify-content-between align-items-center mb-3">
+                                        <strong class="variant-heading">Variant</strong>
+
+                                        <button
+                                            type="button"
+                                            class="btn btn-sm btn-outline-danger remove-variant">
+                                            Remove
+                                        </button>
+                                    </div>
+
+                                    <div class="row g-3">
+
+                                        <div class="col-md-6">
+                                            <label class="form-label">Variant Title *</label>
+                                            <input
+                                                type="text"
+                                                data-field="title"
+                                                class="form-control"
+                                                maxlength="255"
+                                                placeholder="e.g. Small / Red">
+                                        </div>
+
+                                        <div class="col-md-6">
+                                            <label class="form-label">Variant SKU *</label>
+                                            <input
+                                                type="text"
+                                                data-field="sku"
+                                                class="form-control"
+                                                maxlength="100"
+                                                placeholder="e.g. SHIRT-S-RED">
+                                        </div>
+
+                                        <div class="col-md-4">
+                                            <label class="form-label">Selling Price *</label>
+                                            <input
+                                                type="number"
+                                                data-field="price"
+                                                class="form-control"
+                                                min="0"
+                                                max="99999999.99"
+                                                step="0.01"
+                                                placeholder="0.00">
+                                        </div>
+
+                                        <div class="col-md-4">
+                                            <label class="form-label">Original Price</label>
+                                            <input
+                                                type="number"
+                                                data-field="original_price"
+                                                class="form-control"
+                                                min="0"
+                                                max="99999999.99"
+                                                step="0.01"
+                                                placeholder="0.00">
+                                        </div>
+
+                                        <div class="col-md-4">
+                                            <label class="form-label">Stock *</label>
+                                            <input
+                                                type="number"
+                                                data-field="stock"
+                                                class="form-control"
+                                                min="0"
+                                                step="1"
+                                                placeholder="0">
+                                        </div>
+
+                                        <div class="col-12">
+                                            <label class="form-label">Attributes</label>
+                                            <input
+                                                type="text"
+                                                data-field="attributes"
+                                                class="form-control"
+                                                placeholder="Size: Small, Color: Red">
+
+                                            <div class="image-note mt-1">
+                                                Optional. Separate attributes with commas.
+                                            </div>
+                                        </div>
+
+                                        <div class="col-12">
+                                            <label class="form-label">Variant Images</label>
+                                            <input
+                                                type="file"
+                                                class="form-control variant-images"
+                                                accept="image/jpeg,image/png,image/webp"
+                                                multiple>
+
+                                            <div class="image-note mt-1">
+                                                Select multiple JPG, PNG, or WEBP images for this variant.
+                                            </div>
+
+                                            <div class="variant-image-preview d-flex flex-wrap gap-2 mt-3"></div>
+                                        </div>
+
+                                    </div>
+                                </div>
+                            </template>
+
                             <hr class="my-4">
                             <div class="d-flex justify-content-end gap-2">
 
@@ -1113,6 +1532,165 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
     </div>
     <script
         src="https://cdn.jsdelivr.net/npm/bootstrap@5.3.3/dist/js/bootstrap.bundle.min.js"></script>
+
+
+    <script>
+        document.addEventListener("DOMContentLoaded", function() {
+
+            const addVariantBtn = document.getElementById("addVariantBtn");
+            const variantsContainer = document.getElementById("variantsContainer");
+            const variantTemplate = document.getElementById("variantTemplate");
+
+            const productStock = document.getElementById("productStock");
+
+            function updateProductStock() {
+                const variantCards = variantsContainer.querySelectorAll(".variant-card");
+
+                if (variantCards.length > 0) {
+                    let totalStock = 0;
+
+                    variantCards.forEach(function(card) {
+                        const stockInput = card.querySelector('[data-field="stock"]');
+                        totalStock += Math.max(0, parseInt(stockInput.value, 10) || 0);
+                    });
+
+                    productStock.value = totalStock;
+                    productStock.readOnly = true;
+                } else {
+                    productStock.readOnly = false;
+                }
+            }
+
+            variantsContainer.addEventListener("input", function(event) {
+                if (event.target.matches('[data-field="stock"]')) {
+                    updateProductStock();
+                }
+            });
+
+            const productImages = document.getElementById("productImages");
+            const imagePreview = document.getElementById("imagePreview");
+
+            let variantIndex = 0;
+            let previewUrls = [];
+
+            addVariantBtn.addEventListener("click", function() {
+
+                const fragment = variantTemplate.content.cloneNode(true);
+                const card = fragment.querySelector(".variant-card");
+
+                card.querySelectorAll("[data-field]").forEach(function(input) {
+                    const field = input.dataset.field;
+                    input.name = `variants[${variantIndex}][${field}]`;
+                    if (["title", "sku", "price", "stock"].includes(field)) {
+                        input.required = true;
+                    }
+                });
+
+                const variantImageInput = card.querySelector(".variant-images");
+
+                variantImageInput.name =
+                    `variant_images[${variantIndex}][]`;
+
+                const variantImagePreview =
+                    card.querySelector(".variant-image-preview");
+
+                variantImageInput.addEventListener("change", function() {
+                    variantImagePreview.replaceChildren();
+
+                    Array.from(variantImageInput.files).forEach(function(file) {
+                        if (![
+                                "image/jpeg",
+                                "image/png",
+                                "image/webp"
+                            ].includes(file.type)) {
+                            return;
+                        }
+
+                        const wrapper = document.createElement("div");
+                        wrapper.className = "text-center";
+
+                        const image = document.createElement("img");
+                        image.src = URL.createObjectURL(file);
+                        image.alt = file.name;
+                        image.style.width = "90px";
+                        image.style.height = "90px";
+                        image.style.objectFit = "cover";
+                        image.className = "rounded border";
+
+                        wrapper.appendChild(image);
+                        variantImagePreview.appendChild(wrapper);
+                    });
+                });
+
+
+                card.querySelector(".variant-heading").textContent =
+                    `Variant ${variantIndex + 1}`;
+
+                card.querySelector(".remove-variant").addEventListener(
+                    "click",
+                    function() {
+                        card.remove();
+                        updateProductStock();
+                    }
+                );
+
+                variantsContainer.appendChild(fragment);
+                variantIndex++;
+                updateProductStock();
+            });
+
+            productImages.addEventListener("change", function() {
+
+                previewUrls.forEach(function(url) {
+                    URL.revokeObjectURL(url);
+                });
+
+                previewUrls = [];
+                imagePreview.replaceChildren();
+
+                Array.from(productImages.files).forEach(function(file) {
+
+                    const allowedTypes = [
+                        "image/jpeg",
+                        "image/png",
+                        "image/webp"
+                    ];
+
+                    if (!allowedTypes.includes(file.type)) {
+                        return;
+                    }
+
+                    const wrapper = document.createElement("div");
+                    wrapper.className = "text-center";
+
+                    const image = document.createElement("img");
+                    const objectUrl = URL.createObjectURL(file);
+
+                    previewUrls.push(objectUrl);
+
+                    image.src = objectUrl;
+                    image.alt = file.name;
+                    image.style.width = "110px";
+                    image.style.height = "110px";
+                    image.style.objectFit = "cover";
+                    image.className = "rounded border";
+
+                    const caption = document.createElement("div");
+                    caption.className = "small text-muted mt-1";
+                    caption.textContent = file.name;
+
+                    if (imagePreview.children.length === 0) {
+                        caption.textContent += " (Main image)";
+                    }
+
+                    wrapper.appendChild(image);
+                    wrapper.appendChild(caption);
+                    imagePreview.appendChild(wrapper);
+                });
+            });
+
+        });
+    </script>
 
 </body>
 

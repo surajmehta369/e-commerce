@@ -168,30 +168,59 @@ try {
     $countStmt->execute();
 
     $totalProducts = (int) $countStmt->fetchColumn();
-
     $sql = "
-        SELECT
-            id,
-            sku,
-            title,
-            slug,
-            description,
-            image,
-            price,
-            original_price,
-            discount,
-            stock,
-            category_id,
-            brand_id,
-            attributes,
-            created_at,
-            updated_at
-        FROM products
-        WHERE $whereSql
-        ORDER BY $orderBy
-        LIMIT :limit
-        OFFSET :offset
-    ";
+    SELECT
+        id,
+        sku,
+        title,
+        slug,
+        description,
+
+        COALESCE(
+            NULLIF(
+                (
+                    SELECT vi.image_path
+                    FROM product_variants v
+                    INNER JOIN product_variant_images vi
+                        ON vi.variant_id = v.id
+                    WHERE v.product_id = products.id
+                      AND v.status = 1
+                      AND vi.status = 1
+                      AND vi.image_path <> ''
+                    ORDER BY
+                        v.id ASC,
+                        vi.sort_order ASC,
+                        vi.id ASC
+                    LIMIT 1
+                ),
+                ''
+            ),
+            image
+        ) AS image,
+
+        EXISTS (
+            SELECT 1
+            FROM product_variants v
+            WHERE v.product_id = products.id
+              AND v.status = 1
+        ) AS has_variants,
+
+        price,
+        original_price,
+        discount,
+        stock,
+        category_id,
+        brand_id,
+        attributes,
+        created_at,
+        updated_at
+
+    FROM products
+    WHERE $whereSql
+    ORDER BY $orderBy
+    LIMIT :limit
+    OFFSET :offset
+";
 
     $stmt = $db->prepare($sql);
     foreach ($params as $key => $value) {

@@ -61,11 +61,16 @@ $stmt->execute([
 
 $product = $stmt->fetch(PDO::FETCH_ASSOC);
 
+
 $galleryImages = [];
+
+$image = $product['image'] ?? '';
+$title = $product['title'] ?? '';
+
 if (!empty($image)) {
     $galleryImages[] = [
         'image_path' => $image,
-        'alt_text' => $title ?? ''
+        'alt_text' => $title
     ];
 }
 
@@ -87,6 +92,7 @@ foreach ($additionalImages as $galleryImage) {
     if (empty($galleryImage['image_path'])) {
         continue;
     }
+
     $alreadyExists = false;
 
     foreach ($galleryImages as $existingImage) {
@@ -100,6 +106,7 @@ foreach ($additionalImages as $galleryImage) {
         $galleryImages[] = $galleryImage;
     }
 }
+
 
 if (!$product) {
 
@@ -195,6 +202,39 @@ $variants = $variantStmt->fetchAll(PDO::FETCH_ASSOC);
 
 $hasVariants = !empty($variants);
 $selectedVariant = null;
+
+
+$variantImagesById = [];
+
+if ($hasVariants) {
+    $variantIds = array_map('intval', array_column($variants, 'id'));
+
+    if (!empty($variantIds)) {
+        $placeholders = implode(',', array_fill(0, count($variantIds), '?'));
+
+        $variantImageStmt = $db->prepare("
+            SELECT variant_id, image_path, alt_text
+            FROM product_variant_images
+            WHERE status = 1
+              AND variant_id IN ($placeholders)
+            ORDER BY variant_id ASC, sort_order ASC, id ASC
+        ");
+
+        $variantImageStmt->execute($variantIds);
+
+        $variantImageRows = $variantImageStmt->fetchAll(PDO::FETCH_ASSOC);
+
+        foreach ($variantImageRows as $variantImage) {
+            $variantId = (int) $variantImage['variant_id'];
+
+            $variantImagesById[$variantId][] = [
+                'image_path' => $variantImage['image_path'],
+                'alt_text' => $variantImage['alt_text'] ?? ''
+            ];
+        }
+    }
+}
+
 
 if ($hasVariants) {
     foreach ($variants as $variant) {
@@ -586,7 +626,16 @@ include "components/sidebar.php";
                                         data-sku="<?= htmlspecialchars($variant['sku'] ?? '', ENT_QUOTES, 'UTF-8'); ?>"
                                         data-title="<?= htmlspecialchars($variant['variant_title'], ENT_QUOTES, 'UTF-8'); ?>"
                                         data-attributes="<?= htmlspecialchars($variant['attributes'] ?? '{}', ENT_QUOTES, 'UTF-8'); ?>"
-                                        <?= (int)$variant['id'] === (int)$selectedVariant['id'] ? 'selected' : ''; ?>>
+                                        <?= (int)$variant['id'] === (int)$selectedVariant['id'] ? 'selected' : ''; ?>
+
+                                        data-images="<?= htmlspecialchars(
+                                                            json_encode(
+                                                                $variantImagesById[(int)$variant['id']] ?? [],
+                                                                JSON_UNESCAPED_SLASHES | JSON_UNESCAPED_UNICODE
+                                                            ),
+                                                            ENT_QUOTES,
+                                                            'UTF-8'
+                                                        ); ?>">
                                         <?= htmlspecialchars($variantLabel, ENT_QUOTES, 'UTF-8'); ?>
                                         — ₹<?= number_format((float)$variant['price'], 2); ?>
                                         <?= (int)$variant['stock'] <= 0 ? '(Out of Stock)' : ''; ?>
@@ -984,43 +1033,136 @@ include "components/sidebar.php";
         updateSelectedVariant();
     });
 
-    
-document.addEventListener("DOMContentLoaded", function () {
-    const thumbnails = document.querySelectorAll(".product-thumbnail");
-    const mainImage = document.getElementById("mainProductImage");
 
-    if (!mainImage || thumbnails.length === 0) {
-        return;
-    }
 
-    thumbnails.forEach(function (thumbnail) {
-        thumbnail.addEventListener("click", function () {
+    document.addEventListener("DOMContentLoaded", function() {
+        const thumbnailsContainer = document.getElementById("productThumbnails");
+        const mainImage = document.getElementById("mainProductImage");
+        const variantSelect = document.getElementById("productVariant");
+        const addButton = document.querySelector(".add-to-cart");
+
+        if (!thumbnailsContainer || !mainImage) {
+            return;
+        }
+
+        // Save the original product gallery as a fallback.
+        const productImages = Array.from(
+            thumbnailsContainer.querySelectorAll(".product-thumbnail")
+        ).map(function(thumbnail) {
+            return {
+                image_path: thumbnail.dataset.image || "",
+                alt_text: thumbnail.dataset.alt || ""
+            };
+        }).filter(function(image) {
+            return image.image_path !== "";
+        });
+
+        // Display the selected gallery.
+        function renderGallery(images) {
+            thumbnailsContainer.innerHTML = "";
+
+            images.forEach(function(image, index) {
+                const imagePath = image.image_path || "";
+                const imageAlt = image.alt_text || "";
+
+                if (!imagePath) return;
+
+                const button = document.createElement("button");
+                button.type = "button";
+                button.className =
+                    "product-thumbnail" + (index === 0 ? " active" : "");
+
+                button.dataset.image = imagePath;
+                button.dataset.alt = imageAlt;
+                button.setAttribute("aria-label", "View product image " + (index + 1));
+                button.setAttribute("aria-pressed", index === 0 ? "true" : "false");
+
+                const thumbnailImage = document.createElement("img");
+                thumbnailImage.src = imagePath;
+                thumbnailImage.alt = imageAlt;
+                thumbnailImage.loading = "lazy";
+
+                button.appendChild(thumbnailImage);
+                thumbnailsContainer.appendChild(button);
+            });
+
+            // Show the first image in the main viewer.
+            if (images.length > 0 && images[0].image_path) {
+                mainImage.src = images[0].image_path;
+                mainImage.alt = images[0].alt_text || "";
+
+                if (addButton) {
+                    addButton.dataset.image = images[0].image_path;
+                }
+            } else {
+                mainImage.removeAttribute("src");
+
+                if (addButton) {
+                    addButton.dataset.image = "";
+                }
+            }
+        }
+
+        function updateVariantGallery() {
+            if (!variantSelect) {
+                renderGallery(productImages);
+                return;
+            }
+
+            const option = variantSelect.options[variantSelect.selectedIndex];
+
+            if (!option) {
+                renderGallery(productImages);
+                return;
+            }
+
+            let variantImages = [];
+
+            try {
+                variantImages = JSON.parse(option.dataset.images || "[]");
+            } catch (error) {
+                console.error("Could not read variant images:", error);
+            }
+            if (!Array.isArray(variantImages) || variantImages.length === 0) {
+                renderGallery(productImages);
+            } else {
+                renderGallery(variantImages);
+            }
+        }
+        thumbnailsContainer.addEventListener("click", function(event) {
+            const thumbnail = event.target.closest(".product-thumbnail");
+
+            if (!thumbnail || !thumbnailsContainer.contains(thumbnail)) {
+                return;
+            }
+
             const imagePath = thumbnail.dataset.image;
             const imageAlt = thumbnail.dataset.alt || "";
 
-            if (!imagePath) {
-                return;
-            }
+            if (!imagePath) return;
 
             mainImage.src = imagePath;
             mainImage.alt = imageAlt;
 
-            thumbnails.forEach(function (item) {
-                item.classList.remove("active");
-                item.setAttribute("aria-pressed", "false");
-            });
+            thumbnailsContainer.querySelectorAll(".product-thumbnail").forEach(
+                function(item) {
+                    const isActive = item === thumbnail;
+                    item.classList.toggle("active", isActive);
+                    item.setAttribute("aria-pressed", isActive ? "true" : "false");
+                }
+            );
 
-            thumbnail.classList.add("active");
-            thumbnail.setAttribute("aria-pressed", "true");
+            if (addButton) {
+                addButton.dataset.image = imagePath;
+            }
         });
+        if (variantSelect) {
+            variantSelect.addEventListener("change", updateVariantGallery);
+        }
+        updateVariantGallery();
+
     });
-});
-
 </script>
-
-
-
-
 <?php
 
 include "components/footer.php";
