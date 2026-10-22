@@ -8,9 +8,9 @@ require_once "../zoho/zoho_functions.php";
 $database = new Database();
 $db = $database->connect();
 
-syncShopifyProductsToDatabase();
-syncZohoWebhookToDatabase();
-syncZohoWebhookItemToShopify();
+// syncShopifyProductsToDatabase();
+// syncZohoWebhookToDatabase();
+// syncZohoWebhookItemToShopify();
 $message = "";
 $messageType = "success";
 
@@ -78,8 +78,6 @@ LIMIT 1
                         'stock' => (int) $product['stock'],
                         'zoho_item_id' => $product['zoho_item_id'] ?? ''
                     ];
-
-                    // Activate the Shopify Draft product.
                     $shopifyResult = [
                         'success' => false,
                         'message' => 'No Shopify product is linked.'
@@ -94,12 +92,7 @@ LIMIT 1
                             ]
                         );
                     }
-
-                    // Create/update the Zoho item and activate it.
                     $zohoResult = syncApprovedProductToZoho($zohoProduct);
-
-
-                    // Save the Zoho ID even if activation needs a retry.
                     $returnedZohoId = $zohoResult['item_id']
                         ?? ($zohoResult['item']['item_id'] ?? '');
 
@@ -134,9 +127,6 @@ LIMIT 1
                         $message = 'Product approved and activated in Shopify and Zoho.';
                         $messageType = 'success';
                     } else {
-
-                        // Keep the product pending if either integration fails.
-                        // Roll back whichever external activation succeeded.
                         if ($shopifySuccess && $shopifyProductId !== '') {
                             updateShopifyProduct(
                                 $shopifyProductId,
@@ -197,8 +187,6 @@ LIMIT 1
 
                     $shopifySuccess = !empty($shopifyResult['success']);
                     $zohoSuccess = !empty($zohoResult['success']);
-
-                    // 3. Update local status only if both integrations succeed.
                     if ($shopifySuccess && $zohoSuccess) {
 
                         $stmt = $db->prepare("
@@ -217,8 +205,6 @@ LIMIT 1
                         $message = 'Product activated successfully in Shopify and Zoho.';
                         $messageType = 'success';
                     } else {
-
-                        // If Shopify succeeded but Zoho failed, restore Shopify to inactive.
                         if ($shopifySuccess && $shopifyProductId !== '') {
                             updateShopifyProduct(
                                 $shopifyProductId,
@@ -404,7 +390,6 @@ LIMIT 1
 
                             $messageType = 'danger';
 
-                            // Stop this delete action here.
                         }
                     }
                 } else {

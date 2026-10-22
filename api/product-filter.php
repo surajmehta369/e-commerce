@@ -60,6 +60,69 @@ try {
     }
 
     $offset = ($page - 1) * $limit;
+
+    $hasVariantsSql = "
+    EXISTS (
+        SELECT 1
+        FROM product_variants v
+        WHERE v.product_id = products.id
+          AND v.status = 1
+    )
+";
+
+    $effectivePriceSql = "
+    CASE
+        WHEN $hasVariantsSql THEN (
+            SELECT MIN(v.price)
+            FROM product_variants v
+            WHERE v.product_id = products.id
+              AND v.status = 1
+        )
+        ELSE products.price
+    END
+";
+
+    $effectiveOriginalPriceSql = "
+    CASE
+        WHEN $hasVariantsSql THEN (
+            SELECT v.original_price
+            FROM product_variants v
+            WHERE v.product_id = products.id
+              AND v.status = 1
+            ORDER BY v.price ASC, v.id ASC
+            LIMIT 1
+        )
+        ELSE products.original_price
+    END
+";
+
+    $effectiveDiscountSql = "
+    CASE
+        WHEN $effectiveOriginalPriceSql > $effectivePriceSql
+        THEN ROUND(
+            (
+                ($effectiveOriginalPriceSql - $effectivePriceSql)
+                / $effectiveOriginalPriceSql
+            ) * 100
+        )
+        WHEN NOT ($hasVariantsSql)
+        THEN COALESCE(products.discount, 0)
+        ELSE 0
+    END
+";
+
+    $effectiveStockSql = "
+    CASE
+        WHEN $hasVariantsSql THEN (
+            SELECT COALESCE(SUM(v.stock), 0)
+            FROM product_variants v
+            WHERE v.product_id = products.id
+              AND v.status = 1
+        )
+        ELSE products.stock
+    END
+";
+
     $where = [
         "status = 1"
     ];
@@ -91,39 +154,34 @@ try {
 
 
     if ($minPrice !== '' && is_numeric($minPrice)) {
-
-        $where[] = "price >= :min_price";
-
+        $where[] = "($effectivePriceSql) >= :min_price";
         $params[':min_price'] = (float) $minPrice;
     }
 
     if ($maxPrice !== '' && is_numeric($maxPrice)) {
-
-        $where[] = "price <= :max_price";
-
+        $where[] = "($effectivePriceSql) <= :max_price";
         $params[':max_price'] = (float) $maxPrice;
     }
 
     if ($minDiscount !== '' && is_numeric($minDiscount)) {
-
-        $where[] = "discount >= :min_discount";
-
+        $where[] = "($effectiveDiscountSql) >= :min_discount";
         $params[':min_discount'] = (float) $minDiscount;
     }
 
-    $whereSql = implode(" AND ", $where);
-    switch ($sort) {
 
+    $whereSql = implode(" AND ", $where);
+
+    switch ($sort) {
         case 'price_low':
-            $orderBy = "price ASC";
+            $orderBy = "($effectivePriceSql) ASC";
             break;
 
         case 'price_high':
-            $orderBy = "price DESC";
+            $orderBy = "($effectivePriceSql) DESC";
             break;
 
         case 'discount':
-            $orderBy = "discount DESC";
+            $orderBy = "($effectiveDiscountSql) DESC";
             break;
 
         case 'newest':
@@ -139,6 +197,7 @@ try {
             $orderBy = "id DESC";
             break;
     }
+
     $countSql = "
         SELECT COUNT(*) 
         FROM products
@@ -204,11 +263,10 @@ try {
             WHERE v.product_id = products.id
               AND v.status = 1
         ) AS has_variants,
-
-        price,
-        original_price,
-        discount,
-        stock,
+        ($effectivePriceSql) AS price,
+        ($effectiveOriginalPriceSql) AS original_price,
+        ($effectiveDiscountSql) AS discount,
+        ($effectiveStockSql) AS stock,
         category_id,
         brand_id,
         attributes,
