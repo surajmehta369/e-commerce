@@ -8,7 +8,6 @@ require_once "../zoho/zoho_functions.php";
 $database = new Database();
 $db = $database->connect();
 
-// TEMPORARY: Enable JSON testing without saving products.
 $testStockJson = isset($_GET['test_stock']) &&
     $_GET['test_stock'] === '1';
 

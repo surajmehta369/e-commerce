@@ -9,6 +9,79 @@
     $database = new Database();
     $db = $database->connect();
 
+
+    /*
+|--------------------------------------------------------------------------
+| Homepage product pricing and stock logic
+|--------------------------------------------------------------------------
+| Active variants: use the cheapest variant price and its original price.
+| No active variants: use the main product values.
+*/
+
+    $hasVariantsSql = "
+    EXISTS (
+        SELECT 1
+        FROM product_variants v
+        WHERE v.product_id = products.id
+          AND v.status = 1
+    )
+";
+
+    $effectivePriceSql = "
+    CASE
+        WHEN $hasVariantsSql THEN (
+            SELECT MIN(v.price)
+            FROM product_variants v
+            WHERE v.product_id = products.id
+              AND v.status = 1
+        )
+        ELSE products.price
+    END
+";
+
+    $effectiveOriginalPriceSql = "
+    CASE
+        WHEN $hasVariantsSql THEN (
+            SELECT v.original_price
+            FROM product_variants v
+            WHERE v.product_id = products.id
+              AND v.status = 1
+            ORDER BY v.price ASC, v.id ASC
+            LIMIT 1
+        )
+        ELSE products.original_price
+    END
+";
+
+    $effectiveDiscountSql = "
+    CASE
+        WHEN ($effectiveOriginalPriceSql) > 0
+             AND ($effectiveOriginalPriceSql) > ($effectivePriceSql)
+        THEN ROUND(
+            (
+                ($effectiveOriginalPriceSql - $effectivePriceSql)
+                / ($effectiveOriginalPriceSql)
+            ) * 100
+        )
+        WHEN NOT ($hasVariantsSql)
+        THEN COALESCE(products.discount, 0)
+        ELSE 0
+    END
+";
+
+    $effectiveStockSql = "
+    CASE
+        WHEN $hasVariantsSql THEN (
+            SELECT COALESCE(SUM(v.stock), 0)
+            FROM product_variants v
+            WHERE v.product_id = products.id
+              AND v.status = 1
+        )
+        ELSE products.stock
+    END
+";
+
+
     $banners = [
         [
             'image' => 'assets/uploads/main.jpg',
@@ -27,116 +100,113 @@
         ]
     ];
 
-    $productsStmt = $db->prepare("
-        SELECT
-            id,
-            sku,
-            title,
-            slug,
-            description,
-            image,
-            price,
-            original_price,
-            discount,
-            stock,
-            category_id,
-            brand_id
-        FROM products
-        WHERE status = 1
-        AND stock > 0
-        ORDER BY id DESC
-        LIMIT 12
-    ");
+    
+$productsStmt = $db->prepare("
+    SELECT
+        id,
+        sku,
+        title,
+        slug,
+        description,
+        image,
+        ($effectivePriceSql) AS price,
+        ($effectiveOriginalPriceSql) AS original_price,
+        ($effectiveDiscountSql) AS discount,
+        ($effectiveStockSql) AS stock,
+        category_id,
+        brand_id
+    FROM products
+    WHERE status = 1
+      AND ($effectiveStockSql) > 0
+    ORDER BY id DESC
+    LIMIT 12
+");
 
-    $productsStmt->execute();
+$productsStmt->execute();
+$products = $productsStmt->fetchAll(PDO::FETCH_ASSOC);
 
-    $products = $productsStmt->fetchAll(PDO::FETCH_ASSOC);
+$recommendationStmt = $db->prepare("
+    SELECT
+        id,
+        title,
+        description,
+        image,
+        ($effectivePriceSql) AS price,
+        ($effectiveOriginalPriceSql) AS original_price,
+        ($effectiveDiscountSql) AS discount,
+        ($effectiveStockSql) AS stock
+    FROM products
+    WHERE status = 1
+      AND ($effectiveStockSql) > 0
+    ORDER BY id DESC
+    LIMIT 4
+");
 
-    $recommendationStmt = $db->prepare("
-        SELECT
-            id,
-            title,
-            description,
-            image,
-            price,
-            original_price,
-            discount,
-            stock
-        FROM products
-        WHERE status = 1
-        AND stock > 0
-        ORDER BY id DESC
-        LIMIT 4
-    ");
+$recommendationStmt->execute();
+$recommendationProducts = $recommendationStmt->fetchAll(PDO::FETCH_ASSOC);
 
-    $recommendationStmt->execute();
+    
+$smartphoneStmt = $db->prepare("
+    SELECT
+        id,
+        title,
+        image,
+        ($effectivePriceSql) AS price,
+        ($effectiveOriginalPriceSql) AS original_price,
+        ($effectiveDiscountSql) AS discount,
+        ($effectiveStockSql) AS stock
+    FROM products
+    WHERE status = 1
+      AND ($effectiveStockSql) > 0
+      AND category_id = 4
+    ORDER BY id DESC
+    LIMIT 4
+");
 
-    $recommendationProducts =
-        $recommendationStmt->fetchAll(PDO::FETCH_ASSOC);
+$smartphoneStmt->execute();
+$smartphoneProducts = $smartphoneStmt->fetchAll(PDO::FETCH_ASSOC);
 
-    $smartphoneStmt = $db->prepare("
-        SELECT
-            id,
-            title,
-            image,
-            price,
-            original_price,
-            discount,
-            stock
-        FROM products
-        WHERE status = 1
-        AND stock > 0
-        AND category_id = 4
-        ORDER BY id DESC
-        LIMIT 4
-    ");
+   
+$dealsStmt = $db->prepare("
+    SELECT
+        id,
+        title,
+        image,
+        ($effectivePriceSql) AS price,
+        ($effectiveOriginalPriceSql) AS original_price,
+        ($effectiveDiscountSql) AS discount,
+        ($effectiveStockSql) AS stock
+    FROM products
+    WHERE status = 1
+      AND ($effectiveStockSql) > 0
+    ORDER BY ($effectiveDiscountSql) DESC, id DESC
+    LIMIT 4
+");
 
-    $smartphoneStmt->execute();
+$dealsStmt->execute();
+$dealProducts = $dealsStmt->fetchAll(PDO::FETCH_ASSOC);
 
-    $smartphoneProducts =
-        $smartphoneStmt->fetchAll(PDO::FETCH_ASSOC);
 
-    $dealsStmt = $db->prepare("
-        SELECT
-            id,
-            title,
-            image,
-            price,
-            original_price,
-            discount,
-            stock
-        FROM products
-        WHERE status = 1
-        AND stock > 0
-        ORDER BY discount DESC, id DESC
-        LIMIT 4
-    ");
 
-    $dealsStmt->execute();
+$todayDealsStmt = $db->prepare("
+    SELECT
+        id,
+        title,
+        image,
+        ($effectivePriceSql) AS price,
+        ($effectiveOriginalPriceSql) AS original_price,
+        ($effectiveDiscountSql) AS discount,
+        ($effectiveStockSql) AS stock
+    FROM products
+    WHERE status = 1
+      AND ($effectiveStockSql) > 0
+    ORDER BY ($effectiveDiscountSql) DESC, id DESC
+    LIMIT 12
+");
 
-    $dealProducts =
-        $dealsStmt->fetchAll(PDO::FETCH_ASSOC);
+$todayDealsStmt->execute();
+$todayDeals = $todayDealsStmt->fetchAll(PDO::FETCH_ASSOC);
 
-    $todayDealsStmt = $db->prepare("
-        SELECT
-            id,
-            title,
-            image,
-            price,
-            original_price,
-            discount,
-            stock
-        FROM products
-        WHERE status = 1
-        AND stock > 0
-        ORDER BY discount DESC, id DESC
-        LIMIT 12
-    ");
-
-    $todayDealsStmt->execute();
-
-    $todayDeals =
-        $todayDealsStmt->fetchAll(PDO::FETCH_ASSOC);
     $allHomeProducts = array_merge(
         $products,
         $recommendationProducts,
