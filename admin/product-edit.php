@@ -22,6 +22,8 @@ $productId = (int) $_GET['id'];
 
 $message = '';
 $messageType = '';
+$removedImagePaths = [];
+$removeMainImage = false;
 
 $stmt = $pdo->prepare("
     SELECT *
@@ -184,6 +186,14 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
         try {
             $submittedVariants = $_POST['variants'] ?? [];
             $deletedVariantIds = $_POST['deleted_variant_ids'] ?? [];
+            $removeMainImage = isset($_POST['remove_main_image']) && $_POST['remove_main_image'] === '1';
+            $removeGalleryIds = $_POST['remove_gallery_images'] ?? [];
+            $removeVariantImageIds = $_POST['remove_variant_images'] ?? [];
+            if (!is_array($removeGalleryIds) || !is_array($removeVariantImageIds)) {
+                throw new RuntimeException('Invalid image removal request.');
+            }
+            $removeGalleryIds = array_values(array_unique(array_filter(array_map('intval', $removeGalleryIds), static fn($v) => $v > 0)));
+            $removeVariantImageIds = array_values(array_unique(array_filter(array_map('intval', $removeVariantImageIds), static fn($v) => $v > 0)));
 
             if (!is_array($submittedVariants) || !is_array($deletedVariantIds)) {
                 throw new RuntimeException("Invalid variant form data.");
@@ -454,7 +464,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
             2
         );
     }
-    $imageName = $product['image'];
+    $imageName = $removeMainImage ? '' : ($product['image'] ?? '');
     $uploadedPaths = [];
     if ($message === '') {
 
@@ -616,6 +626,33 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
 
         try {
             $stockToSave = $stock;
+
+            // Validate image IDs against this product before deleting any records.
+            if ($removeGalleryIds) {
+                $marks = implode(',', array_fill(0, count($removeGalleryIds), '?'));
+                $check = $pdo->prepare("SELECT id, image_path FROM product_images WHERE product_id = ? AND id IN ($marks)");
+                $check->execute(array_merge([$productId], $removeGalleryIds));
+                $rows = $check->fetchAll(PDO::FETCH_ASSOC);
+                if (count($rows) !== count($removeGalleryIds)) {
+                    throw new RuntimeException('A gallery image does not belong to this product.');
+                }
+                foreach ($rows as $row) $removedImagePaths[] = $row['image_path'];
+                $del = $pdo->prepare("DELETE FROM product_images WHERE product_id = ? AND id IN ($marks)");
+                $del->execute(array_merge([$productId], $removeGalleryIds));
+            }
+
+            if ($removeVariantImageIds) {
+                $marks = implode(',', array_fill(0, count($removeVariantImageIds), '?'));
+                $check = $pdo->prepare("SELECT pvi.id, pvi.image_path FROM product_variant_images pvi INNER JOIN product_variants pv ON pv.id = pvi.variant_id WHERE pv.product_id = ? AND pvi.id IN ($marks)");
+                $check->execute(array_merge([$productId], $removeVariantImageIds));
+                $rows = $check->fetchAll(PDO::FETCH_ASSOC);
+                if (count($rows) !== count($removeVariantImageIds)) {
+                    throw new RuntimeException('A variant image does not belong to this product.');
+                }
+                foreach ($rows as $row) $removedImagePaths[] = $row['image_path'];
+                $del = $pdo->prepare("DELETE pvi FROM product_variant_images pvi INNER JOIN product_variants pv ON pv.id = pvi.variant_id WHERE pv.product_id = ? AND pvi.id IN ($marks)");
+                $del->execute(array_merge([$productId], $removeVariantImageIds));
+            }
 
             $updateProduct = $pdo->prepare("
         UPDATE products
@@ -899,6 +936,18 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
 
 
             $pdo->commit();
+            if (($removeMainImage || ($imageName !== ($product['image'] ?? ''))) && !empty($product['image'])) {
+                $removedImagePaths[] = $product['image'];
+            }
+            foreach (array_unique($removedImagePaths) as $relativePath) {
+                $relativePath = ltrim((string) $relativePath, '/\\');
+                if (strpos($relativePath, 'assets/uploads/') !== 0) continue;
+                $base = realpath(__DIR__ . '/../assets/uploads');
+                $candidate = realpath(__DIR__ . '/../' . $relativePath);
+                if ($base && $candidate && strpos($candidate, $base . DIRECTORY_SEPARATOR) === 0 && is_file($candidate)) {
+                    @unlink($candidate);
+                }
+            }
             $_SESSION['success_message'] = "Product updated successfully!";
 
             header("Location: products.php");
@@ -986,12 +1035,12 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
         }
 
         .current-image {
-            width: 110px;
-            height: 110px;
-            object-fit: cover;
-            border-radius: 10px;
-            border: 1px solid #dee2e6;
+            width: 110px; height: 110px; object-fit: cover;
+            border-radius: 10px; border: 1px solid #dee2e6;
         }
+        .image-tile { position: relative; display: inline-block; margin: 4px 8px 8px 0; }
+        .image-cut-btn { position: absolute; top: -7px; right: -7px; z-index: 2; width: 23px; height: 23px; border: 0; border-radius: 50%; background: #dc3545; color: #fff; font-size: 17px; line-height: 20px; padding: 0; cursor: pointer; box-shadow: 0 1px 4px #999; }
+        .image-cut-btn:hover { background: #bb2d3b; }
     </style>
 
 </head>
@@ -1401,16 +1450,10 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
                                                                 }
                                                                 ?>
 
-                                                                <div class="text-center">
-                                                                    <img
-                                                                        src="../<?= htmlspecialchars($variantImagePath) ?>"
-                                                                        alt="<?= htmlspecialchars($variantImage['alt_text'] ?? $variant['variant_title']) ?>"
-                                                                        style="width:90px;height:90px;object-fit:cover"
-                                                                        class="rounded border">
-
-                                                                    <div class="small text-muted mt-1">
-                                                                        Image #<?= (int) $variantImage['id'] ?>
-                                                                    </div>
+                                                                <div class="image-tile text-center">
+                                                                    <img src="../<?= htmlspecialchars($variantImagePath) ?>" alt="<?= htmlspecialchars($variantImage['alt_text'] ?? $variant['variant_title']) ?>" style="width:90px;height:90px;object-fit:cover" class="rounded border">
+                                                                    <button type="button" class="image-cut-btn" data-remove-name="remove_variant_images[]" data-remove-id="<?= (int) $variantImage['id'] ?>" aria-label="Remove variant image">×</button>
+                                                                    <div class="small text-muted mt-1">Image #<?= (int) $variantImage['id'] ?></div>
                                                                 </div>
 
                                                             <?php endforeach; ?>
@@ -1540,6 +1583,23 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
                                 </template>
 
 
+                                <div class="col-12">
+                                    <label class="form-label d-block">Existing Additional Product Images</label>
+                                    <?php if (!empty($productImages)): ?>
+                                        <div class="d-flex flex-wrap gap-2">
+                                            <?php foreach ($productImages as $galleryImage): ?>
+                                                <?php $galleryPath = $galleryImage['image_path']; if (strpos($galleryPath, 'assets/uploads/') !== 0) $galleryPath = 'assets/uploads/' . ltrim($galleryPath, '/'); ?>
+                                                <div class="image-tile">
+                                                    <img src="../<?= htmlspecialchars($galleryPath) ?>" alt="<?= htmlspecialchars($galleryImage['alt_text'] ?? $title) ?>" style="width:90px;height:90px;object-fit:cover" class="rounded border">
+                                                    <button type="button" class="image-cut-btn" data-remove-name="remove_gallery_images[]" data-remove-id="<?= (int) $galleryImage['id'] ?>" aria-label="Remove gallery image">×</button>
+                                                </div>
+                                            <?php endforeach; ?>
+                                        </div>
+                                    <?php else: ?>
+                                        <p class="small text-muted">No additional product images saved.</p>
+                                    <?php endif; ?>
+                                </div>
+
                                 <div class="col-md-6">
 
                                     <label class="form-label d-block">
@@ -1558,10 +1618,10 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
                                         }
                                         ?>
 
-                                        <img
-                                            src="../<?= htmlspecialchars($currentImage) ?>"
-                                            alt="Product Image"
-                                            class="current-image">
+                                        <div class="image-tile">
+                                            <img src="../<?= htmlspecialchars($currentImage) ?>" alt="Product Image" class="current-image">
+                                            <button type="button" class="image-cut-btn" data-remove-name="remove_main_image" data-remove-id="1" aria-label="Remove main product image">×</button>
+                                        </div>
 
                                     <?php else: ?>
 
@@ -1670,6 +1730,51 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
 
     <script>
         document.addEventListener("DOMContentLoaded", function() {
+            // Handle removal of existing main, gallery, and variant images.
+            // Use delegation so the handler works for images inside existing and dynamic variant cards.
+            document.addEventListener("click", function(event) {
+                const button = event.target.closest(".image-cut-btn");
+                if (!button) return;
+
+                event.preventDefault();
+                event.stopPropagation();
+
+                const form = button.closest("form") || document.querySelector('form[enctype="multipart/form-data"]');
+                if (!form) {
+                    alert("Could not find the product form. Please refresh the page and try again.");
+                    return;
+                }
+
+                const fieldName = button.dataset.removeName;
+                const fieldId = button.dataset.removeId;
+                if (!fieldName) return;
+
+                if (fieldName === "remove_main_image") {
+                    let hidden = form.querySelector('input[name="remove_main_image"]');
+                    if (!hidden) {
+                        hidden = document.createElement("input");
+                        hidden.type = "hidden";
+                        hidden.name = "remove_main_image";
+                        form.appendChild(hidden);
+                    }
+                    hidden.value = "1";
+                } else {
+                    if (!fieldId) return;
+                    const alreadyAdded = Array.from(form.querySelectorAll('input[type="hidden"][name="' + fieldName + '"]'))
+                        .some(function(input) { return input.value === fieldId; });
+                    if (!alreadyAdded) {
+                        const hidden = document.createElement("input");
+                        hidden.type = "hidden";
+                        hidden.name = fieldName;
+                        hidden.value = fieldId;
+                        form.appendChild(hidden);
+                    }
+                }
+
+                const tile = button.closest(".image-tile");
+                if (tile) tile.remove();
+            });
+
             const container = document.getElementById("variantsContainer");
             const deletedContainer = document.getElementById("deletedVariantsContainer");
             const template = document.getElementById("variantTemplate");
