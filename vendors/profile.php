@@ -178,6 +178,10 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && $profile) {
                    class="nav-link text-white">
                     Orders
                 </a>
+                  <a href="reviews.php"
+                   class="nav-link text-white">
+                    Product Reviews
+                </a>
 
                 <a href="profile.php"
                    class="nav-link text-white">

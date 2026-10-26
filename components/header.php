@@ -4,10 +4,10 @@ if (session_status() === PHP_SESSION_NONE) {
 }
 
 $isLoggedIn =
-    !empty($_SESSION['logged_in']) &&
-    $_SESSION['logged_in'] === true &&
-    !empty($_SESSION['user_role']) &&
-    $_SESSION['user_role'] === 'customer';
+  !empty($_SESSION['logged_in']) &&
+  $_SESSION['logged_in'] === true &&
+  !empty($_SESSION['user_role']) &&
+  $_SESSION['user_role'] === 'customer';
 
 ?>
 
@@ -35,7 +35,24 @@ $isLoggedIn =
 
 
 </head>
+<style>
 
+.wishlist-header-action {
+    position: relative;
+    text-decoration: none;
+}
+
+.wishlist-header-action i {
+    color: #ff6b81;
+    transition: transform 0.2s ease, color 0.2s ease;
+}
+
+.wishlist-header-action:hover i {
+    color: #ff304f;
+    transform: scale(1.15);
+}
+
+</style>
 <body>
 
   <header>
@@ -165,6 +182,22 @@ $isLoggedIn =
                 </span>
 
               </a>
+
+
+              <a
+                href="wishlist.php"
+                class="header-action wishlist-header-action"
+                title="View Wishlist"
+                aria-label="View My Wishlist">
+
+                <i class="fa-solid fa-heart"></i>
+
+                <span>
+                  Wishlist
+                </span>
+
+              </a>
+
               <a
                 href="cart.php"
                 class="header-action cart-action"

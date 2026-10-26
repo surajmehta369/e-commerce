@@ -1174,6 +1174,17 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
                         </a>
 
                     </li>
+                               <li class="nav-item mb-2">
+
+                        <a
+                            href="reviews.php"
+                            class="nav-link text-white">
+
+                            Product Reviews
+
+                        </a>
+
+                    </li>
 
                     <li class="nav-item mb-2">
 

@@ -315,6 +315,7 @@ function orderStatusClass($status) {
     <a href="categories.php">Categories</a>
     <a href="brands.php">Brands</a>
     <a href="orders.php" class="active">Orders</a>
+    <a href="reviews.php">Product Reviews</a>
     <a href="profile.php">Admin Profile</a>
     <a href="../outh/logout.php">Logout</a>
 </aside>

@@ -24,10 +24,6 @@ $vendorId = (int) $_SESSION['user_id'];
 $database = new Database();
 $db = $database->connect();
 
-/* ---------------------------------------------------------
-   VERIFY VENDOR
---------------------------------------------------------- */
-
 $vendorStmt = $db->prepare("
     SELECT verification_status
     FROM vendor_profiles
@@ -42,10 +38,6 @@ if (!$vendor || $vendor['verification_status'] !== 'approved') {
     header("Location: ../login.php");
     exit;
 }
-
-/* ---------------------------------------------------------
-   LOAD CATEGORIES AND BRANDS
---------------------------------------------------------- */
 
 $categories = $db->query("
     SELECT id, name
@@ -63,10 +55,6 @@ $brands = $db->query("
 
 $message = '';
 $messageType = '';
-
-/* ---------------------------------------------------------
-   HELPERS
---------------------------------------------------------- */
 
 function generateSlug($text)
 {
@@ -217,10 +205,6 @@ function parseVariantAttributes(string $rawAttributes): array
     return $attributes;
 }
 
-/* ---------------------------------------------------------
-   HANDLE FORM SUBMISSION
---------------------------------------------------------- */
-
 if ($_SERVER['REQUEST_METHOD'] === 'POST') {
 
     $uploadedFiles = [];
@@ -303,10 +287,6 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
             throw new RuntimeException('The selected brand is unavailable.');
         }
 
-        /* ---------------------------------------------
-           VALIDATE VARIANTS
-        --------------------------------------------- */
-
         $submittedVariants = $_POST['variants'] ?? [];
 
         if (!is_array($submittedVariants)) {
@@ -328,8 +308,6 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
             $variantOriginalInput = trim($variant['original_price'] ?? '');
             $variantStockInput = trim((string) ($variant['stock'] ?? ''));
             $attributesInput = trim($variant['attributes'] ?? '');
-
-            // Ignore a completely empty variant row.
             if (
                 $variantTitle === '' &&
                 $variantSku === '' &&
@@ -419,10 +397,6 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
             ];
         }
 
-        /* ---------------------------------------------
-           CHECK ALL PRODUCT AND VARIANT SKUS
-        --------------------------------------------- */
-
         $skuCheck = $db->prepare("
             SELECT id
             FROM products
@@ -466,14 +440,8 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
             }
         }
 
-        /* ---------------------------------------------
-           CALCULATE STOCK AND PRICE
-        --------------------------------------------- */
-
         if (!empty($variantsToSave)) {
             $stock = array_sum(array_column($variantsToSave, 'stock'));
-
-            // Product-level price follows the cheapest variant.
             $price = min(array_column($variantsToSave, 'price'));
 
             $variantOriginalPrices = array_column(
@@ -509,12 +477,6 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
                 2
             );
         }
-
-        /* ---------------------------------------------
-           UPLOAD MAIN PRODUCT IMAGES
-           First image becomes products.image.
-        --------------------------------------------- */
-
         $mainImages = [];
 
         if (isset($_FILES['images'])) {
@@ -532,7 +494,6 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
         }
 
         if (count($mainImages) === 0 && isset($_FILES['image'])) {
-            // Compatibility with the old single-image input.
             if ($_FILES['image']['error'] !== UPLOAD_ERR_NO_FILE) {
                 $uploaded = uploadProductImage($_FILES['image']);
                 $uploadedFiles[] = $uploaded['absolute_path'];
@@ -542,62 +503,49 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
 
         $imagePath = $mainImages[0] ?? '';
 
-        /* ---------------------------------------------
-           UPLOAD VARIANT IMAGES
-           Expected input: variants[index][images][]
-        --------------------------------------------- */
+        $variantImages = [];
 
-$variantImages = [];
+        if (isset($_FILES['variants'])) {
+            foreach ($variantsToSave as $variant) {
 
-if (isset($_FILES['variants'])) {
-    foreach ($variantsToSave as $variant) {
+                $formIndex = $variant['form_index'];
 
-        $formIndex = $variant['form_index'];
-
-        $files = normalizeNestedUploadedFiles(
-            $_FILES['variants'],
-            (int) $formIndex
-        );
-
-        foreach ($files as $file) {
-
-            // No image selected for this variant.
-            if (
-                !isset($file['error']) ||
-                $file['error'] === UPLOAD_ERR_NO_FILE
-            ) {
-                continue;
-            }
-
-            // Report the actual PHP upload error.
-            if ($file['error'] !== UPLOAD_ERR_OK) {
-                $uploadErrors = [
-                    UPLOAD_ERR_INI_SIZE   => 'Image exceeds the server upload limit.',
-                    UPLOAD_ERR_FORM_SIZE  => 'Image exceeds the form upload limit.',
-                    UPLOAD_ERR_PARTIAL    => 'Image was only partially uploaded.',
-                    UPLOAD_ERR_NO_TMP_DIR => 'Server temporary upload directory is missing.',
-                    UPLOAD_ERR_CANT_WRITE => 'Server could not write the uploaded image.',
-                    UPLOAD_ERR_EXTENSION => 'A PHP extension stopped the image upload.'
-                ];
-
-                throw new RuntimeException(
-                    $uploadErrors[$file['error']]
-                    ?? 'Image upload failed with error code ' . $file['error']
+                $files = normalizeNestedUploadedFiles(
+                    $_FILES['variants'],
+                    (int) $formIndex
                 );
+
+                foreach ($files as $file) {
+                    if (
+                        !isset($file['error']) ||
+                        $file['error'] === UPLOAD_ERR_NO_FILE
+                    ) {
+                        continue;
+                    }
+                    if ($file['error'] !== UPLOAD_ERR_OK) {
+                        $uploadErrors = [
+                            UPLOAD_ERR_INI_SIZE   => 'Image exceeds the server upload limit.',
+                            UPLOAD_ERR_FORM_SIZE  => 'Image exceeds the form upload limit.',
+                            UPLOAD_ERR_PARTIAL    => 'Image was only partially uploaded.',
+                            UPLOAD_ERR_NO_TMP_DIR => 'Server temporary upload directory is missing.',
+                            UPLOAD_ERR_CANT_WRITE => 'Server could not write the uploaded image.',
+                            UPLOAD_ERR_EXTENSION => 'A PHP extension stopped the image upload.'
+                        ];
+
+                        throw new RuntimeException(
+                            $uploadErrors[$file['error']]
+                                ?? 'Image upload failed with error code ' . $file['error']
+                        );
+                    }
+
+                    $uploaded = uploadProductImage($file);
+
+                    $uploadedFiles[] = $uploaded['absolute_path'];
+
+                    $variantImages[$formIndex][] = $uploaded['path'];
+                }
             }
-
-            $uploaded = uploadProductImage($file);
-
-            $uploadedFiles[] = $uploaded['absolute_path'];
-
-            $variantImages[$formIndex][] = $uploaded['path'];
         }
-    }
-}
-
-        /* ---------------------------------------------
-           CREATE SLUG
-        --------------------------------------------- */
 
         $baseSlug = generateSlug($title);
 
@@ -625,11 +573,6 @@ if (isset($_FILES['variants'])) {
             $slug = $baseSlug . '-' . $counter;
             $counter++;
         }
-
-        /* ---------------------------------------------
-           SAVE LOCAL PRODUCT AND VARIANTS
-        --------------------------------------------- */
-
         $db->beginTransaction();
 
         $productStmt = $db->prepare("
@@ -680,8 +623,6 @@ if (isset($_FILES['variants'])) {
         ]);
 
         $localProductId = (int) $db->lastInsertId();
-
-        /* Additional product images */
         if (count($mainImages) > 1) {
             $imageStmt = $db->prepare("
                 INSERT INTO product_images (
@@ -706,8 +647,6 @@ if (isset($_FILES['variants'])) {
                 ]);
             }
         }
-
-        /* Insert variants and their images */
         if (!empty($variantsToSave)) {
 
             $variantStmt = $db->prepare("
@@ -777,12 +716,6 @@ if (isset($_FILES['variants'])) {
         }
 
         $db->commit();
-
-        /* ---------------------------------------------
-           SHOPIFY SYNC
-           Local product is already safely saved.
-        --------------------------------------------- */
-
         $shopifyMessages = [];
 
         try {
@@ -850,15 +783,9 @@ if (isset($_FILES['variants'])) {
             if (empty($collectionResult['success'])) {
                 $shopifyMessages[] = 'Adding the product to the Shopify vendor collection failed.';
             }
-
         } catch (Throwable $e) {
             $shopifyMessages[] = 'Shopify sync failed: ' . $e->getMessage();
         }
-
-        /* ---------------------------------------------
-           ZOHO SYNC
-        --------------------------------------------- */
-
         $zohoMessage = '';
 
         try {
@@ -876,7 +803,6 @@ if (isset($_FILES['variants'])) {
                 $zohoMessage = 'Zoho sync failed: ' .
                     ($zohoResult['message'] ?? 'Unknown synchronization error.');
             }
-
         } catch (Throwable $e) {
             $zohoMessage = 'Zoho sync failed: ' . $e->getMessage();
         }
@@ -902,7 +828,6 @@ if (isset($_FILES['variants'])) {
         ) ? 'warning' : 'success';
 
         $_POST = [];
-
     } catch (Throwable $e) {
 
         if ($db->inTransaction()) {
@@ -922,6 +847,7 @@ if (isset($_FILES['variants'])) {
 ?>
 <!doctype html>
 <html lang="en" data-bs-theme="light">
+
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1">
@@ -958,397 +884,398 @@ if (isset($_FILES['variants'])) {
 </head>
 
 <body>
-<main class="container-fluid py-5">
+    <main class="container-fluid py-5">
 
-    <div class="d-flex justify-content-between align-items-center flex-wrap gap-3 mb-4">
-        <div>
-            <h2 class="fw-bold mb-1">Add Product</h2>
-            <p class="text-muted mb-0">Add product details, variants and images.</p>
+        <div class="d-flex justify-content-between align-items-center flex-wrap gap-3 mb-4">
+            <div>
+                <h2 class="fw-bold mb-1">Add Product</h2>
+                <p class="text-muted mb-0">Add product details, variants and images.</p>
+            </div>
+
+            <a href="products.php" class="btn btn-outline-secondary rounded-pill px-4">
+                Back to Products
+            </a>
         </div>
 
-        <a href="products.php" class="btn btn-outline-secondary rounded-pill px-4">
-            Back to Products
-        </a>
-    </div>
+        <?php if ($message !== ''): ?>
+            <div class="alert alert-<?= htmlspecialchars($messageType) ?> alert-dismissible fade show rounded-4">
+                <?= htmlspecialchars($message) ?>
+                <button type="button" class="btn-close" data-bs-dismiss="alert"></button>
+            </div>
+        <?php endif; ?>
 
-    <?php if ($message !== ''): ?>
-        <div class="alert alert-<?= htmlspecialchars($messageType) ?> alert-dismissible fade show rounded-4">
-            <?= htmlspecialchars($message) ?>
-            <button type="button" class="btn-close" data-bs-dismiss="alert"></button>
-        </div>
-    <?php endif; ?>
+        <div class="card border-0 shadow-sm rounded-4">
+            <div class="card-body p-4 p-lg-5">
 
-    <div class="card border-0 shadow-sm rounded-4">
-        <div class="card-body p-4 p-lg-5">
+                <form method="POST" enctype="multipart/form-data" id="productForm">
+                    <div class="row g-4">
 
-            <form method="POST" enctype="multipart/form-data" id="productForm">
-                <div class="row g-4">
-
-                    <div class="col-md-6">
-                        <label class="form-label fw-semibold">Product SKU *</label>
-                        <input
-                            type="text"
-                            name="sku"
-                            maxlength="100"
-                            class="form-control"
-                            value="<?= htmlspecialchars($_POST['sku'] ?? '') ?>"
-                            required>
-                    </div>
-
-                    <div class="col-md-6">
-                        <label class="form-label fw-semibold">Product Title *</label>
-                        <input
-                            type="text"
-                            name="title"
-                            maxlength="255"
-                            class="form-control"
-                            value="<?= htmlspecialchars($_POST['title'] ?? '') ?>"
-                            required>
-                    </div>
-
-                    <div class="col-md-6">
-                        <label class="form-label fw-semibold">Category *</label>
-                        <select name="category_id" class="form-select" required>
-                            <option value="">Select Category</option>
-                            <?php foreach ($categories as $category): ?>
-                                <option
-                                    value="<?= (int) $category['id'] ?>"
-                                    <?= (int) ($_POST['category_id'] ?? 0) === (int) $category['id'] ? 'selected' : '' ?>>
-                                    <?= htmlspecialchars($category['name']) ?>
-                                </option>
-                            <?php endforeach; ?>
-                        </select>
-                    </div>
-
-                    <div class="col-md-6">
-                        <label class="form-label fw-semibold">Brand *</label>
-                        <select name="brand_id" class="form-select" required>
-                            <option value="">Select Brand</option>
-                            <?php foreach ($brands as $brand): ?>
-                                <option
-                                    value="<?= (int) $brand['id'] ?>"
-                                    <?= (int) ($_POST['brand_id'] ?? 0) === (int) $brand['id'] ? 'selected' : '' ?>>
-                                    <?= htmlspecialchars($brand['name']) ?>
-                                </option>
-                            <?php endforeach; ?>
-                        </select>
-                    </div>
-
-                    <div class="col-12">
-                        <label class="form-label fw-semibold">Description</label>
-                        <textarea
-                            name="description"
-                            rows="5"
-                            class="form-control"
-                            placeholder="Describe your product"><?= htmlspecialchars($_POST['description'] ?? '') ?></textarea>
-                    </div>
-
-                    <div class="col-12">
-                        <hr>
-                        <h5 class="section-heading">Product Images</h5>
-
-                        <label class="form-label">Select multiple images</label>
-                        <input
-                            type="file"
-                            name="images[]"
-                            id="mainImages"
-                            class="form-control"
-                            accept=".jpg,.jpeg,.png,.webp"
-                            multiple>
-
-                        <small class="text-muted">
-                            Maximum 5 MB per image. The first image becomes the main product image.
-                        </small>
-
-                        <div id="mainImagePreview" class="d-flex flex-wrap mt-2"></div>
-                    </div>
-
-                    <div class="col-md-4">
-                        <label class="form-label fw-semibold">Selling Price *</label>
-                        <div class="input-group">
-                            <span class="input-group-text">₹</span>
+                        <div class="col-md-6">
+                            <label class="form-label fw-semibold">Product SKU *</label>
                             <input
-                                type="number"
-                                name="price"
-                                id="mainPrice"
-                                min="0.01"
-                                max="99999999.99"
-                                step="0.01"
+                                type="text"
+                                name="sku"
+                                maxlength="100"
                                 class="form-control"
-                                value="<?= htmlspecialchars($_POST['price'] ?? '') ?>"
+                                value="<?= htmlspecialchars($_POST['sku'] ?? '') ?>"
                                 required>
                         </div>
-                    </div>
 
-                    <div class="col-md-4">
-                        <label class="form-label fw-semibold">Original Price</label>
-                        <div class="input-group">
-                            <span class="input-group-text">₹</span>
+                        <div class="col-md-6">
+                            <label class="form-label fw-semibold">Product Title *</label>
+                            <input
+                                type="text"
+                                name="title"
+                                maxlength="255"
+                                class="form-control"
+                                value="<?= htmlspecialchars($_POST['title'] ?? '') ?>"
+                                required>
+                        </div>
+
+                        <div class="col-md-6">
+                            <label class="form-label fw-semibold">Category *</label>
+                            <select name="category_id" class="form-select" required>
+                                <option value="">Select Category</option>
+                                <?php foreach ($categories as $category): ?>
+                                    <option
+                                        value="<?= (int) $category['id'] ?>"
+                                        <?= (int) ($_POST['category_id'] ?? 0) === (int) $category['id'] ? 'selected' : '' ?>>
+                                        <?= htmlspecialchars($category['name']) ?>
+                                    </option>
+                                <?php endforeach; ?>
+                            </select>
+                        </div>
+
+                        <div class="col-md-6">
+                            <label class="form-label fw-semibold">Brand *</label>
+                            <select name="brand_id" class="form-select" required>
+                                <option value="">Select Brand</option>
+                                <?php foreach ($brands as $brand): ?>
+                                    <option
+                                        value="<?= (int) $brand['id'] ?>"
+                                        <?= (int) ($_POST['brand_id'] ?? 0) === (int) $brand['id'] ? 'selected' : '' ?>>
+                                        <?= htmlspecialchars($brand['name']) ?>
+                                    </option>
+                                <?php endforeach; ?>
+                            </select>
+                        </div>
+
+                        <div class="col-12">
+                            <label class="form-label fw-semibold">Description</label>
+                            <textarea
+                                name="description"
+                                rows="5"
+                                class="form-control"
+                                placeholder="Describe your product"><?= htmlspecialchars($_POST['description'] ?? '') ?></textarea>
+                        </div>
+
+                        <div class="col-12">
+                            <hr>
+                            <h5 class="section-heading">Product Images</h5>
+
+                            <label class="form-label">Select multiple images</label>
+                            <input
+                                type="file"
+                                name="images[]"
+                                id="mainImages"
+                                class="form-control"
+                                accept=".jpg,.jpeg,.png,.webp"
+                                multiple>
+
+                            <small class="text-muted">
+                                Maximum 5 MB per image. The first image becomes the main product image.
+                            </small>
+
+                            <div id="mainImagePreview" class="d-flex flex-wrap mt-2"></div>
+                        </div>
+
+                        <div class="col-md-4">
+                            <label class="form-label fw-semibold">Selling Price *</label>
+                            <div class="input-group">
+                                <span class="input-group-text">₹</span>
+                                <input
+                                    type="number"
+                                    name="price"
+                                    id="mainPrice"
+                                    min="0.01"
+                                    max="99999999.99"
+                                    step="0.01"
+                                    class="form-control"
+                                    value="<?= htmlspecialchars($_POST['price'] ?? '') ?>"
+                                    required>
+                            </div>
+                        </div>
+
+                        <div class="col-md-4">
+                            <label class="form-label fw-semibold">Original Price</label>
+                            <div class="input-group">
+                                <span class="input-group-text">₹</span>
+                                <input
+                                    type="number"
+                                    name="original_price"
+                                    id="mainOriginalPrice"
+                                    min="0"
+                                    max="99999999.99"
+                                    step="0.01"
+                                    class="form-control"
+                                    value="<?= htmlspecialchars($_POST['original_price'] ?? '') ?>">
+                            </div>
+                        </div>
+
+                        <div class="col-md-4">
+                            <label class="form-label fw-semibold">Discount</label>
+                            <input
+                                type="text"
+                                id="discountDisplay"
+                                class="form-control"
+                                value="Automatically calculated"
+                                readonly>
+                        </div>
+
+                        <div class="col-md-6">
+                            <label class="form-label fw-semibold">Total Stock *</label>
                             <input
                                 type="number"
-                                name="original_price"
-                                id="mainOriginalPrice"
+                                name="stock"
+                                id="mainStock"
                                 min="0"
-                                max="99999999.99"
-                                step="0.01"
+                                step="1"
                                 class="form-control"
-                                value="<?= htmlspecialchars($_POST['original_price'] ?? '') ?>">
+                                value="<?= htmlspecialchars($_POST['stock'] ?? '0') ?>"
+                                required>
+
+                            <small id="stockHelp" class="text-muted">
+                                Enter stock if this product has no variants.
+                            </small>
                         </div>
-                    </div>
 
-                    <div class="col-md-4">
-                        <label class="form-label fw-semibold">Discount</label>
-                        <input
-                            type="text"
-                            id="discountDisplay"
-                            class="form-control"
-                            value="Automatically calculated"
-                            readonly>
-                    </div>
+                        <div class="col-12">
+                            <hr>
+                            <div class="d-flex justify-content-between align-items-center flex-wrap gap-2">
+                                <div>
+                                    <h5 class="section-heading mb-1">Product Variants</h5>
+                                    <p class="text-muted mb-0">
+                                        Add sizes, colors or other options. Each variant can have its own price, SKU, stock and images.
+                                    </p>
+                                </div>
 
-                    <div class="col-md-6">
-                        <label class="form-label fw-semibold">Total Stock *</label>
-                        <input
-                            type="number"
-                            name="stock"
-                            id="mainStock"
-                            min="0"
-                            step="1"
-                            class="form-control"
-                            value="<?= htmlspecialchars($_POST['stock'] ?? '0') ?>"
-                            required>
-
-                        <small id="stockHelp" class="text-muted">
-                            Enter stock if this product has no variants.
-                        </small>
-                    </div>
-
-                    <div class="col-12">
-                        <hr>
-                        <div class="d-flex justify-content-between align-items-center flex-wrap gap-2">
-                            <div>
-                                <h5 class="section-heading mb-1">Product Variants</h5>
-                                <p class="text-muted mb-0">
-                                    Add sizes, colors or other options. Each variant can have its own price, SKU, stock and images.
-                                </p>
+                                <button type="button" id="addVariant" class="btn btn-outline-primary">
+                                    + Add Variant
+                                </button>
                             </div>
 
-                            <button type="button" id="addVariant" class="btn btn-outline-primary">
-                                + Add Variant
-                            </button>
+                            <div id="variantsContainer" class="mt-3"></div>
                         </div>
 
-                        <div id="variantsContainer" class="mt-3"></div>
-                    </div>
-
-                    <div class="col-12">
-                        <div class="alert alert-info border-0 rounded-4 mb-0">
-                            New vendor products are submitted for admin approval. Shopify products are created as drafts.
+                        <div class="col-12">
+                            <div class="alert alert-info border-0 rounded-4 mb-0">
+                                New vendor products are submitted for admin approval. Shopify products are created as drafts.
+                            </div>
                         </div>
-                    </div>
 
-                    <div class="col-12">
-                        <hr>
-                        <div class="d-flex justify-content-end gap-2">
-                            <a href="products.php" class="btn btn-light rounded-pill px-4">
-                                Cancel
-                            </a>
+                        <div class="col-12">
+                            <hr>
+                            <div class="d-flex justify-content-end gap-2">
+                                <a href="products.php" class="btn btn-light rounded-pill px-4">
+                                    Cancel
+                                </a>
 
-                            <button type="submit" class="btn btn-primary rounded-pill px-4">
-                                Save Product
-                            </button>
+                                <button type="submit" class="btn btn-primary rounded-pill px-4">
+                                    Save Product
+                                </button>
+                            </div>
                         </div>
-                    </div>
 
+                    </div>
+                </form>
+            </div>
+        </div>
+    </main>
+
+    <template id="variantTemplate">
+        <div class="variant-card">
+            <div class="d-flex justify-content-between align-items-center mb-3">
+                <h6 class="fw-bold mb-0 variant-heading">Variant</h6>
+                <button type="button" class="btn btn-sm btn-outline-danger remove-variant">
+                    Remove Variant
+                </button>
+            </div>
+
+            <div class="row g-3">
+                <div class="col-md-6">
+                    <label class="form-label">Variant Title *</label>
+                    <input type="text" class="form-control variant-title" required>
                 </div>
-            </form>
-        </div>
-    </div>
-</main>
 
-<template id="variantTemplate">
-    <div class="variant-card">
-        <div class="d-flex justify-content-between align-items-center mb-3">
-            <h6 class="fw-bold mb-0 variant-heading">Variant</h6>
-            <button type="button" class="btn btn-sm btn-outline-danger remove-variant">
-                Remove Variant
-            </button>
-        </div>
+                <div class="col-md-6">
+                    <label class="form-label">Variant SKU *</label>
+                    <input type="text" class="form-control variant-sku" maxlength="100" required>
+                </div>
 
-        <div class="row g-3">
-            <div class="col-md-6">
-                <label class="form-label">Variant Title *</label>
-                <input type="text" class="form-control variant-title" required>
-            </div>
+                <div class="col-md-4">
+                    <label class="form-label">Selling Price *</label>
+                    <input type="number" class="form-control variant-price" min="0.01" max="99999999.99" step="0.01" required>
+                </div>
 
-            <div class="col-md-6">
-                <label class="form-label">Variant SKU *</label>
-                <input type="text" class="form-control variant-sku" maxlength="100" required>
-            </div>
+                <div class="col-md-4">
+                    <label class="form-label">Original Price</label>
+                    <input type="number" class="form-control variant-original" min="0" max="99999999.99" step="0.01">
+                </div>
 
-            <div class="col-md-4">
-                <label class="form-label">Selling Price *</label>
-                <input type="number" class="form-control variant-price" min="0.01" max="99999999.99" step="0.01" required>
-            </div>
+                <div class="col-md-4">
+                    <label class="form-label">Stock *</label>
+                    <input type="number" class="form-control variant-stock" min="0" step="1" value="0" required>
+                </div>
 
-            <div class="col-md-4">
-                <label class="form-label">Original Price</label>
-                <input type="number" class="form-control variant-original" min="0" max="99999999.99" step="0.01">
-            </div>
+                <div class="col-12">
+                    <label class="form-label">Attributes</label>
+                    <input
+                        type="text"
+                        class="form-control variant-attributes"
+                        placeholder="Color: Black, Size: Large">
+                    <small class="text-muted">
+                        Separate options with commas. Example: Color: Black, Size: Large
+                    </small>
+                </div>
 
-            <div class="col-md-4">
-                <label class="form-label">Stock *</label>
-                <input type="number" class="form-control variant-stock" min="0" step="1" value="0" required>
-            </div>
-
-            <div class="col-12">
-                <label class="form-label">Attributes</label>
-                <input
-                    type="text"
-                    class="form-control variant-attributes"
-                    placeholder="Color: Black, Size: Large">
-                <small class="text-muted">
-                    Separate options with commas. Example: Color: Black, Size: Large
-                </small>
-            </div>
-
-            <div class="col-12">
-                <label class="form-label">Variant Images</label>
-                <input
-                    type="file"
-                    class="form-control variant-images"
-                    accept=".jpg,.jpeg,.png,.webp"
-                    multiple>
-                <div class="variant-image-preview d-flex flex-wrap mt-2"></div>
+                <div class="col-12">
+                    <label class="form-label">Variant Images</label>
+                    <input
+                        type="file"
+                        class="form-control variant-images"
+                        accept=".jpg,.jpeg,.png,.webp"
+                        multiple>
+                    <div class="variant-image-preview d-flex flex-wrap mt-2"></div>
+                </div>
             </div>
         </div>
-    </div>
-</template>
+    </template>
 
-<script>
-(() => {
-    const container = document.getElementById('variantsContainer');
-    const template = document.getElementById('variantTemplate');
-    const addButton = document.getElementById('addVariant');
+    <script>
+        (() => {
+            const container = document.getElementById('variantsContainer');
+            const template = document.getElementById('variantTemplate');
+            const addButton = document.getElementById('addVariant');
 
-    const mainStock = document.getElementById('mainStock');
-    const stockHelp = document.getElementById('stockHelp');
-    const mainPrice = document.getElementById('mainPrice');
-    const mainOriginalPrice = document.getElementById('mainOriginalPrice');
-    const discountDisplay = document.getElementById('discountDisplay');
+            const mainStock = document.getElementById('mainStock');
+            const stockHelp = document.getElementById('stockHelp');
+            const mainPrice = document.getElementById('mainPrice');
+            const mainOriginalPrice = document.getElementById('mainOriginalPrice');
+            const discountDisplay = document.getElementById('discountDisplay');
 
-    let nextIndex = 0;
+            let nextIndex = 0;
 
-    function updateStock() {
-        const cards = [...container.querySelectorAll('.variant-card')];
+            function updateStock() {
+                const cards = [...container.querySelectorAll('.variant-card')];
 
-        if (cards.length === 0) {
-            mainStock.readOnly = false;
-            stockHelp.textContent = 'Enter stock if this product has no variants.';
-            return;
-        }
+                if (cards.length === 0) {
+                    mainStock.readOnly = false;
+                    stockHelp.textContent = 'Enter stock if this product has no variants.';
+                    return;
+                }
 
-        const total = cards.reduce((sum, card) => {
-            const value = parseInt(card.querySelector('.variant-stock').value, 10);
-            return sum + (Number.isFinite(value) && value >= 0 ? value : 0);
-        }, 0);
+                const total = cards.reduce((sum, card) => {
+                    const value = parseInt(card.querySelector('.variant-stock').value, 10);
+                    return sum + (Number.isFinite(value) && value >= 0 ? value : 0);
+                }, 0);
 
-        mainStock.value = total;
-        mainStock.readOnly = true;
-        stockHelp.textContent = 'Total stock is calculated from the variants.';
-    }
+                mainStock.value = total;
+                mainStock.readOnly = true;
+                stockHelp.textContent = 'Total stock is calculated from the variants.';
+            }
 
-    function updateDiscount() {
-        const price = parseFloat(mainPrice.value);
-        const original = parseFloat(mainOriginalPrice.value);
+            function updateDiscount() {
+                const price = parseFloat(mainPrice.value);
+                const original = parseFloat(mainOriginalPrice.value);
 
-        if (
-            Number.isFinite(price) &&
-            Number.isFinite(original) &&
-            original > price &&
-            original > 0
-        ) {
-            discountDisplay.value =
-                (((original - price) / original) * 100).toFixed(2) + '%';
-        } else {
-            discountDisplay.value = '0%';
-        }
-    }
+                if (
+                    Number.isFinite(price) &&
+                    Number.isFinite(original) &&
+                    original > price &&
+                    original > 0
+                ) {
+                    discountDisplay.value =
+                        (((original - price) / original) * 100).toFixed(2) + '%';
+                } else {
+                    discountDisplay.value = '0%';
+                }
+            }
 
-    function previewFiles(input, preview) {
-        preview.replaceChildren();
+            function previewFiles(input, preview) {
+                preview.replaceChildren();
 
-        [...input.files].forEach(file => {
-            if (!file.type.startsWith('image/')) return;
+                [...input.files].forEach(file => {
+                    if (!file.type.startsWith('image/')) return;
 
-            const image = document.createElement('img');
-            image.className = 'preview-image';
-            image.alt = file.name;
-            image.src = URL.createObjectURL(file);
+                    const image = document.createElement('img');
+                    image.className = 'preview-image';
+                    image.alt = file.name;
+                    image.src = URL.createObjectURL(file);
 
-            preview.appendChild(image);
-        });
-    }
+                    preview.appendChild(image);
+                });
+            }
 
-    function addVariant() {
-        const fragment = template.content.cloneNode(true);
-        const card = fragment.querySelector('.variant-card');
-        const index = nextIndex++;
+            function addVariant() {
+                const fragment = template.content.cloneNode(true);
+                const card = fragment.querySelector('.variant-card');
+                const index = nextIndex++;
 
-        card.querySelector('.variant-heading').textContent =
-            'Variant ' + (container.querySelectorAll('.variant-card').length + 1);
+                card.querySelector('.variant-heading').textContent =
+                    'Variant ' + (container.querySelectorAll('.variant-card').length + 1);
 
-        const fields = {
-            '.variant-title': `variants[${index}][title]`,
-            '.variant-sku': `variants[${index}][sku]`,
-            '.variant-price': `variants[${index}][price]`,
-            '.variant-original': `variants[${index}][original_price]`,
-            '.variant-stock': `variants[${index}][stock]`,
-            '.variant-attributes': `variants[${index}][attributes]`,
-            '.variant-images': `variants[${index}][images][]`
-        };
+                const fields = {
+                    '.variant-title': `variants[${index}][title]`,
+                    '.variant-sku': `variants[${index}][sku]`,
+                    '.variant-price': `variants[${index}][price]`,
+                    '.variant-original': `variants[${index}][original_price]`,
+                    '.variant-stock': `variants[${index}][stock]`,
+                    '.variant-attributes': `variants[${index}][attributes]`,
+                    '.variant-images': `variants[${index}][images][]`
+                };
 
-        Object.entries(fields).forEach(([selector, name]) => {
-            card.querySelector(selector).name = name;
-        });
+                Object.entries(fields).forEach(([selector, name]) => {
+                    card.querySelector(selector).name = name;
+                });
 
-        card.querySelector('.remove-variant').addEventListener('click', () => {
-            card.remove();
-            updateStock();
+                card.querySelector('.remove-variant').addEventListener('click', () => {
+                    card.remove();
+                    updateStock();
 
-            [...container.querySelectorAll('.variant-card')].forEach((item, i) => {
-                item.querySelector('.variant-heading').textContent =
-                    'Variant ' + (i + 1);
+                    [...container.querySelectorAll('.variant-card')].forEach((item, i) => {
+                        item.querySelector('.variant-heading').textContent =
+                            'Variant ' + (i + 1);
+                    });
+                });
+
+                card.querySelector('.variant-stock').addEventListener('input', updateStock);
+
+                card.querySelector('.variant-images').addEventListener('change', event => {
+                    previewFiles(
+                        event.target,
+                        card.querySelector('.variant-image-preview')
+                    );
+                });
+
+                container.appendChild(card);
+                updateStock();
+            }
+
+            addButton.addEventListener('click', addVariant);
+
+            document.getElementById('mainImages').addEventListener('change', event => {
+                previewFiles(event.target, document.getElementById('mainImagePreview'));
             });
-        });
 
-        card.querySelector('.variant-stock').addEventListener('input', updateStock);
+            mainPrice.addEventListener('input', updateDiscount);
+            mainOriginalPrice.addEventListener('input', updateDiscount);
 
-        card.querySelector('.variant-images').addEventListener('change', event => {
-            previewFiles(
-                event.target,
-                card.querySelector('.variant-image-preview')
-            );
-        });
+            updateStock();
+            updateDiscount();
+        })();
+    </script>
 
-        container.appendChild(card);
-        updateStock();
-    }
-
-    addButton.addEventListener('click', addVariant);
-
-    document.getElementById('mainImages').addEventListener('change', event => {
-        previewFiles(event.target, document.getElementById('mainImagePreview'));
-    });
-
-    mainPrice.addEventListener('input', updateDiscount);
-    mainOriginalPrice.addEventListener('input', updateDiscount);
-
-    updateStock();
-    updateDiscount();
-})();
-</script>
-
-<script src="https://cdn.jsdelivr.net/npm/bootstrap@5.3.8/dist/js/bootstrap.bundle.min.js"></script>
+    <script src="https://cdn.jsdelivr.net/npm/bootstrap@5.3.8/dist/js/bootstrap.bundle.min.js"></script>
 </body>
+
 </html>

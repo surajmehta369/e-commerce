@@ -298,6 +298,11 @@ function orderStatusBadge($status)
                         class="nav-link">
                         Orders
                     </a>
+                      <a
+                        href="reviews.php"
+                        class="nav-link">
+                        Product Reviews
+                    </a>
 
                     <a
                         href="profile.php"

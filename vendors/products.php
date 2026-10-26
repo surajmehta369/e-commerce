@@ -110,6 +110,13 @@ if (isset($_GET['deleted'])): ?>
                         </a>
                     </li>
 
+                    
+                    <li class="nav-item mb-2">
+                        <a href="reviews.php" class="nav-link text-white">
+                            Product Reviews
+                        </a>
+                    </li>
+
                     <li class="nav-item mb-2">
                         <a href="profile.php" class="nav-link text-white">
                             Store Profile

@@ -353,6 +353,9 @@ function accountBadge($status)
         <a href="orders.php">
             Orders
         </a>
+        <a href="reviews.php">
+            Product Reviews
+        </a>
 
         <a href="profile.php">
             Admin Profile
@@ -546,13 +549,13 @@ function accountBadge($status)
                                 </tr>
 
                             <?php else: ?>
-                                    <?php foreach ($vendors as $index => $vendor): ?>
+                                <?php foreach ($vendors as $index => $vendor): ?>
 
-                                        <tr>
+                                    <tr>
 
-                                            <td>
-                                                <?php echo $index + 1; ?>
-                                            </td>
+                                        <td>
+                                            <?php echo $index + 1; ?>
+                                        </td>
 
 
                                         <td>
