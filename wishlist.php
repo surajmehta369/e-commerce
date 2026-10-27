@@ -35,6 +35,11 @@ unset($_SESSION['wishlist_message']);
 
 $stmt = $db->prepare("
     SELECT
+        w.id AS wishlist_id,
+        w.variant_id,
+        w.image_path AS wishlist_image,
+        w.created_at,
+
         p.id,
         p.title,
         p.image,
@@ -42,46 +47,69 @@ $stmt = $db->prepare("
         p.original_price,
         p.stock,
         p.sku,
-        w.created_at,
+
+        pv.id AS saved_variant_id,
+        pv.variant_title AS saved_variant_title,
+        pv.price AS saved_variant_price,
+        pv.original_price AS saved_variant_original_price,
+        pv.stock AS saved_variant_stock,
+        pv.sku AS saved_variant_sku,
 
         (
-    SELECT pvi.image_path
-    FROM product_variants pv
-    INNER JOIN product_variant_images pvi
-        ON pvi.variant_id = pv.id
-    WHERE pv.product_id = p.id
-      AND pv.status = 1
-      AND pvi.status = 1
-      AND pvi.image_path IS NOT NULL
-      AND pvi.image_path <> ''
-    ORDER BY pv.id ASC, pvi.sort_order ASC, pvi.id ASC
-    LIMIT 1
-) AS variant_image,
+            SELECT pvi.image_path
+            FROM product_variant_images pvi
+            WHERE pvi.variant_id = pv.id
+              AND pvi.status = 1
+              AND pvi.image_path IS NOT NULL
+              AND pvi.image_path <> ''
+            ORDER BY pvi.sort_order ASC, pvi.id ASC
+            LIMIT 1
+        ) AS saved_variant_image,
+
+        (
+            SELECT pvi.image_path
+            FROM product_variants pv2
+            INNER JOIN product_variant_images pvi
+                ON pvi.variant_id = pv2.id
+            WHERE pv2.product_id = p.id
+              AND pv2.status = 1
+              AND pvi.status = 1
+              AND pvi.image_path IS NOT NULL
+              AND pvi.image_path <> ''
+            ORDER BY pv2.id ASC, pvi.sort_order ASC, pvi.id ASC
+            LIMIT 1
+        ) AS variant_image,
 
         (
             SELECT COUNT(*)
-            FROM product_variants pv
-            WHERE pv.product_id = p.id
-              AND pv.status = 1
+            FROM product_variants pv2
+            WHERE pv2.product_id = p.id
+              AND pv2.status = 1
         ) AS variant_count,
 
         (
-            SELECT MIN(pv.price)
-            FROM product_variants pv
-            WHERE pv.product_id = p.id
-              AND pv.status = 1
-              AND pv.stock > 0
+            SELECT MIN(pv2.price)
+            FROM product_variants pv2
+            WHERE pv2.product_id = p.id
+              AND pv2.status = 1
+              AND pv2.stock > 0
         ) AS lowest_variant_price,
 
         (
-            SELECT SUM(pv.stock)
-            FROM product_variants pv
-            WHERE pv.product_id = p.id
-              AND pv.status = 1
+            SELECT SUM(pv2.stock)
+            FROM product_variants pv2
+            WHERE pv2.product_id = p.id
+              AND pv2.status = 1
         ) AS total_variant_stock
 
     FROM wishlists w
-    INNER JOIN products p ON p.id = w.product_id
+
+    INNER JOIN products p
+        ON p.id = w.product_id
+
+    LEFT JOIN product_variants pv
+        ON pv.id = w.variant_id
+       AND pv.product_id = p.id
 
     WHERE w.user_id = :user_id
       AND p.status = 1
@@ -269,35 +297,55 @@ include __DIR__ . '/components/sidebar.php';
                 <?php foreach ($wishlistProducts as $item): ?>
 
                     <?php
+
                     $productId = (int) $item['id'];
+
+                    $hasSavedVariant =
+                        $item['variant_id'] !== null &&
+                        $item['saved_variant_id'] !== null;
+
                     $hasVariants = (int) $item['variant_count'] > 0;
 
-                    if ($hasVariants) {
+                    if ($hasSavedVariant) {
+                        $displayPrice = (float) $item['saved_variant_price'];
+                        $originalPrice = (float) ($item['saved_variant_original_price'] ?? 0);
+                        $availableStock = (int) $item['saved_variant_stock'];
+                        $displaySku = $item['saved_variant_sku'] ?? $item['sku'];
+                        $displayVariantTitle = $item['saved_variant_title'] ?? '';
+                    } elseif ($hasVariants) {
                         $displayPrice = $item['lowest_variant_price'] !== null
                             ? (float) $item['lowest_variant_price']
                             : (float) $item['price'];
 
+                        $originalPrice = (float) ($item['original_price'] ?? 0);
                         $availableStock = (int) ($item['total_variant_stock'] ?? 0);
+                        $displaySku = $item['sku'];
+                        $displayVariantTitle = '';
                     } else {
                         $displayPrice = (float) $item['price'];
+                        $originalPrice = (float) ($item['original_price'] ?? 0);
                         $availableStock = (int) $item['stock'];
+                        $displaySku = $item['sku'];
+                        $displayVariantTitle = '';
                     }
-
-                    $originalPrice = (float) ($item['original_price'] ?? 0);
 
                     $isAvailable = $availableStock > 0;
-
-                    $productImage = trim((string) ($item['image'] ?? ''));
+                    $productImage = trim((string) ($item['wishlist_image'] ?? ''));
 
                     if ($productImage === '') {
-                        $productImage = trim((string) ($item['variant_image'] ?? ''));
+                        $productImage = trim((string) ($item['saved_variant_image'] ?? ''));
                     }
 
-                    $discountPercent = $originalPrice > $displayPrice
+                    if ($productImage === '') {
+                        $productImage = trim((string) ($item['image'] ?? ''));
+                    }
+
+                    $discountPercent = $originalPrice > $displayPrice && $originalPrice > 0
                         ? (int) round(
                             (($originalPrice - $displayPrice) / $originalPrice) * 100
                         )
                         : 0;
+
                     ?>
 
                     <div class="col-12 col-sm-6 col-lg-4 col-xl-3">
@@ -350,11 +398,23 @@ include __DIR__ . '/components/sidebar.php';
 
                                 </a>
 
-                                <?php if ($hasVariants): ?>
+
+                                <?php if ($hasSavedVariant): ?>
+                                    <div class="mt-2">
+                                        <span class="badge bg-primary-subtle text-primary border">
+                                            <?= htmlspecialchars(
+                                                $displayVariantTitle,
+                                                ENT_QUOTES,
+                                                'UTF-8'
+                                            ); ?>
+                                        </span>
+                                    </div>
+                                <?php elseif ($hasVariants): ?>
                                     <span class="badge bg-light text-dark border mt-2">
                                         Multiple options
                                     </span>
                                 <?php endif; ?>
+
 
                                 <div class="d-flex flex-wrap
                                             align-items-center gap-2 mt-3">
@@ -406,6 +466,13 @@ include __DIR__ . '/components/sidebar.php';
                                             value="<?= $productId; ?>">
 
                                         <input type="hidden"
+                                            name="variant_id"
+                                            value="<?= $item['variant_id'] === null
+                                                        ? ''
+                                                        : (int) $item['variant_id']; ?>">
+
+
+                                        <input type="hidden"
                                             name="csrf_token"
                                             value="<?= htmlspecialchars(
                                                         $wishlistCsrfToken,
@@ -449,55 +516,54 @@ include __DIR__ . '/components/sidebar.php';
 
 
 <script>
-document.addEventListener('DOMContentLoaded', function () {
-    const removeForms = document.querySelectorAll('.wishlist-remove-form');
+    document.addEventListener('DOMContentLoaded', function() {
+        const removeForms = document.querySelectorAll('.wishlist-remove-form');
 
-    removeForms.forEach(function (form) {
-        form.addEventListener('submit', function (event) {
-            event.preventDefault();
+        removeForms.forEach(function(form) {
+            form.addEventListener('submit', function(event) {
+                event.preventDefault();
 
-            if (typeof Swal === 'undefined') {
-                if (confirm('Remove this product from your wishlist?')) {
-                    submitRemoveForm(form);
+                if (typeof Swal === 'undefined') {
+                    if (confirm('Remove this product from your wishlist?')) {
+                        submitRemoveForm(form);
+                    }
+                    return;
                 }
-                return;
-            }
 
-            Swal.fire({
-                title: 'Remove from Wishlist?',
-                text: 'This product will be removed from your saved items.',
-                icon: 'warning',
-                showCancelButton: true,
-                confirmButtonText: 'Yes, remove it',
-                cancelButtonText: 'Keep it',
-                confirmButtonColor: '#dc3545',
-                cancelButtonColor: '#6c757d',
-                reverseButtons: true,
-                focusCancel: true
-            }).then(function (result) {
-                if (result.isConfirmed) {
-                    submitRemoveForm(form);
-                }
+                Swal.fire({
+                    title: 'Remove from Wishlist?',
+                    text: 'This product will be removed from your saved items.',
+                    icon: 'warning',
+                    showCancelButton: true,
+                    confirmButtonText: 'Yes, remove it',
+                    cancelButtonText: 'Keep it',
+                    confirmButtonColor: '#dc3545',
+                    cancelButtonColor: '#6c757d',
+                    reverseButtons: true,
+                    focusCancel: true
+                }).then(function(result) {
+                    if (result.isConfirmed) {
+                        submitRemoveForm(form);
+                    }
+                });
             });
         });
-    });
 
-    function submitRemoveForm(form) {
-        // Explicitly send the action because form.submit()
-        // does not include the clicked submit button.
-        let actionInput = form.querySelector('input[name="action"]');
+        function submitRemoveForm(form) {
 
-        if (!actionInput) {
-            actionInput = document.createElement('input');
-            actionInput.type = 'hidden';
-            actionInput.name = 'action';
-            form.appendChild(actionInput);
+            let actionInput = form.querySelector('input[name="action"]');
+
+            if (!actionInput) {
+                actionInput = document.createElement('input');
+                actionInput.type = 'hidden';
+                actionInput.name = 'action';
+                form.appendChild(actionInput);
+            }
+
+            actionInput.value = 'remove';
+            form.submit();
         }
-
-        actionInput.value = 'remove';
-        form.submit();
-    }
-});
+    });
 </script>
 
 

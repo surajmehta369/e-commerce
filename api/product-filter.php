@@ -129,12 +129,19 @@ try {
 
     $params = [];
 
-    if ($categoryId !== '' && ctype_digit($categoryId)) {
+if ($categoryId !== '' && ctype_digit($categoryId)) {
+    $where[] = "
+        category_id IN (
+            SELECT c.id
+            FROM categories c
+            WHERE c.id = :category_id
+               OR c.parent_id = :parent_category_id
+        )
+    ";
 
-        $where[] = "category_id = :category_id";
-
-        $params[':category_id'] = (int) $categoryId;
-    }
+    $params[':category_id'] = (int) $categoryId;
+    $params[':parent_category_id'] = (int) $categoryId;
+}
 
 
     if ($brandId !== '' && ctype_digit($brandId)) {

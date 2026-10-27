@@ -199,28 +199,40 @@ if (empty($_SESSION['wishlist_csrf_token'])) {
 }
 
 $wishlistCsrfToken = $_SESSION['wishlist_csrf_token'];
-$isWishlisted = false;
+$wishlistedVariantIds = [];
+$isMainProductWishlisted = false;
+$wishlistedImageByVariant = [];
 
 if (
     !empty($_SESSION['logged_in']) &&
-    (int) ($_SESSION['user_id'] ?? 0) > 0 &&
+    (int)($_SESSION['user_id'] ?? 0) > 0 &&
     ($_SESSION['user_role'] ?? '') === 'customer'
 ) {
     $wishlistCheckStmt = $db->prepare("
-        SELECT 1
+        SELECT variant_id, image_path
         FROM wishlists
         WHERE user_id = :user_id
           AND product_id = :product_id
-        LIMIT 1
     ");
 
     $wishlistCheckStmt->execute([
-        ':user_id' => (int) $_SESSION['user_id'],
+        ':user_id' => (int)$_SESSION['user_id'],
         ':product_id' => $productId
     ]);
 
-    $isWishlisted = (bool) $wishlistCheckStmt->fetchColumn();
+    foreach ($wishlistCheckStmt->fetchAll(PDO::FETCH_ASSOC) as $wishlistRow) {
+        if ($wishlistRow['variant_id'] === null) {
+            $isMainProductWishlisted = true;
+        } else {
+            $variantId = (int)$wishlistRow['variant_id'];
+            $wishlistedVariantIds[] = $variantId;
+            $wishlistedImageByVariant[$variantId] =
+                $wishlistRow['image_path'] ?? '';
+        }
+    }
 }
+
+$wishlistedVariantIds = array_values(array_unique($wishlistedVariantIds));
 
 
 $currentUserId = (int) ($_SESSION['user_id'] ?? 0);
@@ -449,7 +461,6 @@ include "components/sidebar.php";
 ?>
 
 <style>
-    /* Product details page */
     .product-details-card {
         border: 1px solid #e5e7eb;
         border-radius: 16px;
@@ -457,7 +468,6 @@ include "components/sidebar.php";
         background: #fff;
     }
 
-    /* Main product image */
     .product-details-image {
         min-height: 420px;
         max-height: 560px;
@@ -480,7 +490,6 @@ include "components/sidebar.php";
         transform: scale(1.06);
     }
 
-    /* Product information */
     .product-info-panel {
         padding: 8px 12px;
     }
@@ -725,31 +734,39 @@ include "components/sidebar.php";
                             <?= htmlspecialchars($title); ?>
                         </h1>
 
+
                         <form method="POST"
                             action="wishlist-action.php"
-                            class="flex-shrink-0">
+                            id="wishlistForm"
+                            class="flex-shrink-0"
+                            data-wishlisted-variants="<?= htmlspecialchars(json_encode($wishlistedVariantIds), ENT_QUOTES, 'UTF-8'); ?>"
+                            data-main-wishlisted="<?= $isMainProductWishlisted ? '1' : '0'; ?>">
 
-                            <input type="hidden"
-                                name="product_id"
-                                value="<?= (int) $productId; ?>">
+                            <input type="hidden" name="product_id"
+                                value="<?= (int)$productId; ?>">
 
-                            <input type="hidden"
-                                name="csrf_token"
+                            <input type="hidden" name="variant_id" id="wishlistVariantId"
+                                value="<?= $hasVariants ? (int)$selectedVariant['id'] : ''; ?>">
+
+                            <input type="hidden" name="image_path" id="wishlistImagePath"
+                                value="<?= htmlspecialchars($image ?? '', ENT_QUOTES, 'UTF-8'); ?>">
+
+                            <input type="hidden" name="csrf_token"
                                 value="<?= htmlspecialchars($wishlistCsrfToken, ENT_QUOTES, 'UTF-8'); ?>">
 
-                            <input type="hidden"
-                                name="return_to"
-                                value="product-details.php?id=<?= (int) $productId; ?>">
+                            <input type="hidden" name="return_to"
+                                value="product-details.php?id=<?= (int)$productId; ?>">
 
                             <button type="submit"
                                 name="action"
-                                value="<?= $isWishlisted ? 'remove' : 'add'; ?>"
-                                class="btn <?= $isWishlisted ? 'btn-danger' : 'btn-outline-danger'; ?> rounded-circle"
+                                id="wishlistHeartButton"
+                                value="add"
+                                class="btn btn-outline-danger rounded-circle"
                                 style="width:46px;height:46px;"
-                                aria-label="<?= $isWishlisted ? 'Remove from wishlist' : 'Add to wishlist'; ?>"
-                                title="<?= $isWishlisted ? 'Remove from wishlist' : 'Add to wishlist'; ?>">
+                                aria-label="Add to wishlist"
+                                title="Add to wishlist">
 
-                                <i class="<?= $isWishlisted ? 'fa-solid' : 'fa-regular'; ?> fa-heart"></i>
+                                <i class="fa-regular fa-heart"></i>
                             </button>
                         </form>
                     </div>
@@ -947,9 +964,6 @@ include "components/sidebar.php";
         </div>
 
     </div>
-
-
-    <!-- ================= RATINGS & REVIEWS ================= -->
     <section class="container-fluid my-5" id="reviews">
         <div class="card border-0 shadow-sm rounded-4 p-4 p-lg-5">
             <h2 class="fw-bold mb-4">Customer Reviews</h2>
@@ -1428,8 +1442,6 @@ include "components/sidebar.php";
         if (!thumbnailsContainer || !mainImage) {
             return;
         }
-
-        // Save the original product gallery as a fallback.
         const productImages = Array.from(
             thumbnailsContainer.querySelectorAll(".product-thumbnail")
         ).map(function(thumbnail) {
@@ -1441,7 +1453,6 @@ include "components/sidebar.php";
             return image.image_path !== "";
         });
 
-        // Display the selected gallery.
         function renderGallery(images) {
             thumbnailsContainer.innerHTML = "";
 
@@ -1470,7 +1481,6 @@ include "components/sidebar.php";
                 thumbnailsContainer.appendChild(button);
             });
 
-            // Show the first image in the main viewer.
             if (images.length > 0 && images[0].image_path) {
                 mainImage.src = images[0].image_path;
                 mainImage.alt = images[0].alt_text || "";
@@ -1545,6 +1555,88 @@ include "components/sidebar.php";
         }
         updateVariantGallery();
 
+    });
+
+
+    document.addEventListener("DOMContentLoaded", function() {
+        const wishlistForm = document.getElementById("wishlistForm");
+        const variantSelect = document.getElementById("productVariant");
+        const mainImage = document.getElementById("mainProductImage");
+        const thumbnailsContainer = document.getElementById("productThumbnails");
+
+        const variantInput = document.getElementById("wishlistVariantId");
+        const imageInput = document.getElementById("wishlistImagePath");
+        const heartButton = document.getElementById("wishlistHeartButton");
+
+        if (!wishlistForm || !variantInput || !imageInput || !heartButton) {
+            return;
+        }
+
+        let wishlistedVariants = [];
+
+        try {
+            wishlistedVariants = JSON.parse(
+                wishlistForm.dataset.wishlistedVariants || "[]"
+            ).map(Number);
+        } catch (error) {
+            console.error("Could not read wishlist variants:", error);
+        }
+
+        const mainProductWishlisted =
+            wishlistForm.dataset.mainWishlisted === "1";
+
+        function syncWishlistButton() {
+            const variantId = variantInput.value;
+            const isWishlisted = variantId ?
+                wishlistedVariants.includes(Number(variantId)) :
+                mainProductWishlisted;
+
+            heartButton.value = isWishlisted ? "remove" : "add";
+            heartButton.classList.toggle("btn-danger", isWishlisted);
+            heartButton.classList.toggle("btn-outline-danger", !isWishlisted);
+
+            heartButton.innerHTML = isWishlisted ?
+                '<i class="fa-solid fa-heart"></i>' :
+                '<i class="fa-regular fa-heart"></i>';
+
+            const label = isWishlisted ?
+                "Remove from wishlist" :
+                "Add to wishlist";
+
+            heartButton.setAttribute("aria-label", label);
+            heartButton.title = label;
+        }
+
+        function syncWishlistSelection() {
+            variantInput.value = variantSelect ?
+                variantSelect.value :
+                "";
+
+            imageInput.value = mainImage ?
+                (mainImage.getAttribute("src") || "") :
+                "";
+
+            syncWishlistButton();
+        }
+
+        if (variantSelect) {
+            variantSelect.addEventListener("change", function() {
+                setTimeout(syncWishlistSelection, 0);
+            });
+        }
+
+        if (thumbnailsContainer) {
+            thumbnailsContainer.addEventListener("click", function(event) {
+                if (event.target.closest(".product-thumbnail")) {
+                    setTimeout(syncWishlistSelection, 0);
+                }
+            });
+        }
+        wishlistForm.addEventListener("submit", function() {
+            syncWishlistSelection();
+        });
+
+        syncWishlistSelection();
     });
 </script>
 <?php
