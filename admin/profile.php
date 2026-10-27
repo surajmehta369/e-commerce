@@ -277,6 +277,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
     <a href="categories.php">Categories</a>
     <a href="brands.php">Brands</a>
     <a href="orders.php">Orders</a>
+    <a href="reviews.php">Product Reviews</a>
     <a href="profile.php" class="active">Profile</a>
     <a href="../outh/logout.php">Logout</a>
 </aside>

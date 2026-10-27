@@ -1035,12 +1035,40 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
         }
 
         .current-image {
-            width: 110px; height: 110px; object-fit: cover;
-            border-radius: 10px; border: 1px solid #dee2e6;
+            width: 110px;
+            height: 110px;
+            object-fit: cover;
+            border-radius: 10px;
+            border: 1px solid #dee2e6;
         }
-        .image-tile { position: relative; display: inline-block; margin: 4px 8px 8px 0; }
-        .image-cut-btn { position: absolute; top: -7px; right: -7px; z-index: 2; width: 23px; height: 23px; border: 0; border-radius: 50%; background: #dc3545; color: #fff; font-size: 17px; line-height: 20px; padding: 0; cursor: pointer; box-shadow: 0 1px 4px #999; }
-        .image-cut-btn:hover { background: #bb2d3b; }
+
+        .image-tile {
+            position: relative;
+            display: inline-block;
+            margin: 4px 8px 8px 0;
+        }
+
+        .image-cut-btn {
+            position: absolute;
+            top: -7px;
+            right: -7px;
+            z-index: 2;
+            width: 23px;
+            height: 23px;
+            border: 0;
+            border-radius: 50%;
+            background: #dc3545;
+            color: #fff;
+            font-size: 17px;
+            line-height: 20px;
+            padding: 0;
+            cursor: pointer;
+            box-shadow: 0 1px 4px #999;
+        }
+
+        .image-cut-btn:hover {
+            background: #bb2d3b;
+        }
     </style>
 
 </head>
@@ -1090,6 +1118,10 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
                 <a href="orders.php">
                     <i class="bi bi-cart-check me-2"></i>
                     Orders
+                </a>
+                <a href="reviews.php">
+                    <i class="bi bi-cart-check me-2"></i>
+                    Product Reviews
                 </a>
 
                 <a href="profile.php">
@@ -1588,7 +1620,8 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
                                     <?php if (!empty($productImages)): ?>
                                         <div class="d-flex flex-wrap gap-2">
                                             <?php foreach ($productImages as $galleryImage): ?>
-                                                <?php $galleryPath = $galleryImage['image_path']; if (strpos($galleryPath, 'assets/uploads/') !== 0) $galleryPath = 'assets/uploads/' . ltrim($galleryPath, '/'); ?>
+                                                <?php $galleryPath = $galleryImage['image_path'];
+                                                if (strpos($galleryPath, 'assets/uploads/') !== 0) $galleryPath = 'assets/uploads/' . ltrim($galleryPath, '/'); ?>
                                                 <div class="image-tile">
                                                     <img src="../<?= htmlspecialchars($galleryPath) ?>" alt="<?= htmlspecialchars($galleryImage['alt_text'] ?? $title) ?>" style="width:90px;height:90px;object-fit:cover" class="rounded border">
                                                     <button type="button" class="image-cut-btn" data-remove-name="remove_gallery_images[]" data-remove-id="<?= (int) $galleryImage['id'] ?>" aria-label="Remove gallery image">×</button>
@@ -1761,7 +1794,9 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
                 } else {
                     if (!fieldId) return;
                     const alreadyAdded = Array.from(form.querySelectorAll('input[type="hidden"][name="' + fieldName + '"]'))
-                        .some(function(input) { return input.value === fieldId; });
+                        .some(function(input) {
+                            return input.value === fieldId;
+                        });
                     if (!alreadyAdded) {
                         const hidden = document.createElement("input");
                         hidden.type = "hidden";

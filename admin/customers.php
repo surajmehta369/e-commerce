@@ -18,7 +18,6 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
 
         $message = "Invalid customer.";
         $messageType = "danger";
-
     } else {
 
         try {
@@ -37,9 +36,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
                 ]);
 
                 $message = "Customer activated successfully.";
-            }
-
-            elseif ($action === 'deactivate') {
+            } elseif ($action === 'deactivate') {
 
                 $sql = "UPDATE users
                         SET status = 0
@@ -54,7 +51,6 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
 
                 $message = "Customer deactivated successfully.";
             }
-
         } catch (PDOException $e) {
 
             $message = "Something went wrong. Please try again.";
@@ -86,7 +82,6 @@ if ($search !== '') {
 if ($status === 'active') {
 
     $where[] = "u.status = 1";
-
 } elseif ($status === 'inactive') {
 
     $where[] = "u.status = 0";
@@ -166,18 +161,15 @@ function customerStatusBadge($status)
 
     <meta
         name="viewport"
-        content="width=device-width, initial-scale=1.0"
-    >
+        content="width=device-width, initial-scale=1.0">
 
     <title>Customer Management - Admin</title>
 
     <link
         href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.3/dist/css/bootstrap.min.css"
-        rel="stylesheet"
-    >
+        rel="stylesheet">
 
     <style>
-
         body {
             background: #f5f7fb;
             font-family: Arial, sans-serif;
@@ -293,7 +285,6 @@ function customerStatusBadge($status)
             }
 
         }
-
     </style>
 
 </head>
@@ -301,234 +292,229 @@ function customerStatusBadge($status)
 <body>
 
 
-<div class="sidebar">
+    <div class="sidebar">
 
-    <h4>E-Commerce Admin</h4>
+        <h4>E-Commerce Admin</h4>
 
-    <a href="index.php">
-        Dashboard
-    </a>
+        <a href="index.php">
+            Dashboard
+        </a>
 
-    <a href="vendors.php">
-        Vendors
-    </a>
+        <a href="vendors.php">
+            Vendors
+        </a>
 
-    <a href="products.php">
-        Products
-    </a>
+        <a href="products.php">
+            Products
+        </a>
 
-    <a href="customers.php" class="active">
-        Customers
-    </a>
+        <a href="customers.php" class="active">
+            Customers
+        </a>
 
-    <a href="categories.php">
-        Categories
-    </a>
+        <a href="categories.php">
+            Categories
+        </a>
 
-    <a href="brands.php">
-        Brands
-    </a>
+        <a href="brands.php">
+            Brands
+        </a>
 
-    <a href="orders.php">
-        Orders
-    </a>
+        <a href="orders.php">
+            Orders
+        </a>
+        
+        <a href="reviews.php">
+            Product Reviews
+        </a>
 
-    <a href="profile.php">
-        Admin Profile
-    </a>
+        <a href="profile.php">
+            Admin Profile
+        </a>
 
-    <a href="../outh/logout.php">
-        Logout
-    </a>
-
-</div>
-
-<div class="main">
-
-    <div class="page-header">
-
-        <h2>Customer Management</h2>
-
-        <p class="text-muted mb-0">
-            Manage customer accounts and view customer activity.
-        </p>
+        <a href="../outh/logout.php">
+            Logout
+        </a>
 
     </div>
 
-    <?php if ($message !== ""): ?>
+    <div class="main">
 
-        <div
-            class="alert alert-<?php echo htmlspecialchars($messageType); ?>
-                   alert-dismissible fade show"
-        >
+        <div class="page-header">
 
-            <?php echo htmlspecialchars($message); ?>
+            <h2>Customer Management</h2>
 
-            <button
-                type="button"
-                class="btn-close"
-                data-bs-dismiss="alert"
-            ></button>
+            <p class="text-muted mb-0">
+                Manage customer accounts and view customer activity.
+            </p>
 
         </div>
 
-    <?php endif; ?>
-    <div class="card filter-card">
+        <?php if ($message !== ""): ?>
 
-        <div class="card-body">
+            <div
+                class="alert alert-<?php echo htmlspecialchars($messageType); ?>
+                   alert-dismissible fade show">
 
-            <form method="GET">
+                <?php echo htmlspecialchars($message); ?>
 
-                <div class="row g-3 align-items-end">
-
-                    <div class="col-md-7">
-
-                        <label class="form-label">
-                            Search Customer
-                        </label>
-
-                        <input
-                            type="text"
-                            name="search"
-                            class="form-control"
-                            placeholder="Search by name or email"
-                            value="<?php echo htmlspecialchars($search); ?>"
-                        >
-
-                    </div>
-
-
-                    <div class="col-md-3">
-
-                        <label class="form-label">
-                            Account Status
-                        </label>
-
-                        <select
-                            name="status"
-                            class="form-select"
-                        >
-
-                            <option value="">
-                                All Customers
-                            </option>
-
-                            <option
-                                value="active"
-                                <?php
-                                echo $status === 'active'
-                                    ? 'selected'
-                                    : '';
-                                ?>
-                            >
-                                Active
-                            </option>
-
-                            <option
-                                value="inactive"
-                                <?php
-                                echo $status === 'inactive'
-                                    ? 'selected'
-                                    : '';
-                                ?>
-                            >
-                                Inactive
-                            </option>
-
-                        </select>
-
-                    </div>
-
-
-                    <div class="col-md-2">
-
-                        <div class="d-flex gap-2">
-
-                            <button
-                                type="submit"
-                                class="btn btn-primary"
-                            >
-                                Filter
-                            </button>
-
-                            <a
-                                href="customers.php"
-                                class="btn btn-outline-secondary"
-                            >
-                                Reset
-                            </a>
-                        </div>
-                    </div>
-                </div>
-            </form>
-        </div>
-    </div>
-
-
-    <div class="card">
-
-        <div class="card-body">
-
-            <div class="d-flex justify-content-between align-items-center mb-3">
-
-                <h5 class="mb-0">
-                    Customers
-                </h5>
-
-                <span class="text-muted">
-                    <?php echo count($customers); ?> customer(s)
-                </span>
+                <button
+                    type="button"
+                    class="btn-close"
+                    data-bs-dismiss="alert"></button>
 
             </div>
 
+        <?php endif; ?>
+        <div class="card filter-card">
 
-            <div class="table-responsive">
+            <div class="card-body">
 
-                <table class="table table-hover align-middle">
+                <form method="GET">
 
-                    <thead>
+                    <div class="row g-3 align-items-end">
 
-                        <tr>
+                        <div class="col-md-7">
 
-                            <th>#</th>
+                            <label class="form-label">
+                                Search Customer
+                            </label>
 
-                            <th>Customer</th>
+                            <input
+                                type="text"
+                                name="search"
+                                class="form-control"
+                                placeholder="Search by name or email"
+                                value="<?php echo htmlspecialchars($search); ?>">
 
-                            <th>Status</th>
-
-                            <th>Orders</th>
-
-                            <th>Total Spent</th>
-
-                            <th>Last Login</th>
-
-                            <th>Registered</th>
-
-                            <th>Actions</th>
-
-                        </tr>
-
-                    </thead>
+                        </div>
 
 
-                    <tbody>
+                        <div class="col-md-3">
 
-                    <?php if (empty($customers)): ?>
+                            <label class="form-label">
+                                Account Status
+                            </label>
 
-                        <tr>
+                            <select
+                                name="status"
+                                class="form-select">
 
-                            <td
-                                colspan="8"
-                                class="text-center py-5 text-muted"
-                            >
+                                <option value="">
+                                    All Customers
+                                </option>
 
-                                No customers found.
+                                <option
+                                    value="active"
+                                    <?php
+                                    echo $status === 'active'
+                                        ? 'selected'
+                                        : '';
+                                    ?>>
+                                    Active
+                                </option>
 
-                            </td>
+                                <option
+                                    value="inactive"
+                                    <?php
+                                    echo $status === 'inactive'
+                                        ? 'selected'
+                                        : '';
+                                    ?>>
+                                    Inactive
+                                </option>
 
-                        </tr>
+                            </select>
 
-                    <?php else: ?>
+                        </div>
+
+
+                        <div class="col-md-2">
+
+                            <div class="d-flex gap-2">
+
+                                <button
+                                    type="submit"
+                                    class="btn btn-primary">
+                                    Filter
+                                </button>
+
+                                <a
+                                    href="customers.php"
+                                    class="btn btn-outline-secondary">
+                                    Reset
+                                </a>
+                            </div>
+                        </div>
+                    </div>
+                </form>
+            </div>
+        </div>
+
+
+        <div class="card">
+
+            <div class="card-body">
+
+                <div class="d-flex justify-content-between align-items-center mb-3">
+
+                    <h5 class="mb-0">
+                        Customers
+                    </h5>
+
+                    <span class="text-muted">
+                        <?php echo count($customers); ?> customer(s)
+                    </span>
+
+                </div>
+
+
+                <div class="table-responsive">
+
+                    <table class="table table-hover align-middle">
+
+                        <thead>
+
+                            <tr>
+
+                                <th>#</th>
+
+                                <th>Customer</th>
+
+                                <th>Status</th>
+
+                                <th>Orders</th>
+
+                                <th>Total Spent</th>
+
+                                <th>Last Login</th>
+
+                                <th>Registered</th>
+
+                                <th>Actions</th>
+
+                            </tr>
+
+                        </thead>
+
+
+                        <tbody>
+
+                            <?php if (empty($customers)): ?>
+
+                                <tr>
+
+                                    <td
+                                        colspan="8"
+                                        class="text-center py-5 text-muted">
+
+                                        No customers found.
+
+                                    </td>
+
+                                </tr>
+
+                            <?php else: ?>
 
 
                                 <?php foreach ($customers as $index => $customer): ?>
@@ -551,220 +537,11 @@ function customerStatusBadge($status)
                                             <?php echo $index + 1; ?>
                                         </td>
 
-                                <td>
+                                        <td>
 
-                                    <div class="d-flex align-items-center gap-3">
+                                            <div class="d-flex align-items-center gap-3">
 
-                                        <div class="customer-avatar">
-
-                                            <?php
-                                            echo htmlspecialchars(
-                                                $initial
-                                            );
-                                            ?>
-
-                                        </div>
-
-                                        <div>
-
-                                            <div class="customer-name">
-
-                                                <?php
-                                                echo htmlspecialchars(
-                                                    $customer['name']
-                                                );
-                                                ?>
-
-                                            </div>
-
-                                            <div class="small-text">
-
-                                                <?php
-                                                echo htmlspecialchars(
-                                                    $customer['email']
-                                                );
-                                                ?>
-
-                                            </div>
-
-                                        </div>
-
-                                    </div>
-
-                                </td>
-                                <td>
-
-                                    <?php
-                                    echo customerStatusBadge(
-                                        $customer['status']
-                                    );
-                                    ?>
-
-                                </td>
-                                <td>
-
-                                    <span class="fw-semibold">
-
-                                        <?php
-                                        echo (int) $customer['order_count'];
-                                        ?>
-
-                                    </span>
-
-                                </td>
-                                <td>
-
-                                    <strong>
-
-                                        $<?php
-                                        echo number_format(
-                                            (float) $customer['total_spent'],
-                                            2
-                                        );
-                                        ?>
-
-                                    </strong>
-
-                                </td>
-                                <td>
-
-                                    <?php if (!empty($customer['last_login_at'])): ?>
-
-                                        <?php
-                                        echo date(
-                                            'd M Y H:i',
-                                            strtotime(
-                                                $customer['last_login_at']
-                                            )
-                                        );
-                                        ?>
-
-                                    <?php else: ?>
-
-                                        <span class="text-muted">
-                                            Never
-                                        </span>
-
-                                    <?php endif; ?>
-
-                                </td>
-                                <td>
-
-                                    <?php
-                                    echo date(
-                                        'd M Y',
-                                        strtotime(
-                                            $customer['created_at']
-                                        )
-                                    );
-                                    ?>
-
-                                </td>
-                                <td>
-
-                                    <div class="action-buttons">
-                                    <button
-                                            type="button"
-                                            class="btn btn-sm btn-outline-primary"
-                                            data-bs-toggle="modal"
-                                            data-bs-target="#customerModal<?php echo $customer['id']; ?>"
-                                        >
-                                            View
-                                        </button>
-                                        <?php if ((int) $customer['status'] === 0): ?>
-
-                                            <form method="POST">
-
-                                                <input
-                                                    type="hidden"
-                                                    name="action"
-                                                    value="activate"
-                                                >
-
-                                                <input
-                                                    type="hidden"
-                                                    name="customer_id"
-                                                    value="<?php echo (int) $customer['id']; ?>"
-                                                >
-
-                                                <button
-                                                    type="submit"
-                                                    class="btn btn-sm btn-success"
-                                                    onclick="return confirm('Activate this customer account?');"
-                                                >
-                                                    Activate
-                                                </button>
-
-                                            </form>
-
-                                        <?php endif; ?>
-                                        <?php if ((int) $customer['status'] === 1): ?>
-
-                                            <form method="POST">
-
-                                                <input
-                                                    type="hidden"
-                                                    name="action"
-                                                    value="deactivate"
-                                                >
-
-                                                <input
-                                                    type="hidden"
-                                                    name="customer_id"
-                                                    value="<?php echo (int) $customer['id']; ?>"
-                                                >
-
-                                                <button
-                                                    type="submit"
-                                                    class="btn btn-sm btn-outline-danger"
-                                                    onclick="return confirm('Deactivate this customer account?');"
-                                                >
-                                                    Deactivate
-                                                </button>
-
-                                            </form>
-
-                                        <?php endif; ?>
-
-                                    </div>
-
-                                </td>
-
-                            </tr>
-                            <div
-                                class="modal fade"
-                                id="customerModal<?php echo $customer['id']; ?>"
-                                tabindex="-1"
-                            >
-
-                                <div
-                                    class="modal-dialog
-                                           modal-dialog-centered"
-                                >
-
-                                    <div class="modal-content">
-
-                                        <div class="modal-header">
-
-                                            <h5 class="modal-title">
-                                                Customer Details
-                                            </h5>
-
-                                            <button
-                                                type="button"
-                                                class="btn-close"
-                                                data-bs-dismiss="modal"
-                                            ></button>
-
-                                        </div>
-
-
-                                        <div class="modal-body">
-                                            <div class="text-center mb-4">
-                                                <div
-                                                    class="customer-avatar
-                                                           mx-auto mb-2"
-                                                >
+                                                <div class="customer-avatar">
 
                                                     <?php
                                                     echo htmlspecialchars(
@@ -774,164 +551,362 @@ function customerStatusBadge($status)
 
                                                 </div>
 
-                                                <h5 class="mb-1">
+                                                <div>
 
-                                                    <?php
-                                                    echo htmlspecialchars(
-                                                        $customer['name']
-                                                    );
-                                                    ?>
+                                                    <div class="customer-name">
 
-                                                </h5>
+                                                        <?php
+                                                        echo htmlspecialchars(
+                                                            $customer['name']
+                                                        );
+                                                        ?>
 
-                                                <div class="text-muted">
+                                                    </div>
 
-                                                    <?php
-                                                    echo htmlspecialchars(
-                                                        $customer['email']
-                                                    );
-                                                    ?>
+                                                    <div class="small-text">
+
+                                                        <?php
+                                                        echo htmlspecialchars(
+                                                            $customer['email']
+                                                        );
+                                                        ?>
+
+                                                    </div>
 
                                                 </div>
 
                                             </div>
-                                            <div class="row g-3">
 
-                                                <div class="col-6">
+                                        </td>
+                                        <td>
 
-                                                    <strong>
-                                                        Customer ID
-                                                    </strong>
+                                            <?php
+                                            echo customerStatusBadge(
+                                                $customer['status']
+                                            );
+                                            ?>
 
-                                                    <div>
-                                                        #
-                                                        <?php
-                                                        echo (int)
-                                                            $customer['id'];
-                                                        ?>
-                                                    </div>
+                                        </td>
+                                        <td>
+
+                                            <span class="fw-semibold">
+
+                                                <?php
+                                                echo (int) $customer['order_count'];
+                                                ?>
+
+                                            </span>
+
+                                        </td>
+                                        <td>
+
+                                            <strong>
+
+                                                $<?php
+                                                    echo number_format(
+                                                        (float) $customer['total_spent'],
+                                                        2
+                                                    );
+                                                    ?>
+
+                                            </strong>
+
+                                        </td>
+                                        <td>
+
+                                            <?php if (!empty($customer['last_login_at'])): ?>
+
+                                                <?php
+                                                echo date(
+                                                    'd M Y H:i',
+                                                    strtotime(
+                                                        $customer['last_login_at']
+                                                    )
+                                                );
+                                                ?>
+
+                                            <?php else: ?>
+
+                                                <span class="text-muted">
+                                                    Never
+                                                </span>
+
+                                            <?php endif; ?>
+
+                                        </td>
+                                        <td>
+
+                                            <?php
+                                            echo date(
+                                                'd M Y',
+                                                strtotime(
+                                                    $customer['created_at']
+                                                )
+                                            );
+                                            ?>
+
+                                        </td>
+                                        <td>
+
+                                            <div class="action-buttons">
+                                                <button
+                                                    type="button"
+                                                    class="btn btn-sm btn-outline-primary"
+                                                    data-bs-toggle="modal"
+                                                    data-bs-target="#customerModal<?php echo $customer['id']; ?>">
+                                                    View
+                                                </button>
+                                                <?php if ((int) $customer['status'] === 0): ?>
+
+                                                    <form method="POST">
+
+                                                        <input
+                                                            type="hidden"
+                                                            name="action"
+                                                            value="activate">
+
+                                                        <input
+                                                            type="hidden"
+                                                            name="customer_id"
+                                                            value="<?php echo (int) $customer['id']; ?>">
+
+                                                        <button
+                                                            type="submit"
+                                                            class="btn btn-sm btn-success"
+                                                            onclick="return confirm('Activate this customer account?');">
+                                                            Activate
+                                                        </button>
+
+                                                    </form>
+
+                                                <?php endif; ?>
+                                                <?php if ((int) $customer['status'] === 1): ?>
+
+                                                    <form method="POST">
+
+                                                        <input
+                                                            type="hidden"
+                                                            name="action"
+                                                            value="deactivate">
+
+                                                        <input
+                                                            type="hidden"
+                                                            name="customer_id"
+                                                            value="<?php echo (int) $customer['id']; ?>">
+
+                                                        <button
+                                                            type="submit"
+                                                            class="btn btn-sm btn-outline-danger"
+                                                            onclick="return confirm('Deactivate this customer account?');">
+                                                            Deactivate
+                                                        </button>
+
+                                                    </form>
+
+                                                <?php endif; ?>
+
+                                            </div>
+
+                                        </td>
+
+                                    </tr>
+                                    <div
+                                        class="modal fade"
+                                        id="customerModal<?php echo $customer['id']; ?>"
+                                        tabindex="-1">
+
+                                        <div
+                                            class="modal-dialog
+                                           modal-dialog-centered">
+
+                                            <div class="modal-content">
+
+                                                <div class="modal-header">
+
+                                                    <h5 class="modal-title">
+                                                        Customer Details
+                                                    </h5>
+
+                                                    <button
+                                                        type="button"
+                                                        class="btn-close"
+                                                        data-bs-dismiss="modal"></button>
+
                                                 </div>
-                                                <div class="col-6">
 
-                                                    <strong>
-                                                        Status
-                                                    </strong>
 
-                                                    <div>
-
-                                                        <?php
-                                                        echo customerStatusBadge(
-                                                            $customer['status']
-                                                        );
-                                                        ?>
-
-                                                    </div>
-
-                                                </div>
-
-                                                <div class="col-6">
-
-                                                    <strong>
-                                                        Total Orders
-                                                    </strong>
-
-                                                    <div>
-
-                                                        <?php
-                                                        echo (int)
-                                                            $customer['order_count'];
-                                                        ?>
-
-                                                    </div>
-                                                </div>
-                                                <div class="col-6">
-
-                                                    <strong>
-                                                        Total Spent
-                                                    </strong>
-
-                                                    <div>
-
-                                                        $<?php
-                                                        echo number_format(
-                                                            (float)
-                                                            $customer['total_spent'],
-                                                            2
-                                                        );
-                                                        ?>
-
-                                                    </div>
-                                                </div>
-                                                <div class="col-6">
-
-                                                    <strong>
-                                                        Registered
-                                                    </strong>
-
-                                                    <div>
-
-                                                        <?php
-                                                        echo date(
-                                                            'd M Y H:i',
-                                                            strtotime(
-                                                                $customer['created_at']
-                                                            )
-                                                        );
-                                                        ?>
-
-                                                    </div>
-                                                </div>
-                                                <div class="col-6">
-
-                                                    <strong>
-                                                        Last Login
-                                                    </strong>
-
-                                                    <div>
-
-                                                        <?php if (!empty($customer['last_login_at'])): ?>
+                                                <div class="modal-body">
+                                                    <div class="text-center mb-4">
+                                                        <div
+                                                            class="customer-avatar
+                                                           mx-auto mb-2">
 
                                                             <?php
-                                                            echo date(
-                                                                'd M Y H:i',
-                                                                strtotime(
-                                                                    $customer['last_login_at']
-                                                                )
+                                                            echo htmlspecialchars(
+                                                                $initial
                                                             );
                                                             ?>
 
-                                                        <?php else: ?>
+                                                        </div>
 
-                                                            Never
+                                                        <h5 class="mb-1">
 
-                                                        <?php endif; ?>
+                                                            <?php
+                                                            echo htmlspecialchars(
+                                                                $customer['name']
+                                                            );
+                                                            ?>
+
+                                                        </h5>
+
+                                                        <div class="text-muted">
+
+                                                            <?php
+                                                            echo htmlspecialchars(
+                                                                $customer['email']
+                                                            );
+                                                            ?>
+
+                                                        </div>
+
                                                     </div>
+                                                    <div class="row g-3">
+
+                                                        <div class="col-6">
+
+                                                            <strong>
+                                                                Customer ID
+                                                            </strong>
+
+                                                            <div>
+                                                                #
+                                                                <?php
+                                                                echo (int)
+                                                                $customer['id'];
+                                                                ?>
+                                                            </div>
+                                                        </div>
+                                                        <div class="col-6">
+
+                                                            <strong>
+                                                                Status
+                                                            </strong>
+
+                                                            <div>
+
+                                                                <?php
+                                                                echo customerStatusBadge(
+                                                                    $customer['status']
+                                                                );
+                                                                ?>
+
+                                                            </div>
+
+                                                        </div>
+
+                                                        <div class="col-6">
+
+                                                            <strong>
+                                                                Total Orders
+                                                            </strong>
+
+                                                            <div>
+
+                                                                <?php
+                                                                echo (int)
+                                                                $customer['order_count'];
+                                                                ?>
+
+                                                            </div>
+                                                        </div>
+                                                        <div class="col-6">
+
+                                                            <strong>
+                                                                Total Spent
+                                                            </strong>
+
+                                                            <div>
+
+                                                                $<?php
+                                                                    echo number_format(
+                                                                        (float)
+                                                                        $customer['total_spent'],
+                                                                        2
+                                                                    );
+                                                                    ?>
+
+                                                            </div>
+                                                        </div>
+                                                        <div class="col-6">
+
+                                                            <strong>
+                                                                Registered
+                                                            </strong>
+
+                                                            <div>
+
+                                                                <?php
+                                                                echo date(
+                                                                    'd M Y H:i',
+                                                                    strtotime(
+                                                                        $customer['created_at']
+                                                                    )
+                                                                );
+                                                                ?>
+
+                                                            </div>
+                                                        </div>
+                                                        <div class="col-6">
+
+                                                            <strong>
+                                                                Last Login
+                                                            </strong>
+
+                                                            <div>
+
+                                                                <?php if (!empty($customer['last_login_at'])): ?>
+
+                                                                    <?php
+                                                                    echo date(
+                                                                        'd M Y H:i',
+                                                                        strtotime(
+                                                                            $customer['last_login_at']
+                                                                        )
+                                                                    );
+                                                                    ?>
+
+                                                                <?php else: ?>
+
+                                                                    Never
+
+                                                                <?php endif; ?>
+                                                            </div>
+                                                        </div>
+                                                    </div>
+                                                </div>
+                                                <div class="modal-footer">
+                                                    <button
+                                                        type="button"
+                                                        class="btn btn-secondary"
+                                                        data-bs-dismiss="modal">
+                                                        Close
+                                                    </button>
                                                 </div>
                                             </div>
                                         </div>
-                                        <div class="modal-footer">
-                                            <button
-                                                type="button"
-                                                class="btn btn-secondary"
-                                                data-bs-dismiss="modal"
-                                            >
-                                                Close
-                                            </button>
-                                        </div>
                                     </div>
-                                </div>
-                            </div>
-                        <?php endforeach; ?>
-                    <?php endif; ?>
-                    </tbody>
-                </table>
+                                <?php endforeach; ?>
+                            <?php endif; ?>
+                        </tbody>
+                    </table>
+                </div>
             </div>
         </div>
     </div>
-</div>
-<script
-    src="https://cdn.jsdelivr.net/npm/bootstrap@5.3.3/dist/js/bootstrap.bundle.min.js">
-</script>
+    <script
+        src="https://cdn.jsdelivr.net/npm/bootstrap@5.3.3/dist/js/bootstrap.bundle.min.js">
+    </script>
 
 </body>
+
 </html>

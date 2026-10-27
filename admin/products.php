@@ -389,7 +389,6 @@ LIMIT 1
                                 . ($zohoResult['message'] ?? 'Unknown error.');
 
                             $messageType = 'danger';
-
                         }
                     }
                 } else {
@@ -789,6 +788,9 @@ function stockBadge($stock)
 
         <a href="orders.php">
             Orders
+        </a>
+        <a href="reviews.php">
+            Product Reviews
         </a>
 
         <a href="profile.php">

@@ -185,6 +185,168 @@ $brandName = $product['brand_name'] ?? 'Unknown Brand';
 
 $sku = $product['sku'];
 
+if (session_status() !== PHP_SESSION_ACTIVE) {
+    session_start();
+}
+
+if (empty($_SESSION['review_csrf_token'])) {
+    $_SESSION['review_csrf_token'] = bin2hex(random_bytes(32));
+}
+
+$reviewCsrfToken = $_SESSION['review_csrf_token'];
+if (empty($_SESSION['wishlist_csrf_token'])) {
+    $_SESSION['wishlist_csrf_token'] = bin2hex(random_bytes(32));
+}
+
+$wishlistCsrfToken = $_SESSION['wishlist_csrf_token'];
+$isWishlisted = false;
+
+if (
+    !empty($_SESSION['logged_in']) &&
+    (int) ($_SESSION['user_id'] ?? 0) > 0 &&
+    ($_SESSION['user_role'] ?? '') === 'customer'
+) {
+    $wishlistCheckStmt = $db->prepare("
+        SELECT 1
+        FROM wishlists
+        WHERE user_id = :user_id
+          AND product_id = :product_id
+        LIMIT 1
+    ");
+
+    $wishlistCheckStmt->execute([
+        ':user_id' => (int) $_SESSION['user_id'],
+        ':product_id' => $productId
+    ]);
+
+    $isWishlisted = (bool) $wishlistCheckStmt->fetchColumn();
+}
+
+
+$currentUserId = (int) ($_SESSION['user_id'] ?? 0);
+$currentUserRole = $_SESSION['user_role'] ?? '';
+$isLoggedInCustomer =
+    !empty($_SESSION['logged_in']) &&
+    $currentUserId > 0 &&
+    $currentUserRole === 'customer';
+
+$reviewMessage = $_GET['review_message'] ?? '';
+
+$reviewMessages = [
+    'login_required'       => ['Please log in with a customer account to submit a review.', 'warning'],
+    'invalid_request'      => ['Your request could not be verified. Please try again.', 'danger'],
+    'invalid_rating'       => ['Please select a rating from 1 to 5 stars.', 'warning'],
+    'title_too_long'       => ['The review title must be 150 characters or fewer.', 'warning'],
+    'invalid_review_text'  => ['Please enter a review of no more than 5,000 characters.', 'warning'],
+    'account_not_eligible' => ['Your account is not eligible to submit a review.', 'warning'],
+    'product_unavailable'  => ['This product is no longer available for review.', 'warning'],
+    'purchase_required'    => ['You must have an eligible order for this product before reviewing it.', 'warning'],
+    'review_saved'         => ['Your review has been saved successfully.', 'success'],
+    'save_failed'          => ['We could not save your review. Please try again.', 'danger'],
+];
+
+$reviewNotice = $reviewMessages[$reviewMessage] ?? null;
+
+$reviewStatsStmt = $db->prepare("
+    SELECT
+        COUNT(*) AS review_count,
+        COALESCE(AVG(rating), 0) AS average_rating
+    FROM product_reviews
+    WHERE product_id = :product_id
+      AND status = 'published'
+");
+$reviewStatsStmt->execute([':product_id' => $productId]);
+$reviewStats = $reviewStatsStmt->fetch(PDO::FETCH_ASSOC);
+
+$reviewCount = (int) ($reviewStats['review_count'] ?? 0);
+$averageRating = (float) ($reviewStats['average_rating'] ?? 0);
+
+$ratingDistribution = array_fill(1, 5, 0);
+
+$distributionStmt = $db->prepare("
+    SELECT rating, COUNT(*) AS total
+    FROM product_reviews
+    WHERE product_id = :product_id
+      AND status = 'published'
+    GROUP BY rating
+");
+$distributionStmt->execute([':product_id' => $productId]);
+
+foreach ($distributionStmt->fetchAll(PDO::FETCH_ASSOC) as $distributionRow) {
+    $ratingDistribution[(int) $distributionRow['rating']] =
+        (int) $distributionRow['total'];
+}
+
+$reviewsStmt = $db->prepare("
+    SELECT
+        r.id,
+        r.user_id,
+        r.rating,
+        r.review_title,
+        r.review_text,
+        r.is_verified_purchase,
+        r.created_at,
+        u.name AS customer_name
+    FROM product_reviews r
+    INNER JOIN users u ON u.id = r.user_id
+    WHERE r.product_id = :product_id
+      AND r.status = 'published'
+    ORDER BY r.created_at DESC, r.id DESC
+");
+$reviewsStmt->execute([':product_id' => $productId]);
+$productReviews = $reviewsStmt->fetchAll(PDO::FETCH_ASSOC);
+$canReviewProduct = false;
+$existingCustomerReview = null;
+
+if ($isLoggedInCustomer) {
+    $purchaseStmt = $db->prepare("
+        SELECT 1
+        FROM orders o
+        INNER JOIN order_items oi ON oi.order_id = o.id
+        WHERE o.user_id = :user_id
+          AND oi.product_id = :product_id
+          AND (
+              (
+                  o.payment_method = 'cash_on_delivery'
+                  AND o.order_status = 'confirmed'
+                  AND o.payment_status IN ('pending', 'paid')
+              )
+              OR
+              (
+                  o.payment_status = 'paid'
+                  AND o.order_status <> 'cancelled'
+              )
+          )
+        LIMIT 1
+    ");
+
+    $purchaseStmt->execute([
+        ':user_id' => $currentUserId,
+        ':product_id' => $productId,
+    ]);
+
+    $canReviewProduct = (bool) $purchaseStmt->fetchColumn();
+
+    if ($canReviewProduct) {
+        $existingReviewStmt = $db->prepare("
+            SELECT id, rating, review_title, review_text
+            FROM product_reviews
+            WHERE product_id = :product_id
+              AND user_id = :user_id
+            LIMIT 1
+        ");
+
+        $existingReviewStmt->execute([
+            ':product_id' => $productId,
+            ':user_id' => $currentUserId,
+        ]);
+
+        $existingCustomerReview =
+            $existingReviewStmt->fetch(PDO::FETCH_ASSOC) ?: null;
+    }
+}
+
+
 $variantStmt = $db->prepare("
     SELECT id, product_id, variant_title, sku, price,
            original_price, stock, attributes, status
@@ -558,11 +720,40 @@ include "components/sidebar.php";
 
                     </div>
 
-                    <h1 class="fw-bold mb-3">
+                    <div class="d-flex justify-content-between align-items-start gap-3 mb-3">
+                        <h1 class="fw-bold mb-0">
+                            <?= htmlspecialchars($title); ?>
+                        </h1>
 
-                        <?= htmlspecialchars($title); ?>
+                        <form method="POST"
+                            action="wishlist-action.php"
+                            class="flex-shrink-0">
 
-                    </h1>
+                            <input type="hidden"
+                                name="product_id"
+                                value="<?= (int) $productId; ?>">
+
+                            <input type="hidden"
+                                name="csrf_token"
+                                value="<?= htmlspecialchars($wishlistCsrfToken, ENT_QUOTES, 'UTF-8'); ?>">
+
+                            <input type="hidden"
+                                name="return_to"
+                                value="product-details.php?id=<?= (int) $productId; ?>">
+
+                            <button type="submit"
+                                name="action"
+                                value="<?= $isWishlisted ? 'remove' : 'add'; ?>"
+                                class="btn <?= $isWishlisted ? 'btn-danger' : 'btn-outline-danger'; ?> rounded-circle"
+                                style="width:46px;height:46px;"
+                                aria-label="<?= $isWishlisted ? 'Remove from wishlist' : 'Add to wishlist'; ?>"
+                                title="<?= $isWishlisted ? 'Remove from wishlist' : 'Add to wishlist'; ?>">
+
+                                <i class="<?= $isWishlisted ? 'fa-solid' : 'fa-regular'; ?> fa-heart"></i>
+                            </button>
+                        </form>
+                    </div>
+
 
                     <p class="text-muted mb-3">
 
@@ -757,6 +948,199 @@ include "components/sidebar.php";
 
     </div>
 
+
+    <!-- ================= RATINGS & REVIEWS ================= -->
+    <section class="container-fluid my-5" id="reviews">
+        <div class="card border-0 shadow-sm rounded-4 p-4 p-lg-5">
+            <h2 class="fw-bold mb-4">Customer Reviews</h2>
+
+            <?php if ($reviewNotice): ?>
+                <div class="alert alert-<?= htmlspecialchars($reviewNotice[1]); ?> rounded-3">
+                    <?= htmlspecialchars($reviewNotice[0]); ?>
+                </div>
+            <?php endif; ?>
+
+            <div class="row g-4 mb-5">
+                <div class="col-md-4">
+                    <div class="border rounded-4 p-4 h-100 text-center">
+                        <div class="display-4 fw-bold">
+                            <?= number_format($averageRating, 1); ?>
+                        </div>
+
+                        <div class="text-warning fs-4" aria-label="<?= number_format($averageRating, 1); ?> out of 5 stars">
+                            <?php for ($star = 1; $star <= 5; $star++): ?>
+                                <i class="fa-solid fa-star <?= $star <= round($averageRating) ? '' : 'text-secondary opacity-25'; ?>"></i>
+                            <?php endfor; ?>
+                        </div>
+
+                        <p class="text-muted mb-0 mt-2">
+                            <?= $reviewCount; ?>
+                            <?= $reviewCount === 1 ? 'review' : 'reviews'; ?>
+                        </p>
+                    </div>
+                </div>
+
+                <div class="col-md-8">
+                    <div class="border rounded-4 p-4 h-100">
+                        <?php for ($star = 5; $star >= 1; $star--): ?>
+                            <?php
+                            $starCount = $ratingDistribution[$star];
+                            $barPercent = $reviewCount > 0
+                                ? ($starCount / $reviewCount) * 100
+                                : 0;
+                            ?>
+
+                            <div class="d-flex align-items-center gap-3 mb-2">
+                                <span class="text-nowrap"><?= $star; ?> star</span>
+
+                                <div class="progress flex-grow-1" style="height: 10px;">
+                                    <div
+                                        class="progress-bar bg-warning"
+                                        role="progressbar"
+                                        style="width: <?= $barPercent; ?>%;"
+                                        aria-valuenow="<?= round($barPercent); ?>"
+                                        aria-valuemin="0"
+                                        aria-valuemax="100">
+                                    </div>
+                                </div>
+
+                                <span class="text-muted small" style="min-width: 25px;">
+                                    <?= $starCount; ?>
+                                </span>
+                            </div>
+                        <?php endfor; ?>
+                    </div>
+                </div>
+            </div>
+
+            <div class="border rounded-4 p-4 mb-5">
+                <h4 class="fw-bold mb-3">
+                    <?= $existingCustomerReview ? 'Edit Your Review' : 'Write a Review'; ?>
+                </h4>
+
+                <?php if (!$isLoggedInCustomer): ?>
+                    <p class="text-muted mb-3">
+                        Log in with a customer account and purchase this product to write a review.
+                    </p>
+                    <a href="login.php" class="btn btn-outline-primary rounded-pill px-4">
+                        Log In
+                    </a>
+
+                <?php elseif (!$canReviewProduct): ?>
+                    <p class="text-muted mb-0">
+                        Reviews are available to customers with an eligible order for this product.
+                    </p>
+
+                <?php else: ?>
+                    <form method="POST" action="submit-review.php">
+                        <input type="hidden" name="product_id" value="<?= (int) $productId; ?>">
+                        <input
+                            type="hidden"
+                            name="csrf_token"
+                            value="<?= htmlspecialchars($reviewCsrfToken, ENT_QUOTES, 'UTF-8'); ?>">
+
+                        <div class="mb-3">
+                            <label for="reviewRating" class="form-label fw-semibold">
+                                Your Rating <span class="text-danger">*</span>
+                            </label>
+
+                            <select
+                                class="form-select"
+                                id="reviewRating"
+                                name="rating"
+                                required>
+                                <option value="">Choose a rating</option>
+                                <?php for ($ratingOption = 5; $ratingOption >= 1; $ratingOption--): ?>
+                                    <option
+                                        value="<?= $ratingOption; ?>"
+                                        <?= (int) ($existingCustomerReview['rating'] ?? 0) === $ratingOption ? 'selected' : ''; ?>>
+                                        <?= $ratingOption; ?> star<?= $ratingOption > 1 ? 's' : ''; ?>
+                                    </option>
+                                <?php endfor; ?>
+                            </select>
+                        </div>
+
+                        <div class="mb-3">
+                            <label for="reviewTitle" class="form-label">
+                                Review Title <span class="text-muted">(optional)</span>
+                            </label>
+                            <input
+                                type="text"
+                                class="form-control"
+                                id="reviewTitle"
+                                name="review_title"
+                                maxlength="150"
+                                value="<?= htmlspecialchars($existingCustomerReview['review_title'] ?? '', ENT_QUOTES, 'UTF-8'); ?>"
+                                placeholder="Summarize your experience">
+                        </div>
+
+                        <div class="mb-3">
+                            <label for="reviewText" class="form-label fw-semibold">
+                                Your Review <span class="text-danger">*</span>
+                            </label>
+                            <textarea
+                                class="form-control"
+                                id="reviewText"
+                                name="review_text"
+                                rows="5"
+                                maxlength="5000"
+                                required
+                                placeholder="What did you think about this product?"><?= htmlspecialchars($existingCustomerReview['review_text'] ?? '', ENT_QUOTES, 'UTF-8'); ?></textarea>
+                        </div>
+
+                        <button type="submit" class="btn btn-primary rounded-pill px-4">
+                            <?= $existingCustomerReview ? 'Update Review' : 'Submit Review'; ?>
+                        </button>
+                    </form>
+                <?php endif; ?>
+            </div>
+
+            <div>
+                <h4 class="fw-bold mb-4">Customer Feedback</h4>
+
+                <?php if (empty($productReviews)): ?>
+                    <p class="text-muted">No published reviews yet. Be the first to share your experience after an eligible purchase.</p>
+                <?php else: ?>
+                    <?php foreach ($productReviews as $review): ?>
+                        <article class="border-bottom pb-4 mb-4">
+                            <div class="d-flex flex-wrap justify-content-between gap-2">
+                                <div>
+                                    <h5 class="fw-semibold mb-1">
+                                        <?= htmlspecialchars($review['customer_name'] ?: 'Customer'); ?>
+                                    </h5>
+
+                                    <?php if ((int) $review['is_verified_purchase'] === 1): ?>
+                                        <span class="badge bg-success-subtle text-success border border-success-subtle">
+                                            <i class="fa-solid fa-circle-check me-1"></i>
+                                            Verified Purchase
+                                        </span>
+                                    <?php endif; ?>
+                                </div>
+
+                                <small class="text-muted">
+                                    <?= date('d M Y', strtotime($review['created_at'])); ?>
+                                </small>
+                            </div>
+
+                            <div class="text-warning my-2" aria-label="<?= (int) $review['rating']; ?> out of 5 stars">
+                                <?php for ($star = 1; $star <= 5; $star++): ?>
+                                    <i class="fa-solid fa-star <?= $star <= (int) $review['rating'] ? '' : 'text-secondary opacity-25'; ?>"></i>
+                                <?php endfor; ?>
+                            </div>
+
+                            <?php if (!empty($review['review_title'])): ?>
+                                <h6 class="fw-bold">
+                                    <?= htmlspecialchars($review['review_title']); ?>
+                                </h6>
+                            <?php endif; ?>
+
+                            <p class="text-muted mb-0" style="white-space: pre-line;"><?= htmlspecialchars($review['review_text']); ?></p>
+                        </article>
+                    <?php endforeach; ?>
+                <?php endif; ?>
+            </div>
+        </div>
+    </section>
     <section class="container-fluid my-5">
         <div class="d-flex justify-content-between align-items-center mb-4">
             <h3 class="fw-bold mb-0"> Related Products </h3> <a href="related-products.php?id=<?= (int)$product['id']; ?>" class="btn btn-outline-primary rounded-pill"> Add Filter </a>

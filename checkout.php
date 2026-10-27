@@ -117,7 +117,6 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
             $variant = null;
 
             if ($variantId > 0) {
-                // Verify that this variant belongs to the selected product.
                 $variantSql = "
         SELECT id, product_id, variant_title, sku, price, stock
         FROM product_variants
@@ -297,15 +296,11 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
 
 
 if ($paymentMethod === 'cash_on_delivery') {
-
-    // Keep track of products whose variant stock changed.
     $updatedVariantProductIds = [];
 
     foreach ($orderItems as $item) {
 
         if (!empty($item['variant_id'])) {
-
-            // Reduce stock for the selected variant only.
             $stockSql = "
                 UPDATE product_variants
                 SET stock = stock - :quantity
@@ -328,13 +323,9 @@ if ($paymentMethod === 'cash_on_delivery') {
                     "Unable to update stock for: " . $item['product_name']
                 );
             }
-
-            // Remember this parent product for stock recalculation.
             $updatedVariantProductIds[] = (int) $item['product_id'];
 
         } else {
-
-            // Products without variants use their own stock.
             $stockSql = "
                 UPDATE products
                 SET stock = stock - :quantity
@@ -356,8 +347,6 @@ if ($paymentMethod === 'cash_on_delivery') {
             }
         }
     }
-
-    // Recalculate parent stock after all variant deductions.
     $updatedVariantProductIds = array_unique(
         $updatedVariantProductIds
     );

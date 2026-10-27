@@ -129,9 +129,6 @@ if ($_SERVER["REQUEST_METHOD"] === "POST") {
             }
 
             $newStatus = (int)$category["status"] === 1 ? 0 : 1;
-
-            // Do not deactivate a category while its products or
-            // subcategories are still active/assigned.
             if ($newStatus === 0) {
                 $stmt = $db->prepare(
                     "SELECT COUNT(*) FROM products WHERE category_id = ?"
@@ -195,8 +192,6 @@ if ($_SERVER["REQUEST_METHOD"] === "POST") {
         $message = $e->getMessage();
         $messageType = "danger";
     }
-
-    // Keep feedback visible after redirect
     session_start_if_needed:
     if (session_status() === PHP_SESSION_NONE) {
         session_start();
@@ -392,6 +387,7 @@ $inactiveCategories = $totalCategories - $activeCategories;
         <a href="categories.php" class="active">Categories</a>
         <a href="brands.php">Brands</a>
         <a href="orders.php">Orders</a>
+        <a href="reviews.php">Product Reviews</a>
         <a href="profile.php">Admin Profile</a>
         <a href="../outh/logout.php">Logout</a>
     </aside>

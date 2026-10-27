@@ -328,6 +328,7 @@ $inactiveBrands = $totalBrands - $activeBrands;
     <a href="categories.php">Categories</a>
     <a href="brands.php" class="active">Brands</a>
     <a href="orders.php">Orders</a>
+    <a href="reviews.php">Product Reviews</a>
     <a href="profile.php">Admin Profile</a>
     <a href="../outh/logout.php">Logout</a>
 </aside>

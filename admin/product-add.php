@@ -1093,6 +1093,13 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
                         <i class="bi bi-cart-check me-2"></i>
                         Orders
                     </a>
+                    <a
+                        href="reviews.php"
+                        class="nav-link">
+                        <i class="bi bi-cart-check me-2"></i>
+                        Product Reviews
+                    </a>
+
 
                     <a
                         href="profile.php"
