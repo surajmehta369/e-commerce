@@ -36,6 +36,31 @@ $categoryId = isset($_GET['category_id'])
     ? (int) $_GET['category_id']
     : 0;
 
+$initialSort = isset($_GET['sort']) && is_string($_GET['sort'])
+    ? $_GET['sort']
+    : 'relevance';
+
+$initialLimit = isset($_GET['limit'])
+    ? (int) $_GET['limit']
+    : 12;
+
+$allowedSorts = [
+    'relevance',
+    'price_low',
+    'price_high',
+    'discount',
+    'newest',
+    'oldest'
+];
+
+if (!in_array($initialSort, $allowedSorts, true)) {
+    $initialSort = 'relevance';
+}
+
+if (!in_array($initialLimit, [10, 12, 24, 48], true)) {
+    $initialLimit = 12;
+}
+
 require_once "components/header.php";
 require_once "components/sidebar.php";
 ?>
@@ -44,8 +69,6 @@ require_once "components/sidebar.php";
 <main class="pt-5">
 
     <div class="container-fluid mt-4">
-
-        <!-- PAGE HEADER -->
         <div class="d-flex justify-content-between align-items-center mb-4">
 
             <div>
@@ -354,6 +377,13 @@ require_once "components/sidebar.php";
 
         const productId = <?= $productId ?>;
         const categoryId = <?= $categoryId ?>;
+        const initialSort = <?= json_encode($initialSort) ?>;
+        const initialLimit = <?= (int) $initialLimit ?>;
+
+        const sortFilter = document.getElementById('sort');
+        if (sortFilter) {
+            sortFilter.value = initialSort;
+        }
 
         const relatedProducts =
             document.getElementById("relatedProducts");
@@ -433,6 +463,9 @@ require_once "components/sidebar.php";
                 "limit",
                 12
             );
+
+            params.set('sort', sortFilter ? sortFilter.value : initialSort);
+            params.set('limit', String(initialLimit));
 
 
             if (minPrice.value !== "") {

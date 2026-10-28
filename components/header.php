@@ -1,280 +1,280 @@
-<?php
-if (session_status() === PHP_SESSION_NONE) {
-  session_start();
-}
+  <?php
+  if (session_status() === PHP_SESSION_NONE) {
+    session_start();
+  }
 
-$isLoggedIn =
-  !empty($_SESSION['logged_in']) &&
-  $_SESSION['logged_in'] === true &&
-  !empty($_SESSION['user_role']) &&
-  $_SESSION['user_role'] === 'customer';
+  $isLoggedIn =
+    !empty($_SESSION['logged_in']) &&
+    $_SESSION['logged_in'] === true &&
+    !empty($_SESSION['user_role']) &&
+    $_SESSION['user_role'] === 'customer';
 
-?>
+  ?>
 
-<!doctype html>
-<html lang="en" data-bs-theme="light">
+  <!doctype html>
+  <html lang="en" data-bs-theme="light">
 
-<head>
+  <head>
 
-  <title>MyShop.in</title>
+    <title>MyShop.in</title>
 
-  <meta charset="utf-8">
+    <meta charset="utf-8">
 
-  <meta
-    name="viewport"
-    content="width=device-width, initial-scale=1">
+    <meta
+      name="viewport"
+      content="width=device-width, initial-scale=1">
 
-  <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.8/dist/css/bootstrap.min.css"
-    rel="stylesheet">
-  <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.7.2/css/all.min.css">
+    <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.8/dist/css/bootstrap.min.css"
+      rel="stylesheet">
+    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.7.2/css/all.min.css">
 
-  <link rel="stylesheet" href="assets/css/style.css">
-  <script src="https://cdn.jsdelivr.net/npm/bootstrap@5.3.8/dist/js/bootstrap.bundle.min.js"></script>
+    <link rel="stylesheet" href="assets/css/style.css">
+    <script src="https://cdn.jsdelivr.net/npm/bootstrap@5.3.8/dist/js/bootstrap.bundle.min.js"></script>
 
-  <script src="https://cdn.jsdelivr.net/npm/sweetalert2@11"></script>
+    <script src="https://cdn.jsdelivr.net/npm/sweetalert2@11"></script>
 
 
-</head>
-<style>
+  </head>
+  <style>
 
-.wishlist-header-action {
-    position: relative;
-    text-decoration: none;
-}
+  .wishlist-header-action {
+      position: relative;
+      text-decoration: none;
+  }
 
-.wishlist-header-action i {
-    color: #ff6b81;
-    transition: transform 0.2s ease, color 0.2s ease;
-}
+  .wishlist-header-action i {
+      color: #ff6b81;
+      transition: transform 0.2s ease, color 0.2s ease;
+  }
 
-.wishlist-header-action:hover i {
-    color: #ff304f;
-    transform: scale(1.15);
-}
+  .wishlist-header-action:hover i {
+      color: #ff304f;
+      transform: scale(1.15);
+  }
 
-</style>
-<body>
+  </style>
+  <body>
 
-  <header>
+    <header>
 
-    <nav class="navbar navbar-expand-lg navbar-dark myshop-navbar fixed-top">
+      <nav class="navbar navbar-expand-lg navbar-dark myshop-navbar fixed-top">
 
-      <div class="container-fluid px-3 px-lg-4">
-        <a
-          class="navbar-brand myshop-logo"
-          href="index.php">
-          MyShop<span>.in</span>
-        </a>
-        <button
-          class="navbar-toggler"
-          type="button"
-          data-bs-toggle="collapse"
-          data-bs-target="#mainNavbar"
-          aria-controls="mainNavbar"
-          aria-expanded="false"
-          aria-label="Toggle navigation">
+        <div class="container-fluid px-3 px-lg-4">
+          <a
+            class="navbar-brand myshop-logo"
+            href="index.php">
+            MyShop<span>.in</span>
+          </a>
+          <button
+            class="navbar-toggler"
+            type="button"
+            data-bs-toggle="collapse"
+            data-bs-target="#mainNavbar"
+            aria-controls="mainNavbar"
+            aria-expanded="false"
+            aria-label="Toggle navigation">
 
-          <span class="navbar-toggler-icon"></span>
+            <span class="navbar-toggler-icon"></span>
 
-        </button>
-        <div
-          class="collapse navbar-collapse"
-          id="mainNavbar">
+          </button>
+          <div
+            class="collapse navbar-collapse"
+            id="mainNavbar">
 
-          <ul class="navbar-nav me-lg-3 mb-2 mb-lg-0">
+            <ul class="navbar-nav me-lg-3 mb-2 mb-lg-0">
 
-            <li class="nav-item">
+              <li class="nav-item">
 
-              <a
-                class="nav-link"
-                href="#"
-                id="allMenuBtn">
-                <i class="fa-solid fa-bars me-1"></i>
-                All
-              </a>
+                <a
+                  class="nav-link"
+                  href="#"
+                  id="allMenuBtn">
+                  <i class="fa-solid fa-bars me-1"></i>
+                  All
+                </a>
 
-            </li>
+              </li>
 
 
-            <li class="nav-item">
+              <li class="nav-item">
 
-              <a
-                class="nav-link"
-                href="outh/vendor-register.php">
-                Sell
-              </a>
+                <a
+                  class="nav-link"
+                  href="outh/vendor-register.php">
+                  Sell
+                </a>
 
-            </li>
+              </li>
 
 
-            <li class="nav-item">
+              <li class="nav-item">
 
-              <a
-                class="nav-link"
-                href="best-sellers.php">
-                Best Sellers
-              </a>
+                <a
+                  class="nav-link"
+                  href="best-sellers.php">
+                  Best Sellers
+                </a>
 
-            </li>
-            <li class="nav-item">
+              </li>
+              <li class="nav-item">
 
-              <a
-                class="nav-link"
-                href="todays-deals.php">
-                Today's Deals
-              </a>
+                <a
+                  class="nav-link"
+                  href="todays-deals.php">
+                  Today's Deals
+                </a>
 
-            </li>
-            <li class="nav-item">
+              </li>
+              <li class="nav-item">
 
-              <a
-                class="nav-link"
-                href="related-products.php?category_id=4">
+                <a
+                  class="nav-link"
+                  href="related-products.php?category_id=4">
 
-                Mobiles
+                  Mobiles
 
-              </a>
+                </a>
 
-            </li>
+              </li>
 
 
-          </ul>
+            </ul>
 
-          <form
-            class="d-flex flex-grow-1 myshop-search mb-3 mb-lg-0"
-            id="searchForm"
-            action="/e-commerce/api/search.php"
-            method="GET">
+            <form
+              class="d-flex flex-grow-1 myshop-search mb-3 mb-lg-0"
+              id="searchForm"
+              action="/e-commerce/api/search.php"
+              method="GET">
 
-            <input
-              class="form-control"
-              type="search"
-              id="searchInput"
-              name="q"
-              placeholder="Search"
-              aria-label="Search"
-              autocomplete="off">
+              <input
+                class="form-control"
+                type="search"
+                id="searchInput"
+                name="q"
+                placeholder="Search"
+                aria-label="Search"
+                autocomplete="off">
 
 
-            <button
-              class="btn search-btn"
-              type="submit"
-              aria-label="Search">
+              <button
+                class="btn search-btn"
+                type="submit"
+                aria-label="Search">
 
-              <i class="fa-solid fa-magnifying-glass"></i>
+                <i class="fa-solid fa-magnifying-glass"></i>
 
-            </button>
+              </button>
 
-          </form>
+            </form>
 
-          <div class="myshop-actions ms-lg-3">
+            <div class="myshop-actions ms-lg-3">
 
 
-            <?php if ($isLoggedIn): ?>
-              <a
-                href="account.php"
-                class="header-action">
+              <?php if ($isLoggedIn): ?>
+                <a
+                  href="account.php"
+                  class="header-action">
 
-                <i class="fa-solid fa-user"></i>
+                  <i class="fa-solid fa-user"></i>
 
-                <span>
-                  Account
-                </span>
+                  <span>
+                    Account
+                  </span>
 
-              </a>
+                </a>
 
 
-              <a
-                href="wishlist.php"
-                class="header-action wishlist-header-action"
-                title="View Wishlist"
-                aria-label="View My Wishlist">
+                <a
+                  href="wishlist.php"
+                  class="header-action wishlist-header-action"
+                  title="View Wishlist"
+                  aria-label="View My Wishlist">
 
-                <i class="fa-solid fa-heart"></i>
+                  <i class="fa-solid fa-heart"></i>
 
-                <span>
-                  Wishlist
-                </span>
+                  <span>
+                    Wishlist
+                  </span>
 
-              </a>
+                </a>
 
-              <a
-                href="cart.php"
-                class="header-action cart-action"
-                title="View Cart">
+                <a
+                  href="cart.php"
+                  class="header-action cart-action"
+                  title="View Cart">
 
-                <i class="fa-solid fa-cart-shopping"></i>
+                  <i class="fa-solid fa-cart-shopping"></i>
 
-                <span>
-                  Cart
-                </span>
+                  <span>
+                    Cart
+                  </span>
 
 
-                <span
-                  id="cart-count"
-                  class="cart-count">
-                  0
-                </span>
+                  <span
+                    id="cart-count"
+                    class="cart-count">
+                    0
+                  </span>
 
-              </a>
+                </a>
 
-              <a
-                href="outh/logout.php"
-                class="logout-btn"
-                title="Logout"
-                aria-label="Logout">
+                <a
+                  href="outh/logout.php"
+                  class="logout-btn"
+                  title="Logout"
+                  aria-label="Logout">
 
-                <i class="fa-solid fa-right-from-bracket"></i>
+                  <i class="fa-solid fa-right-from-bracket"></i>
 
-              </a>
+                </a>
 
 
-            <?php else: ?>
-              <a
-                href="outh/login.php"
-                class="header-action">
+              <?php else: ?>
+                <a
+                  href="outh/login.php"
+                  class="header-action">
 
-                <i class="fa-solid fa-user"></i>
+                  <i class="fa-solid fa-user"></i>
 
-                <span>
-                  Sign In
-                </span>
+                  <span>
+                    Sign In
+                  </span>
 
-              </a>
-              <a
-                href="outh/register.php"
-                class="signup-btn">
-                Sign Up
-              </a>
-              <a
-                href="cart.php"
-                class="header-action cart-action"
-                title="View Cart">
+                </a>
+                <a
+                  href="outh/register.php"
+                  class="signup-btn">
+                  Sign Up
+                </a>
+                <a
+                  href="cart.php"
+                  class="header-action cart-action"
+                  title="View Cart">
 
-                <i class="fa-solid fa-cart-shopping"></i>
+                  <i class="fa-solid fa-cart-shopping"></i>
 
-                <span>
-                  Cart
-                </span>
+                  <span>
+                    Cart
+                  </span>
 
 
-                <span
-                  id="cart-count"
-                  class="cart-count">
-                  0
-                </span>
+                  <span
+                    id="cart-count"
+                    class="cart-count">
+                    0
+                  </span>
 
-              </a>
+                </a>
 
 
-            <?php endif; ?>
+              <?php endif; ?>
+
+            </div>
 
           </div>
 
         </div>
 
-      </div>
+      </nav>
 
-    </nav>
-
-  </header>
+    </header>
