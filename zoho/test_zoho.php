@@ -3,8 +3,8 @@
 require_once __DIR__ . '/zoho_functions.php';
 
 
-$result = findZohoItemBySKU('TEST-001');
+$result = getZohoItemDetailsById('4096516000000196001');
 
 echo '<pre>';
-print_r($result);
+print_r($result['item'] ?? []);
 echo '</pre>';
