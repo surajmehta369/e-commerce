@@ -225,19 +225,19 @@ function shopifyGraphQL(string $query, array $variables = [])
         'errors' => $data['errors'] ?? []
     ];
 }
-function shopifyGid(string $type, $id): string
-{
-    $id = trim((string) $id);
+    function shopifyGid(string $type, $id): string
+    {
+        $id = trim((string) $id);
 
-    if ($id === '') {
-        return '';
-    }
-    if (str_starts_with($id, 'gid://shopify/')) {
-        return $id;
-    }
+        if ($id === '') {
+            return '';
+        }
+        if (str_starts_with($id, 'gid://shopify/')) {
+            return $id;
+        }
 
-    return "gid://shopify/{$type}/{$id}";
-}
+        return "gid://shopify/{$type}/{$id}";
+    }
 
 function createShopifyProduct(array $product)
 {
@@ -726,62 +726,63 @@ GRAPHQL;
         ]
     ];
 }
+
+
 function updateShopifyProductVariant(
     $shopifyProductId,
     $price,
     $originalPrice,
     $sku
 ) {
-    $productGid = shopifyGid(
-        'Product',
-        $shopifyProductId
-    );
+    $sku = trim((string) $sku);
+
+    if ($sku === '') {
+        return [
+            'success' => false,
+            'message' => 'Variant SKU is required.'
+        ];
+    }
+
+    if (!is_numeric($price) || (float) $price < 0) {
+        return [
+            'success' => false,
+            'message' => 'A valid variant price is required.'
+        ];
+    }
+
+    $productGid = shopifyGid('Product', $shopifyProductId);
 
     if ($productGid === '') {
         return [
             'success' => false,
-            'message' => 'Shopify product ID is empty.'
-        ];
-    }
-    $query = <<<'GRAPHQL'
-query GetProductVariant($id: ID!) {
-    product(id: $id) {
-        id
-        variants(first: 1) {
-            nodes {
-                id
-            }
-        }
-    }
-}
-GRAPHQL;
-
-    $response = shopifyGraphQL($query, [
-        'id' => $productGid
-    ]);
-    if (!empty($response['errors'])) {
-        return [
-            'success' => false,
-            'message' => 'Shopify product lookup failed.',
-            'errors' => $response['errors']
+            'message' => 'Invalid Shopify product ID.'
         ];
     }
 
-    $shopifyData =
-        $response['data']['data'] ?? [];
-    if (
-        empty($shopifyData['product']) ||
-        empty($shopifyData['product']['variants']['nodes'][0])
-    ) {
+    // Find the exact variant inside this Shopify parent.
+    $lookup = findShopifyVariantBySKU(
+        $productGid,
+        $sku
+    );
+
+    if (empty($lookup['success']) || empty($lookup['variant']['id'])) {
         return [
             'success' => false,
-            'message' => 'Shopify product variant not found.',
-            'product_id' => $productGid,
-            'response' => $response
+            'message' => $lookup['message']
+                ?? 'Shopify variant lookup failed.',
+            'errors' => $lookup['errors'] ?? []
         ];
     }
-    $variantId =
-        $shopifyData['product']['variants']['nodes'][0]['id'];
+
+    $variant = $lookup['variant'];
+
+    // Prepare compare-at price.
+    $compareAtPrice = (
+        is_numeric($originalPrice) &&
+        (float) $originalPrice > 0
+    )
+        ? number_format((float) $originalPrice, 2, '.', '')
+        : null;
 
     $mutation = <<<'GRAPHQL'
 mutation UpdateProductVariant(
@@ -794,15 +795,13 @@ mutation UpdateProductVariant(
     ) {
         productVariants {
             id
+            sku
             price
             compareAtPrice
-            sku
-           inventoryItem {
+            inventoryItem {
                 id
-                sku
                 tracked
             }
-
         }
         userErrors {
             field
@@ -814,34 +813,19 @@ GRAPHQL;
 
     $variables = [
         'productId' => $productGid,
-
-        'variants' => [
-            [
-                'id' => $variantId,
-
-                'price' =>
-                number_format(
-                    (float) $price,
-                    2,
-                    '.',
-                    ''
-                ),
-
-                'compareAtPrice' =>
-                !empty($originalPrice)
-                    ? number_format(
-                        (float) $originalPrice,
-                        2,
-                        '.',
-                        ''
-                    )
-                    : null,
-
-                'inventoryItem' => [
-                    'sku' => $sku
-                ]
+        'variants' => [[
+            'id' => $variant['id'],
+            'price' => number_format(
+                (float) $price,
+                2,
+                '.',
+                ''
+            ),
+            'compareAtPrice' => $compareAtPrice,
+            'inventoryItem' => [
+                'sku' => $sku
             ]
-        ]
+        ]]
     ];
 
     $response = shopifyGraphQL(
@@ -852,16 +836,13 @@ GRAPHQL;
     if (!empty($response['errors'])) {
         return [
             'success' => false,
-            'message' => 'Shopify variant update failed.',
+            'message' => 'Shopify variant update request failed.',
             'errors' => $response['errors']
         ];
     }
 
-    $shopifyData =
-        $response['data']['data'] ?? [];
-
     $result =
-        $shopifyData['productVariantsBulkUpdate']
+        $response['data']['data']['productVariantsBulkUpdate']
         ?? null;
 
     if (!$result) {
@@ -871,47 +852,39 @@ GRAPHQL;
             'response' => $response
         ];
     }
-    $userErrors =
-        $result['userErrors'] ?? [];
 
-    if (!empty($userErrors)) {
+    if (!empty($result['userErrors'])) {
         return [
             'success' => false,
             'message' => 'Shopify variant update failed.',
-            'errors' => $userErrors
+            'errors' => $result['userErrors']
         ];
     }
-$updatedVariant =
-    $result['productVariants'][0] ?? null;
 
-$inventoryItemId =
-    $updatedVariant['inventoryItem']['id'] ?? null;
+    $updatedVariant =
+        $result['productVariants'][0] ?? null;
 
-if (!empty($inventoryItemId)) {
-
-    $trackingUpdate =
-        enableShopifyInventoryTracking(
-            $inventoryItemId
-        );
-
-    if (empty($trackingUpdate['success'])) {
+    if (
+        !$updatedVariant ||
+        empty($updatedVariant['id']) ||
+        empty($updatedVariant['inventoryItem']['id'])
+    ) {
         return [
             'success' => false,
-            'message' =>
-                'Variant updated, but inventory tracking could not be enabled.',
-            'errors' =>
-                $trackingUpdate['errors'] ?? []
+            'message' => 'Updated variant or inventory item ID was not returned.',
+            'response' => $response
         ];
     }
-}
 
+    // Inventory tracking is handled separately by the caller.
     return [
         'success' => true,
-        'message' => 'Shopify price, original price and SKU updated.',
-        'data' =>
-        $result['productVariants'] ?? []
+        'message' => 'Shopify variant updated successfully.',
+        'data' => $updatedVariant
     ];
 }
+
+
 function updateShopifyProduct(
     $shopifyProductId,
     array $product
@@ -2077,6 +2050,108 @@ GRAPHQL;
     ];
 }
 
+
+function findShopifyVariantBySKU($shopifyProductId, string $sku)
+{
+    $sku = trim($sku);
+
+    if ($sku === '') {
+        return [
+            'success' => false,
+            'message' => 'Variant SKU is required.',
+            'variant' => null
+        ];
+    }
+
+    $productGid = shopifyGid('Product', $shopifyProductId);
+
+    if ($productGid === '') {
+        return [
+            'success' => false,
+            'message' => 'Invalid Shopify product ID.',
+            'variant' => null
+        ];
+    }
+
+    $query = <<<'GRAPHQL'
+query GetVariantsForProduct($id: ID!) {
+    product(id: $id) {
+        id
+        title
+        variants(first: 100) {
+            nodes {
+                id
+                sku
+                price
+                compareAtPrice
+                inventoryItem {
+                    id
+                    tracked
+                }
+            }
+        }
+    }
+}
+GRAPHQL;
+
+    $response = shopifyGraphQL($query, [
+        'id' => $productGid
+    ]);
+
+    if (!empty($response['errors'])) {
+        return [
+            'success' => false,
+            'message' => 'Unable to retrieve Shopify variants.',
+            'errors' => $response['errors'],
+            'variant' => null
+        ];
+    }
+
+    $product = $response['data']['data']['product'] ?? null;
+
+    if (!$product) {
+        return [
+            'success' => false,
+            'message' => 'Shopify product not found.',
+            'variant' => null
+        ];
+    }
+
+    $matches = [];
+
+    foreach (($product['variants']['nodes'] ?? []) as $variant) {
+        if (trim((string) ($variant['sku'] ?? '')) === $sku) {
+            $matches[] = $variant;
+        }
+    }
+
+    if (count($matches) === 0) {
+        return [
+            'success' => false,
+            'message' => 'Variant SKU was not found in this Shopify product.',
+            'product' => $product,
+            'variant' => null
+        ];
+    }
+
+    if (count($matches) > 1) {
+        return [
+            'success' => false,
+            'message' => 'Multiple Shopify variants have the same SKU.',
+            'product' => $product,
+            'variant' => null,
+            'matches' => count($matches)
+        ];
+    }
+
+    return [
+        'success' => true,
+        'message' => 'Shopify variant found successfully.',
+        'product' => $product,
+        'variant' => $matches[0]
+    ];
+}
+
 function enableShopifyInventoryTracking($inventoryItemId)
 {
     $query = <<<'GRAPHQL'
@@ -2154,6 +2229,193 @@ GRAPHQL;
             'Shopify inventory tracking enabled.',
         'data' =>
             $result['inventoryItem'] ?? null
+    ];
+}
+
+
+
+
+function updateShopifyVariantInventory($inventoryItemId, $newQuantity)
+{
+    $inventoryItemId = trim((string) $inventoryItemId);
+    $newQuantity = (int) $newQuantity;
+
+    if ($inventoryItemId === '') {
+        return [
+            'success' => false,
+            'message' => 'Shopify inventory item ID is required.'
+        ];
+    }
+
+    if ($newQuantity < 0) {
+        return [
+            'success' => false,
+            'message' => 'Inventory quantity cannot be negative.'
+        ];
+    }
+
+    // Get Shopify location.
+    $locationInfo = getShopifyLocationId();
+
+    if (empty($locationInfo['success'])) {
+        return [
+            'success' => false,
+            'message' => $locationInfo['message']
+                ?? 'Unable to retrieve Shopify location.',
+            'errors' => $locationInfo['errors'] ?? []
+        ];
+    }
+
+    $locationId = shopifyGid(
+        'Location',
+        $locationInfo['location_id']
+    );
+
+    $inventoryItemGid = shopifyGid(
+        'InventoryItem',
+        $inventoryItemId
+    );
+
+    // STEP 1: Read current available inventory.
+    $query = <<<'GRAPHQL'
+query GetCurrentInventory(
+    $inventoryItemId: ID!,
+    $locationId: ID!
+) {
+    inventoryItem(id: $inventoryItemId) {
+        id
+        inventoryLevel(locationId: $locationId) {
+            quantities(names: ["available"]) {
+                name
+                quantity
+            }
+        }
+    }
+}
+GRAPHQL;
+
+    $response = shopifyGraphQL($query, [
+        'inventoryItemId' => $inventoryItemGid,
+        'locationId' => $locationId
+    ]);
+
+    if (!empty($response['errors'])) {
+        return [
+            'success' => false,
+            'message' => 'Unable to retrieve current Shopify inventory.',
+            'errors' => $response['errors']
+        ];
+    }
+
+    $inventoryItem = $response['data']['data']['inventoryItem'] ?? null;
+
+    if (!$inventoryItem) {
+        return [
+            'success' => false,
+            'message' => 'Shopify inventory item was not found.'
+        ];
+    }
+
+    $inventoryLevel = $inventoryItem['inventoryLevel'] ?? null;
+
+    if (!$inventoryLevel) {
+        return [
+            'success' => false,
+            'message' => 'Inventory is not activated at the selected Shopify location.',
+            'inventory_item_id' => $inventoryItemGid,
+            'location_id' => $locationId
+        ];
+    }
+
+    $currentQuantity = null;
+
+    foreach ($inventoryLevel['quantities'] ?? [] as $quantityData) {
+        if ($quantityData['name'] === 'available') {
+            $currentQuantity = (int) $quantityData['quantity'];
+            break;
+        }
+    }
+
+    if ($currentQuantity === null) {
+        return [
+            'success' => false,
+            'message' => 'Current available inventory quantity was not returned.'
+        ];
+    }
+
+    // STEP 2: Update inventory using changeFromQuantity.
+    $mutation = <<<'GRAPHQL'
+mutation SetVariantInventory(
+    $input: InventorySetQuantitiesInput!,
+    $idempotencyKey: String!
+) {
+    inventorySetQuantities(input: $input)
+        @idempotent(key: $idempotencyKey) {
+        userErrors {
+            field
+            message
+        }
+        inventoryAdjustmentGroup {
+            createdAt
+            changes {
+                name
+                delta
+            }
+        }
+    }
+}
+GRAPHQL;
+
+$variables = [
+    'input' => [
+        'name' => 'available',
+        'reason' => 'correction',
+        'quantities' => [[
+            'inventoryItemId' => $inventoryItemGid,
+            'locationId' => $locationId,
+            'quantity' => $newQuantity,
+            'changeFromQuantity' => $currentQuantity
+        ]]
+    ],
+    'idempotencyKey' => bin2hex(random_bytes(16))
+];
+
+    $updateResponse = shopifyGraphQL($mutation, $variables);
+
+    if (!empty($updateResponse['errors'])) {
+        return [
+            'success' => false,
+            'message' => 'Shopify inventory request failed.',
+            'errors' => $updateResponse['errors']
+        ];
+    }
+
+    $result = $updateResponse['data']['data']['inventorySetQuantities']
+        ?? null;
+
+    if (!$result) {
+        return [
+            'success' => false,
+            'message' => 'Shopify inventory response was not returned.',
+            'response' => $updateResponse
+        ];
+    }
+
+    if (!empty($result['userErrors'])) {
+        return [
+            'success' => false,
+            'message' => 'Shopify inventory update failed.',
+            'errors' => $result['userErrors']
+        ];
+    }
+
+    return [
+        'success' => true,
+        'message' => 'Variant inventory updated successfully.',
+        'inventory_item_id' => $inventoryItemGid,
+        'location_id' => $locationId,
+        'previous_quantity' => $currentQuantity,
+        'new_quantity' => $newQuantity
     ];
 }
 
@@ -2419,6 +2681,527 @@ function syncProductToShopify(array $product)
             'stock' =>
                 $stock
         ]
+    ];
+}
+
+
+
+function createShopifyVariantForParent($shopifyProductId, array $localVariant)
+{
+    $productGid = shopifyGid('Product', $shopifyProductId);
+
+    $sku = trim((string) ($localVariant['sku'] ?? ''));
+    $title = trim((string) ($localVariant['variant_title'] ?? ''));
+
+    if ($sku === '' || $title === '') {
+        return [
+            'success' => false,
+            'message' => 'Variant SKU and title are required.'
+        ];
+    }
+
+    $price = number_format((float) ($localVariant['price'] ?? 0), 2, '.', '');
+    $originalPrice = $localVariant['original_price'] ?? null;
+
+    $compareAtPrice = (
+        is_numeric($originalPrice) &&
+        (float) $originalPrice > (float) $price
+    )
+        ? number_format((float) $originalPrice, 2, '.', '')
+        : null;
+
+    $mutation = <<<'GRAPHQL'
+mutation CreateParentVariant(
+    $productId: ID!,
+    $variants: [ProductVariantsBulkInput!]!
+) {
+    productVariantsBulkCreate(
+        productId: $productId,
+        variants: $variants
+    ) {
+        productVariants {
+            id
+            title
+            sku
+            price
+            compareAtPrice
+            inventoryItem {
+                id
+                tracked
+            }
+        }
+        userErrors {
+            field
+            message
+        }
+    }
+}
+GRAPHQL;
+
+    $variantInput = [
+        'price' => $price,
+        'inventoryItem' => [
+            'sku' => $sku,
+            'tracked' => true
+        ],
+        'optionValues' => [
+            [
+                'optionName' => 'Title',
+                'name' => $title
+            ]
+        ]
+    ];
+
+    if ($compareAtPrice !== null) {
+        $variantInput['compareAtPrice'] = $compareAtPrice;
+    }
+
+    $response = shopifyGraphQL($mutation, [
+        'productId' => $productGid,
+        'variants' => [$variantInput]
+    ]);
+
+    if (!empty($response['errors'])) {
+        return [
+            'success' => false,
+            'message' => 'Shopify GraphQL request failed.',
+            'errors' => $response['errors']
+        ];
+    }
+
+    $result = $response['data']['data']['productVariantsBulkCreate'] ?? null;
+
+    if (!$result) {
+        return [
+            'success' => false,
+            'message' => 'Shopify returned no creation result.',
+            'response' => $response
+        ];
+    }
+
+    if (!empty($result['userErrors'])) {
+        return [
+            'success' => false,
+            'message' => 'Shopify could not create the variant.',
+            'errors' => $result['userErrors']
+        ];
+    }
+
+    $createdVariant = $result['productVariants'][0] ?? null;
+
+    if (!$createdVariant || empty($createdVariant['id'])) {
+        return [
+            'success' => false,
+            'message' => 'Shopify did not return the new variant ID.'
+        ];
+    }
+
+    return [
+        'success' => true,
+        'variant' => $createdVariant
+    ];
+}
+
+
+
+function syncParentProductVariantsToShopify($productId)
+{
+    global $db;
+
+    $productId = (int) $productId;
+
+    if ($productId <= 0) {
+        return [
+            'success' => false,
+            'message' => 'Invalid local product ID.'
+        ];
+    }
+
+    // STEP 1: Load parent product.
+    $stmt = $db->prepare("
+        SELECT *
+        FROM products
+        WHERE id = :id
+        LIMIT 1
+    ");
+
+    $stmt->execute([':id' => $productId]);
+    $product = $stmt->fetch(PDO::FETCH_ASSOC);
+
+    if (!$product) {
+        return [
+            'success' => false,
+            'message' => 'Local parent product was not found.'
+        ];
+    }
+
+    // STEP 2: Load local variants.
+    $variantStmt = $db->prepare("
+        SELECT *
+        FROM product_variants
+        WHERE product_id = :product_id
+        ORDER BY id ASC
+    ");
+
+    $variantStmt->execute([':product_id' => $productId]);
+    $variants = $variantStmt->fetchAll(PDO::FETCH_ASSOC);
+
+    if (!$variants) {
+        return [
+            'success' => false,
+            'message' => 'This product has no local variants. Use regular product sync.'
+        ];
+    }
+
+    $shopifyProductId = trim(
+        (string) ($product['shopify_product_id'] ?? '')
+    );
+
+    // STEP 3: Find Shopify parent if mapping is missing.
+    if ($shopifyProductId === '') {
+
+        foreach ($variants as $localVariant) {
+
+            $sku = trim((string) ($localVariant['sku'] ?? ''));
+
+            if ($sku === '') {
+                continue;
+            }
+
+            $lookup = findShopifyProductBySKU($sku);
+
+            if (empty($lookup['success'])) {
+                return [
+                    'success' => false,
+                    'message' => 'Shopify product lookup failed.',
+                    'errors' => $lookup['errors'] ?? []
+                ];
+            }
+
+            if (!empty($lookup['found'])) {
+                $shopifyProductId = $lookup['product']['id'];
+                break;
+            }
+        }
+    }
+
+    if ($shopifyProductId === '') {
+        return [
+            'success' => false,
+            'message' => 'Shopify parent product was not found.',
+            'product_id' => $productId
+        ];
+    }
+
+    $shopifyProductGid = shopifyGid(
+        'Product',
+        $shopifyProductId
+    );
+
+    // STEP 4: Retrieve existing Shopify variants.
+    $query = <<<'GRAPHQL'
+query GetParentVariants($id: ID!) {
+    product(id: $id) {
+        id
+        title
+        variants(first: 100) {
+            nodes {
+                id
+                title
+                sku
+                price
+                compareAtPrice
+                inventoryItem {
+                    id
+                    sku
+                    tracked
+                }
+            }
+        }
+    }
+}
+GRAPHQL;
+
+    $response = shopifyGraphQL($query, [
+        'id' => $shopifyProductGid
+    ]);
+
+    if (!empty($response['errors'])) {
+        return [
+            'success' => false,
+            'message' => 'Unable to retrieve Shopify variants.',
+            'errors' => $response['errors']
+        ];
+    }
+
+    $shopifyProduct = $response['data']['data']['product'] ?? null;
+
+    if (!$shopifyProduct) {
+        return [
+            'success' => false,
+            'message' => 'Shopify parent product was not found.'
+        ];
+    }
+
+    // Build SKU lookup.
+    $shopifyBySku = [];
+
+    foreach ($shopifyProduct['variants']['nodes'] ?? [] as $shopifyVariant) {
+
+        $sku = trim((string) ($shopifyVariant['sku'] ?? ''));
+
+        if ($sku !== '') {
+            $shopifyBySku[$sku] = $shopifyVariant;
+        }
+    }
+
+    $synced = [];
+    $created = [];
+    $failed = [];
+
+    // STEP 5: Process every local variant.
+    foreach ($variants as $localVariant) {
+
+        $variantId = (int) $localVariant['id'];
+        $sku = trim((string) ($localVariant['sku'] ?? ''));
+        $variantTitle = trim(
+            (string) ($localVariant['variant_title'] ?? '')
+        );
+
+        if ($sku === '') {
+            $failed[] = [
+                'variant_id' => $variantId,
+                'message' => 'Local variant SKU is empty.'
+            ];
+            continue;
+        }
+
+        if ($variantTitle === '') {
+            $failed[] = [
+                'variant_id' => $variantId,
+                'sku' => $sku,
+                'message' => 'Local variant title is empty.'
+            ];
+            continue;
+        }
+
+        // STEP 6: Check whether Shopify variant already exists.
+        $shopifyVariant = $shopifyBySku[$sku] ?? null;
+
+        // Create only if it does not exist.
+        if (!$shopifyVariant) {
+
+            $creationResult = createShopifyVariantForParent(
+                $shopifyProductGid,
+                $localVariant
+            );
+
+            if (empty($creationResult['success'])) {
+                $failed[] = [
+                    'variant_id' => $variantId,
+                    'sku' => $sku,
+                    'message' => $creationResult['message']
+                        ?? 'Shopify variant creation failed.',
+                    'details' => $creationResult['errors'] ?? []
+                ];
+                continue;
+            }
+
+            $shopifyVariant = $creationResult['variant'];
+
+            // Add it to the lookup immediately to prevent
+            // another creation during this same execution.
+            $shopifyBySku[$sku] = $shopifyVariant;
+
+            $created[] = [
+                'variant_id' => $variantId,
+                'sku' => $sku,
+                'shopify_variant_id' => $shopifyVariant['id']
+            ];
+        }
+
+        $shopifyVariantId = $shopifyVariant['id'] ?? '';
+        $inventoryItemId =
+            $shopifyVariant['inventoryItem']['id'] ?? '';
+
+        if ($shopifyVariantId === '' || $inventoryItemId === '') {
+            $failed[] = [
+                'variant_id' => $variantId,
+                'sku' => $sku,
+                'message' => 'Shopify variant or inventory item ID is missing.'
+            ];
+            continue;
+        }
+
+        // STEP 7: Save mapping before further operations.
+        try {
+
+            $mappingStmt = $db->prepare("
+                UPDATE product_variants
+                SET
+                    shopify_variant_id = :variant_id,
+                    shopify_inventory_item_id = :inventory_item_id,
+                    shopify_sync_status = 'pending'
+                WHERE id = :id
+                  AND product_id = :product_id
+            ");
+
+            $mappingStmt->execute([
+                ':variant_id' => $shopifyVariantId,
+                ':inventory_item_id' => $inventoryItemId,
+                ':id' => $variantId,
+                ':product_id' => $productId
+            ]);
+
+        } catch (PDOException $e) {
+
+            $failed[] = [
+                'variant_id' => $variantId,
+                'sku' => $sku,
+                'message' => 'Unable to save Shopify variant mapping.',
+                'details' => $e->getMessage()
+            ];
+
+            continue;
+        }
+
+        // STEP 8: Update exact Shopify variant by SKU.
+        $variantUpdate = updateShopifyProductVariant(
+            $shopifyProductGid,
+            $localVariant['price'],
+            $localVariant['original_price'] ?? null,
+            $sku
+        );
+
+        if (empty($variantUpdate['success'])) {
+            $failed[] = [
+                'variant_id' => $variantId,
+                'sku' => $sku,
+                'message' => $variantUpdate['message']
+                    ?? 'Shopify variant update failed.',
+                'details' => $variantUpdate['errors'] ?? []
+            ];
+            continue;
+        }
+
+        $updatedVariant = $variantUpdate['data'] ?? [];
+
+        // Use IDs returned by Shopify.
+        $shopifyVariantId =
+            $updatedVariant['id'] ?? $shopifyVariantId;
+
+        $inventoryItemId =
+            $updatedVariant['inventoryItem']['id']
+            ?? $inventoryItemId;
+
+        if ($inventoryItemId === '') {
+            $failed[] = [
+                'variant_id' => $variantId,
+                'sku' => $sku,
+                'message' => 'Shopify inventory item ID is missing.'
+            ];
+            continue;
+        }
+
+        // STEP 9: Enable inventory tracking.
+        $trackingResult = enableShopifyInventoryTracking(
+            $inventoryItemId
+        );
+
+        if (empty($trackingResult['success'])) {
+            $failed[] = [
+                'variant_id' => $variantId,
+                'sku' => $sku,
+                'message' => 'Inventory tracking could not be enabled.',
+                'details' => $trackingResult['errors'] ?? []
+            ];
+            continue;
+        }
+
+        // STEP 10: Synchronize stock.
+        $inventoryResult = updateShopifyVariantInventory(
+            $inventoryItemId,
+            (int) $localVariant['stock']
+        );
+
+        if (empty($inventoryResult['success'])) {
+            $failed[] = [
+                'variant_id' => $variantId,
+                'sku' => $sku,
+                'message' => $inventoryResult['message']
+                    ?? 'Inventory update failed.',
+                'details' => $inventoryResult['errors'] ?? []
+            ];
+            continue;
+        }
+
+        // STEP 11: Save final mappings and sync status.
+        $saveStmt = $db->prepare("
+            UPDATE product_variants
+            SET
+                shopify_variant_id = :variant_id,
+                shopify_inventory_item_id = :inventory_item_id,
+                shopify_sync_status = 'synced'
+            WHERE id = :id
+              AND product_id = :product_id
+        ");
+
+        $saveStmt->execute([
+            ':variant_id' => $shopifyVariantId,
+            ':inventory_item_id' => $inventoryItemId,
+            ':id' => $variantId,
+            ':product_id' => $productId
+        ]);
+
+        $synced[] = [
+            'variant_id' => $variantId,
+            'sku' => $sku,
+            'shopify_variant_id' => $shopifyVariantId,
+            'shopify_inventory_item_id' => $inventoryItemId,
+            'stock' => (int) $localVariant['stock']
+        ];
+    }
+
+    // STEP 12: Recalculate parent stock.
+    $stockStmt = $db->prepare("
+        SELECT COALESCE(SUM(stock), 0)
+        FROM product_variants
+        WHERE product_id = :product_id
+    ");
+
+    $stockStmt->execute([':product_id' => $productId]);
+
+    $totalStock = (int) $stockStmt->fetchColumn();
+
+    $parentStockStmt = $db->prepare("
+        UPDATE products
+        SET
+            stock = :stock,
+            shopify_product_id = :shopify_product_id,
+            shopify_synced_at = NOW()
+        WHERE id = :id
+    ");
+
+    $parentStockStmt->execute([
+        ':stock' => $totalStock,
+        ':shopify_product_id' => $shopifyProductGid,
+        ':id' => $productId
+    ]);
+
+    $success = empty($failed)
+        && count($synced) === count($variants);
+
+    return [
+        'success' => $success,
+        'message' => $success
+            ? 'All Shopify variants synchronized successfully.'
+            : 'Sync partially completed. Review failures.',
+        'product_id' => $productId,
+        'shopify_product_id' => $shopifyProductGid,
+        'parent_stock' => $totalStock,
+        'created_variants' => $created,
+        'synced_variants' => $synced,
+        'failed_variants' => $failed
     ];
 }
 

@@ -9,14 +9,29 @@ $database = new Database();
 $db = $database->connect();
 
 // syncShopifyProductsToDatabase();
-// syncZohoWebhookToDatabase();
 // syncZohoWebhookItemToShopify();
 $message = "";
 $messageType = "success";
 
 
-if ($_SERVER['REQUEST_METHOD'] === 'POST') {
+if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['test_zoho_webhook'])) {
 
+    $syncResult = syncZohoWebhookItemToShopify();
+
+    if (!empty($syncResult['success'])) {
+        $message = $syncResult['message'] ?? 'Zoho webhook sync completed successfully.';
+        $messageType = 'success';
+    } else {
+        $message = $syncResult['message'] ?? 'Zoho webhook sync failed.';
+        $messageType = 'error';
+    }
+}
+
+
+if (
+    $_SERVER['REQUEST_METHOD'] === 'POST' &&
+    !isset($_POST['test_zoho_webhook'])
+) {
     $action = $_POST['action'] ?? '';
     $productId = (int) ($_POST['product_id'] ?? 0);
 
@@ -1012,7 +1027,6 @@ function stockBadge($stock)
                             </div>
 
                         </div>
-
                     </div>
 
                 </form>
@@ -1029,6 +1043,11 @@ function stockBadge($stock)
                     <h5 class="mb-0">
                         Products
                     </h5>
+                    <form method="POST" action="products.php" style="margin-bottom: 15px;">
+    <button type="submit" name="test_zoho_webhook" value="1">
+        Test Zoho Webhook Sync
+    </button>
+</form>
 
                     <span class="text-muted">
                         Showing <?php echo count($products); ?>
