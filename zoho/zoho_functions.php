@@ -1030,9 +1030,14 @@ function updateZohoItem(string $itemId, array $product)
     ];
 }
 
-function syncProductToZoho(array $product)
-{
+
+
+function syncProductToZoho(
+    array $product,
+    ?string $zohoItemId = null
+) {
     $sku = trim($product['sku'] ?? '');
+    $name = trim($product['name'] ?? '');
 
     if ($sku === '') {
         return [
@@ -1042,95 +1047,79 @@ function syncProductToZoho(array $product)
             'item' => null
         ];
     }
-    $existing = findZohoItemBySKU($sku);
 
-    if (empty($existing['success'])) {
+    if ($name === '') {
         return [
             'success' => false,
             'action' => null,
-            'message' =>
-            $existing['message'] ??
-                'Unable to search Zoho item.',
-            'item' => null,
-            'response' => $existing
+            'message' => 'Product name is required.',
+            'item' => null
         ];
     }
-    if (!empty($existing['found'])) {
 
-        $itemId =
-            $existing['item']['item_id'] ?? '';
+    // 1. Prefer the already-saved Zoho Item ID.
+    $itemId = trim((string) ($zohoItemId ?? ''));
 
-        if ($itemId === '') {
+    // 2. If no saved ID exists, search Zoho by SKU.
+    if ($itemId === '') {
+        $existing = findZohoItemBySKU($sku);
+
+        if (empty($existing['success'])) {
             return [
                 'success' => false,
-                'action' => 'update',
-                'message' =>
-                'Zoho item was found, but item_id is missing.',
-                'item' => null
+                'action' => null,
+                'message' => $existing['message']
+                    ?? 'Unable to search Zoho item.',
+                'item' => null,
+                'response' => $existing
             ];
         }
 
-        $result =
-            updateZohoItem(
-                $itemId,
-                $product
+        if (!empty($existing['found'])) {
+            $itemId = trim(
+                (string) ($existing['item']['item_id'] ?? '')
             );
+        }
+    }
+
+    // 3. Update the existing Zoho item.
+    if ($itemId !== '') {
+
+        $result = updateZohoItem($itemId, $product);
 
         if (empty($result['success'])) {
-
             return [
                 'success' => false,
-
                 'action' => 'update',
-
-                'message' =>
-                $result['message'] ??
-                    'Zoho item update failed.',
-
-                'item' =>
-                $result['item'] ?? null,
-
-                'response' =>
-                $result
+                'message' => $result['message']
+                    ?? 'Zoho item update failed.',
+                'item' => $result['item'] ?? null,
+                'response' => $result
             ];
         }
 
+        $stockResult = null;
+
+        // 4. Synchronize stock separately.
         if (isset($product['stock'])) {
 
-            $stockResult =
-                adjustZohoItemStock(
-                    $itemId,
-
-                    $product['name']
-                        ?? $existing['item']['name']
-                        ?? 'Product',
-
-                    (float) $product['stock']
-                );
+            $stockResult = adjustZohoItemStock(
+                $itemId,
+                $name,
+                (float) $product['stock']
+            );
 
             if (empty($stockResult['success'])) {
-
                 return [
                     'success' => false,
-
                     'action' => 'update',
-
                     'message' =>
                     'Zoho item details updated, but stock synchronization failed: ' .
-                        (
-                            $stockResult['message']
-                            ?? 'Unknown stock synchronization error.'
-                        ),
-
-                    'item' =>
-                    $result['item'] ?? null,
-
+                        ($stockResult['message'] ?? 'Unknown stock error.'),
+                    'item' => $result['item'] ?? null,
                     'response' => [
-                        'item_update' =>
-                        $result,
-
-                        'stock_update' =>
-                        $stockResult
+                        'item_update' => $result,
+                        'stock_update' => $stockResult
                     ]
                 ];
             }
@@ -1138,45 +1127,30 @@ function syncProductToZoho(array $product)
 
         return [
             'success' => true,
-
             'action' => 'update',
-
-            'message' =>
-            'Zoho item and stock updated successfully.',
-
-            'item' =>
-            $result['item'] ?? null,
-
+            'message' => 'Zoho item and stock updated successfully.',
+            'item' => $result['item'] ?? null,
             'response' => [
-                'item_update' =>
-                $result,
-
-                'stock_update' =>
-                $stockResult ?? null
+                'item_update' => $result,
+                'stock_update' => $stockResult
             ]
         ];
     }
-    $result =
-        createZohoItem($product);
+
+    // 5. Create only when no existing item was found.
+    $result = createZohoItem($product);
 
     return [
-        'success' =>
-        !empty($result['success']),
-
-        'action' =>
-        'create',
-
-        'message' =>
-        $result['message'] ??
-            'Zoho item creation completed.',
-
-        'item' =>
-        $result['item'] ?? null,
-
-        'response' =>
-        $result
+        'success' => !empty($result['success']),
+        'action' => 'create',
+        'message' => $result['message']
+            ?? 'Zoho item creation completed.',
+        'item' => $result['item'] ?? null,
+        'response' => $result
     ];
 }
+
+
 
 
 function syncVariantToZoho(int $variantId)
@@ -1195,23 +1169,23 @@ function syncVariantToZoho(int $variantId)
     try {
         // 1. Fetch the local variant and its parent product.
         $stmt = $db->prepare("
-            SELECT
-                v.id AS variant_id,
-                v.product_id,
-                v.variant_title,
-                v.sku,
-                v.price,
-                v.original_price,
-                v.stock,
-                v.zoho_item_id,
-                p.title AS parent_title,
-                p.description
-            FROM product_variants v
-            INNER JOIN products p
-                ON p.id = v.product_id
-            WHERE v.id = :variant_id
-            LIMIT 1
-        ");
+                    SELECT
+                        v.id AS variant_id,
+                        v.product_id,
+                        v.variant_title,
+                        v.sku,
+                        v.price,
+                        v.original_price,
+                        v.stock,
+                        v.zoho_item_id,
+                        p.title AS parent_title,
+                        p.description
+                    FROM product_variants v
+                    INNER JOIN products p
+                        ON p.id = v.product_id
+                    WHERE v.id = :variant_id
+                    LIMIT 1
+                ");
 
         $stmt->execute([
             ':variant_id' => $variantId
@@ -1281,8 +1255,14 @@ function syncVariantToZoho(int $variantId)
             );
         }
 
-        // 3. Create or update the Zoho item.
-        $result = syncProductToZoho($productData);
+        $savedZohoItemId = trim(
+            (string) ($variant['zoho_item_id'] ?? '')
+        );
+
+        $result = syncProductToZoho(
+            $productData,
+            $savedZohoItemId !== '' ? $savedZohoItemId : null
+        );
 
         if (empty($result['success'])) {
             return [
@@ -1315,12 +1295,12 @@ function syncVariantToZoho(int $variantId)
 
         // 5. Save the Zoho item ID against this exact local variant.
         $updateStmt = $db->prepare("
-            UPDATE product_variants
-            SET
-                zoho_item_id = :zoho_item_id,
-                zoho_sync_status = 'synced'
-            WHERE id = :variant_id
-        ");
+                    UPDATE product_variants
+                    SET
+                        zoho_item_id = :zoho_item_id,
+                        zoho_sync_status = 'synced'
+                    WHERE id = :variant_id
+                ");
 
         $updateStmt->execute([
             ':zoho_item_id' => $zohoItemId,
@@ -1328,11 +1308,11 @@ function syncVariantToZoho(int $variantId)
         ]);
         if ($updateStmt->rowCount() === 0) {
             $checkStmt = $db->prepare("
-        SELECT zoho_item_id
-        FROM product_variants
-        WHERE id = :variant_id
-        LIMIT 1
-    ");
+                SELECT zoho_item_id
+                FROM product_variants
+                WHERE id = :variant_id
+                LIMIT 1
+            ");
 
             $checkStmt->execute([
                 ':variant_id' => $variantId
@@ -1521,11 +1501,6 @@ function syncZohoWebhookToDatabase(array $decodedPayload)
         ];
     }
 
-    /*
-     * Retrieve the authoritative Zoho record.
-     * This provides group_id for variants, even when
-     * the webhook payload does not include it.
-     */
     $detailsResult = getZohoItemDetailsById($zohoItemId);
 
     if (empty($detailsResult['success'])) {
@@ -1544,8 +1519,6 @@ function syncZohoWebhookToDatabase(array $decodedPayload)
             'message' => 'Zoho item details are empty.'
         ];
     }
-
-    // Use the retrieved Zoho details as the source of truth.
     $sku = trim((string)($item['sku'] ?? $sku));
     $zohoItemId = trim((string)($item['item_id'] ?? $zohoItemId));
 
@@ -1675,16 +1648,6 @@ function syncZohoWebhookToDatabase(array $decodedPayload)
                 );
             }
 
-            if (
-                $groupId !== '' &&
-                !empty($parent['zoho_group_id']) &&
-                $parent['zoho_group_id'] !== $groupId
-            ) {
-                throw new RuntimeException(
-                    'Zoho group ID conflicts with the existing local parent mapping.'
-                );
-            }
-
             $updateVariant = $db->prepare("
                 UPDATE product_variants
                 SET
@@ -1706,29 +1669,13 @@ function syncZohoWebhookToDatabase(array $decodedPayload)
                 ':variant_id' => (int)$variant['id']
             ]);
 
-            // Save group mapping if the local parent does not have one.
-            if ($groupId !== '' && empty($parent['zoho_group_id'])) {
-                $groupUpdate = $db->prepare("
-                    UPDATE products
-                    SET zoho_group_id = :group_id
-                    WHERE id = :product_id
-                      AND (zoho_group_id IS NULL OR zoho_group_id = '')
-                ");
-
-                $groupUpdate->execute([
-                    ':group_id' => $groupId,
-                    ':product_id' => $productId
-                ]);
-            }
-
             $action = 'variant_updated';
             $variantId = (int)$variant['id'];
         }
 
         /*
          * STEP 4: New variant in an existing local group.
-         */
-        elseif ($itemType === 'variant' || $itemType === 'group_variant') {
+         */ elseif ($itemType === 'variant' || $itemType === 'group_variant') {
 
             $parentStmt = $db->prepare("
                 SELECT id, zoho_group_id
@@ -1811,8 +1758,7 @@ function syncZohoWebhookToDatabase(array $decodedPayload)
 
         /*
          * STEP 5: Standalone item.
-         */
-        else {
+         */ else {
 
             // First look for the standalone item by Zoho ID.
             $productStmt = $db->prepare("
@@ -1948,10 +1894,6 @@ function syncZohoWebhookToDatabase(array $decodedPayload)
                 $action = 'product_created';
             }
         }
-
-        /*
-         * STEP 6: Recalculate parent stock for variants.
-         */
         if (
             $action === 'variant_updated' ||
             $action === 'variant_created'
@@ -1984,7 +1926,6 @@ function syncZohoWebhookToDatabase(array $decodedPayload)
             'zoho_group_id' => $groupId ?: null,
             'stock' => $stock
         ];
-
     } catch (Throwable $e) {
 
         if ($db->inTransaction()) {
@@ -2064,12 +2005,12 @@ function fetchLatestZohoWebhookPayload(): array
 
     $decodedPayload = $data['decoded_payload'] ?? null;
 
- if (
-    !is_array($decodedPayload) ||
-    empty($decodedPayload['item']) ||
-    empty($decodedPayload['item']['item_id']) ||
-    empty($decodedPayload['item']['sku'])
-) {
+    if (
+        !is_array($decodedPayload) ||
+        empty($decodedPayload['item']) ||
+        empty($decodedPayload['item']['item_id']) ||
+        empty($decodedPayload['item']['sku'])
+    ) {
         return [
             'success' => false,
             'message' => 'No valid decoded Zoho item found in webhook file.'

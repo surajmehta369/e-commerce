@@ -1044,10 +1044,10 @@ function stockBadge($stock)
                         Products
                     </h5>
                     <form method="POST" action="products.php" style="margin-bottom: 15px;">
-    <button type="submit" name="test_zoho_webhook" value="1">
-        Test Zoho Webhook Sync
-    </button>
-</form>
+                        <button type="submit" name="test_zoho_webhook" value="1">
+                            Test Zoho Webhook Sync
+                        </button>
+                    </form>
 
                     <span class="text-muted">
                         Showing <?php echo count($products); ?>

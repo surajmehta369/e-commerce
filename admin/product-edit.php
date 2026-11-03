@@ -936,19 +936,130 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
 
 
             $pdo->commit();
+
             if (($removeMainImage || ($imageName !== ($product['image'] ?? ''))) && !empty($product['image'])) {
                 $removedImagePaths[] = $product['image'];
             }
+
             foreach (array_unique($removedImagePaths) as $relativePath) {
                 $relativePath = ltrim((string) $relativePath, '/\\');
-                if (strpos($relativePath, 'assets/uploads/') !== 0) continue;
+
+                if (strpos($relativePath, 'assets/uploads/') !== 0) {
+                    continue;
+                }
+
                 $base = realpath(__DIR__ . '/../assets/uploads');
                 $candidate = realpath(__DIR__ . '/../' . $relativePath);
-                if ($base && $candidate && strpos($candidate, $base . DIRECTORY_SEPARATOR) === 0 && is_file($candidate)) {
+
+                if (
+                    $base &&
+                    $candidate &&
+                    strpos($candidate, $base . DIRECTORY_SEPARATOR) === 0 &&
+                    is_file($candidate)
+                ) {
                     @unlink($candidate);
                 }
             }
-            $_SESSION['success_message'] = "Product updated successfully!";
+
+            $zohoSyncErrors = [];
+
+            try {
+                $parentProductData = [
+                    'name' => $title,
+                    'sku' => $sku,
+                    'description' => $description,
+                    'rate' => (float) $price,
+                    'stock' => (float) $stockToSave
+                ];
+
+                if (isset($originalPrice) && is_numeric($originalPrice)) {
+                    $parentProductData['purchase_rate'] = (float) $originalPrice;
+                }
+
+                $savedParentZohoId = trim(
+                    (string) ($product['zoho_item_id'] ?? '')
+                );
+
+                $parentZohoResult = syncProductToZoho(
+                    $parentProductData,
+                    $savedParentZohoId !== '' ? $savedParentZohoId : null
+                );
+
+                if (empty($parentZohoResult['success'])) {
+
+                    $zohoSyncErrors[] = 'Parent product: ' .
+                        ($parentZohoResult['message'] ?? 'Synchronization failed.');
+                } else {
+
+                    $parentZohoItemId = trim(
+                        (string) ($parentZohoResult['item']['item_id'] ?? '')
+                    );
+
+                    if ($parentZohoItemId !== '') {
+                
+                        $saveParentZohoStmt = $pdo->prepare("
+                UPDATE products
+                SET zoho_item_id = :zoho_item_id
+                WHERE id = :product_id
+            ");
+
+                        $saveParentZohoStmt->execute([
+                            ':zoho_item_id' => $parentZohoItemId,
+                            ':product_id' => $productId
+                        ]);
+                    } else {
+
+                        $zohoSyncErrors[] =
+                            'Parent product synchronized, but Zoho Item ID was not returned.';
+                    }
+                }
+
+                $variantStmt = $pdo->prepare("
+        SELECT id
+        FROM product_variants
+        WHERE product_id = :product_id
+        ORDER BY id ASC
+    ");
+
+                $variantStmt->execute([
+                    ':product_id' => $productId
+                ]);
+
+                $variantIds = $variantStmt->fetchAll(PDO::FETCH_COLUMN);
+
+                foreach ($variantIds as $variantId) {
+
+                    $variantResult = syncVariantToZoho((int) $variantId);
+
+                    if (empty($variantResult['success'])) {
+
+                        $zohoSyncErrors[] =
+                            'Variant ID ' . $variantId . ': ' .
+                            ($variantResult['message'] ?? 'Synchronization failed.');
+                    }
+                }
+            } catch (Throwable $zohoException) {
+
+                error_log(
+                    'Product edit Zoho sync error: ' .
+                        $zohoException->getMessage()
+                );
+
+                $zohoSyncErrors[] =
+                    'Zoho synchronization encountered an unexpected error.';
+            }
+
+            if (empty($zohoSyncErrors)) {
+
+                $_SESSION['success_message'] =
+                    "Product updated successfully and synchronized with Zoho!";
+            } else {
+
+                $_SESSION['success_message'] =
+                    "Product updated locally, but some Zoho synchronization operations failed.";
+
+                $_SESSION['error_message'] = implode(' | ', $zohoSyncErrors);
+            }
 
             header("Location: products.php");
             exit;

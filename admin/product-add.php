@@ -817,6 +817,10 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
 
         try {
 
+            $zohoMessages = [];
+            $zohoParentSynced = false;
+            $zohoVariantSuccess = 0;
+            $zohoVariantFailed = 0;
             $zohoResult = syncProductToZoho([
                 'name' => $title,
                 'sku' => $sku,
@@ -826,50 +830,89 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
                 'stock' => $stockValue
             ]);
 
-            $zohoItemId = trim((string) (
-                $zohoResult['item_id']
-                ?? $zohoResult['item']['item_id']
-                ?? $zohoResult['response']['item']['item_id']
-                ?? ''
-            ));
+            // Debug Zoho parent sync response in browser console.
+            echo '<script>';
+            echo 'console.group("ZOHO PARENT SYNC DEBUG");';
+            echo 'console.log("SKU:", ' . json_encode($sku) . ');';
+            echo 'console.log("Complete Zoho Response:", ' .
+                json_encode($zohoResult, JSON_HEX_TAG | JSON_HEX_APOS | JSON_HEX_QUOT | JSON_HEX_AMP) .
+                ');';
+            echo 'console.groupEnd();';
+            echo '</script>';
 
+            // Also save the response in PHP error log.
+            error_log(
+                "ZOHO PARENT SYNC DEBUG: " .
+                    print_r($zohoResult, true)
+            );
             if (
                 !empty($zohoResult['success']) &&
-                $zohoItemId === ''
+                !empty($zohoResult['item']['item_id'])
             ) {
-                $lookupResult = findZohoItemBySKU($sku);
+                $zohoItemId = $zohoResult['item']['item_id'];
 
-                if (
-                    !empty($lookupResult['success']) &&
-                    !empty($lookupResult['found'])
-                ) {
-                    $zohoItemId = trim((string) (
-                        $lookupResult['item']['item_id'] ?? ''
-                    ));
+                $updateZohoParent = $db->prepare("
+        UPDATE products
+        SET zoho_item_id = :zoho_item_id
+        WHERE id = :product_id
+    ");
+
+                $updateZohoParent->execute([
+                    ':zoho_item_id' => $zohoItemId,
+                    ':product_id' => $localProductId
+                ]);
+
+                $zohoParentSynced = true;
+
+                $zohoMessages[] = "Parent product synced successfully.";
+            } else {
+                $zohoMessages[] = "Parent product sync failed: " .
+                    ($zohoResult['message'] ?? 'Unknown error');
+            }
+
+            $variantStmt = $db->prepare("
+    SELECT id, sku
+    FROM product_variants
+    WHERE product_id = :product_id
+    ORDER BY id ASC
+");
+
+            $variantStmt->execute([
+                ':product_id' => $localProductId
+            ]);
+
+            $localVariants = $variantStmt->fetchAll(PDO::FETCH_ASSOC);
+
+            foreach ($localVariants as $localVariant) {
+
+                $variantId = (int) $localVariant['id'];
+                $variantSku = $localVariant['sku'];
+
+                $variantResult = syncVariantToZoho($variantId);
+
+                if (!empty($variantResult['success'])) {
+
+                    $zohoVariantSuccess++;
+
+                    $zohoMessages[] =
+                        "Variant {$variantSku} synced successfully.";
+                } else {
+
+                    $zohoVariantFailed++;
+
+                    $zohoMessages[] =
+                        "Variant {$variantSku} sync failed: " .
+                        ($variantResult['message'] ?? 'Unknown error');
                 }
             }
 
-            if (
-                !empty($zohoResult['success']) &&
-                $zohoItemId !== ''
-            ) {
-                $saveZohoId = $db->prepare("
-                    UPDATE products
-                    SET zoho_item_id = :zoho_item_id
-                    WHERE id = :id
-                ");
+            $zohoSyncMessage = implode(" ", $zohoMessages);
 
-                $saveZohoId->execute([
-                    ':zoho_item_id' => $zohoItemId,
-                    ':id' => $localProductId
-                ]);
-
-                $syncMessages[] = "Zoho item synced.";
-            } else {
-                $syncMessages[] =
-                    "Zoho sync failed or its item ID could not be retrieved.";
+            if (!$zohoParentSynced || $zohoVariantFailed > 0) {
                 $syncWarning = true;
             }
+
+            $syncMessages[] = $zohoSyncMessage;
         } catch (Throwable $e) {
 
             error_log("Zoho product sync error: " . $e->getMessage());
