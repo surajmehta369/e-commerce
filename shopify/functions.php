@@ -225,19 +225,19 @@ function shopifyGraphQL(string $query, array $variables = [])
         'errors' => $data['errors'] ?? []
     ];
 }
-    function shopifyGid(string $type, $id): string
-    {
-        $id = trim((string) $id);
+function shopifyGid(string $type, $id): string
+{
+    $id = trim((string) $id);
 
-        if ($id === '') {
-            return '';
-        }
-        if (str_starts_with($id, 'gid://shopify/')) {
-            return $id;
-        }
-
-        return "gid://shopify/{$type}/{$id}";
+    if ($id === '') {
+        return '';
     }
+    if (str_starts_with($id, 'gid://shopify/')) {
+        return $id;
+    }
+
+    return "gid://shopify/{$type}/{$id}";
+}
 
 function createShopifyProduct(array $product)
 {
@@ -351,17 +351,17 @@ function getShopifyProductInventoryInfo($shopifyProductId)
     }
     $locationInfo = getShopifyLocationId();
 
-if (empty($locationInfo['success'])) {
-    return [
-        'success' => false,
-        'message' => $locationInfo['message'] ?? 'Unable to get Shopify location.',
-        'errors' => $locationInfo['errors'] ?? []
-    ];
-}
+    if (empty($locationInfo['success'])) {
+        return [
+            'success' => false,
+            'message' => $locationInfo['message'] ?? 'Unable to get Shopify location.',
+            'errors' => $locationInfo['errors'] ?? []
+        ];
+    }
 
-$targetLocationId = $locationInfo['location_id'];
+    $targetLocationId = $locationInfo['location_id'];
 
-$query = <<<'GRAPHQL'
+    $query = <<<'GRAPHQL'
 query GetProductInventoryInfo($id: ID!) {
     product(id: $id) {
         id
@@ -437,36 +437,36 @@ GRAPHQL;
             'response' => $response
         ];
     }
- $inventoryQuantity = 0;
+    $inventoryQuantity = 0;
 
-foreach (
-    ($variant['inventoryItem']['inventoryLevels']['nodes'] ?? [])
-    as $inventoryLevel
-) {
-
-    if (
-        ($inventoryLevel['location']['id'] ?? '')
-        === $targetLocationId
+    foreach (
+        ($variant['inventoryItem']['inventoryLevels']['nodes'] ?? [])
+        as $inventoryLevel
     ) {
 
-        foreach (
-            ($inventoryLevel['quantities'] ?? [])
-            as $quantity
+        if (
+            ($inventoryLevel['location']['id'] ?? '')
+            === $targetLocationId
         ) {
 
-            if (
-                ($quantity['name'] ?? '') === 'available'
+            foreach (
+                ($inventoryLevel['quantities'] ?? [])
+                as $quantity
             ) {
-                $inventoryQuantity =
-                    (int) $quantity['quantity'];
 
-                break;
+                if (
+                    ($quantity['name'] ?? '') === 'available'
+                ) {
+                    $inventoryQuantity =
+                        (int) $quantity['quantity'];
+
+                    break;
+                }
             }
-        }
 
-        break;
+            break;
+        }
     }
-}
 
     return [
         'success' => true,
@@ -488,7 +488,7 @@ foreach (
             'sku' =>
             $variant['sku'],
 
-          'inventory_quantity' =>
+            'inventory_quantity' =>
             $inventoryQuantity,
 
             'inventory_item_id' =>
@@ -539,21 +539,21 @@ GRAPHQL;
             'response' => $response
         ];
     }
-foreach ($locations as $location) {
+    foreach ($locations as $location) {
 
-    if (
-        $location['name'] === 'My Custom Location' &&
-        !empty($location['isActive'])
-    ) {
-        return [
-            'success' => true,
-            'message' => 'Shopify target inventory location found.',
-            'location_id' => $location['id'],
-            'location_name' => $location['name'],
-            'data' => $location
-        ];
+        if (
+            $location['name'] === 'My Custom Location' &&
+            !empty($location['isActive'])
+        ) {
+            return [
+                'success' => true,
+                'message' => 'Shopify target inventory location found.',
+                'location_id' => $location['id'],
+                'location_name' => $location['name'],
+                'data' => $location
+            ];
+        }
     }
-}
 
     // foreach ($locations as $location) {
 
@@ -732,7 +732,9 @@ function updateShopifyProductVariant(
     $shopifyProductId,
     $price,
     $originalPrice,
-    $sku
+    $sku,
+    $shopifyVariantId = '',
+    $variantTitle = ''
 ) {
     $sku = trim((string) $sku);
 
@@ -758,25 +760,30 @@ function updateShopifyProductVariant(
             'message' => 'Invalid Shopify product ID.'
         ];
     }
+    $shopifyVariantId = trim((string) $shopifyVariantId);
 
-    // Find the exact variant inside this Shopify parent.
-    $lookup = findShopifyVariantBySKU(
-        $productGid,
-        $sku
-    );
+    if ($shopifyVariantId !== '') {
+        $variantId = shopifyGid(
+            'ProductVariant',
+            $shopifyVariantId
+        );
+    } else {
+        $lookup = findShopifyVariantBySKU(
+            $productGid,
+            $sku
+        );
 
-    if (empty($lookup['success']) || empty($lookup['variant']['id'])) {
-        return [
-            'success' => false,
-            'message' => $lookup['message']
-                ?? 'Shopify variant lookup failed.',
-            'errors' => $lookup['errors'] ?? []
-        ];
+        if (empty($lookup['success']) || empty($lookup['variant']['id'])) {
+            return [
+                'success' => false,
+                'message' => $lookup['message']
+                    ?? 'Shopify variant lookup failed.',
+                'errors' => $lookup['errors'] ?? []
+            ];
+        }
+
+        $variantId = $lookup['variant']['id'];
     }
-
-    $variant = $lookup['variant'];
-
-    // Prepare compare-at price.
     $compareAtPrice = (
         is_numeric($originalPrice) &&
         (float) $originalPrice > 0
@@ -814,7 +821,7 @@ GRAPHQL;
     $variables = [
         'productId' => $productGid,
         'variants' => [[
-            'id' => $variant['id'],
+            'id' => $variantId,
             'price' => number_format(
                 (float) $price,
                 2,
@@ -824,7 +831,11 @@ GRAPHQL;
             'compareAtPrice' => $compareAtPrice,
             'inventoryItem' => [
                 'sku' => $sku
-            ]
+            ],
+            'optionValues' => [[
+                'optionName' => 'Title',
+                'name' => trim((string) $variantTitle)
+            ]]
         ]]
     ];
 
@@ -875,8 +886,6 @@ GRAPHQL;
             'response' => $response
         ];
     }
-
-    // Inventory tracking is handled separately by the caller.
     return [
         'success' => true,
         'message' => 'Shopify variant updated successfully.',
@@ -1023,9 +1032,9 @@ function createShopifyVendorCollection($vendorId)
         return [
             'success' => true,
             'message' =>
-                'Vendor Shopify collection already exists.',
+            'Vendor Shopify collection already exists.',
             'collection_id' =>
-                $vendor['shopify_collection_id'],
+            $vendor['shopify_collection_id'],
             'created' => false
         ];
     }
@@ -1044,7 +1053,7 @@ function createShopifyVendorCollection($vendorId)
         return [
             'success' => false,
             'message' =>
-                'Vendor business/store name is empty.'
+            'Vendor business/store name is empty.'
         ];
     }
     $collectionTitle = $vendorName;
@@ -1084,7 +1093,7 @@ GRAPHQL;
         return [
             'success' => false,
             'message' =>
-                'Shopify collection creation failed.',
+            'Shopify collection creation failed.',
             'errors' => $response['errors'],
             'response' => $response
         ];
@@ -1101,7 +1110,7 @@ GRAPHQL;
         return [
             'success' => false,
             'message' =>
-                'Shopify collectionCreate response was not returned.',
+            'Shopify collectionCreate response was not returned.',
             'response' => $response
         ];
     }
@@ -1113,7 +1122,7 @@ GRAPHQL;
         return [
             'success' => false,
             'message' =>
-                'Shopify vendor collection creation failed.',
+            'Shopify vendor collection creation failed.',
             'errors' => $userErrors
         ];
     }
@@ -1129,7 +1138,7 @@ GRAPHQL;
         return [
             'success' => false,
             'message' =>
-                'Shopify collection ID was not returned.',
+            'Shopify collection ID was not returned.',
             'response' => $response
         ];
     }
@@ -1141,19 +1150,19 @@ GRAPHQL;
 
     $updateStmt->execute([
         ':collection_id' =>
-            $collection['id'],
+        $collection['id'],
         ':user_id' =>
-            $vendorId
+        $vendorId
     ]);
 
     return [
         'success' => true,
         'message' =>
-            'Shopify vendor collection created successfully.',
+        'Shopify vendor collection created successfully.',
         'collection_id' =>
-            $collection['id'],
+        $collection['id'],
         'collection_title' =>
-            $collection['title'],
+        $collection['title'],
         'created' => true
     ];
 }
@@ -1350,7 +1359,7 @@ GRAPHQL;
         return [
             'success' => false,
             'message' =>
-                'Shopify productDelete response was not returned.',
+            'Shopify productDelete response was not returned.',
             'response' => $response
         ];
     }
@@ -1362,7 +1371,7 @@ GRAPHQL;
         return [
             'success' => false,
             'message' =>
-                'Shopify product deletion failed.',
+            'Shopify product deletion failed.',
             'errors' => $userErrors
         ];
     }
@@ -1371,7 +1380,7 @@ GRAPHQL;
         return [
             'success' => false,
             'message' =>
-                'Shopify did not return a deleted product ID.',
+            'Shopify did not return a deleted product ID.',
             'response' => $response
         ];
     }
@@ -1379,9 +1388,9 @@ GRAPHQL;
     return [
         'success' => true,
         'message' =>
-            'Shopify product deleted successfully.',
+        'Shopify product deleted successfully.',
         'deleted_product_id' =>
-            $result['deletedProductId']
+        $result['deletedProductId']
     ];
 }
 
@@ -1438,523 +1447,627 @@ function syncShopifyProductsToDatabase()
 {
     global $db;
 
-    $shopifyWebhookUrl =
-        "https://baseavangers.topscripts.in/sumit_rana/offline/shopify_latest_webhook.json";
+    $shopifyWebhookUrl = "https://baseavangers.topscripts.in/sumit_rana/offline/shopify_latest_webhook.json";
 
-    $ch = curl_init($shopifyWebhookUrl);
-
-    curl_setopt_array($ch, [
-        CURLOPT_RETURNTRANSFER => true,
-        CURLOPT_FOLLOWLOCATION => true,
-        CURLOPT_TIMEOUT => 15,
-        CURLOPT_CONNECTTIMEOUT => 10,
-        CURLOPT_SSL_VERIFYPEER => false,
-        CURLOPT_SSL_VERIFYHOST => false
-    ]);
-
-    $jsonResponse = curl_exec($ch);
-
-    if ($jsonResponse === false) {
-        curl_close($ch);
-        return [
-            'success' => false,
-            'message' => 'Unable to fetch Shopify webhook.'
-        ];
-    }
-
-    curl_close($ch);
-
-    $decodedWebhook = json_decode($jsonResponse, true);
-
-    if (
-        !is_array($decodedWebhook) ||
-        empty($decodedWebhook['product']) ||
-        !is_array($decodedWebhook['product'])
-    ) {
-        return [
-            'success' => false,
-            'message' => 'No Shopify product webhook data found.'
-        ];
-    }
-
-    $shopifyProduct = $decodedWebhook['product'];
-
-    $webhookTopic =
-        $decodedWebhook['shopify']['topic'] ?? '';
-
-    if (
-        $webhookTopic !== '' &&
-        $webhookTopic !== 'products/update'
-    ) {
-        return [
-            'success' => false,
-            'message' => 'Webhook topic is not products/update.'
-        ];
-    }
-
-    $shopifyProductId =
-        isset($shopifyProduct['id'])
-        ? (string) $shopifyProduct['id']
-        : null;
-
-    $shopifyStatus =
-        strtoupper(
-            trim(
-                $shopifyProduct['status'] ?? ''
-            )
-        );
-
-    $variants =
-        $shopifyProduct['variants'] ?? [];
-
-    if (
-        !is_array($variants) ||
-        empty($variants)
-    ) {
-        return [
-            'success' => false,
-            'message' => 'No Shopify variants found.'
-        ];
-    }
+    $result = [
+        'success' => false,
+        'message' => '',
+        'product_action' => null,
+        'product_id' => null,
+        'created_variants' => 0,
+        'updated_variants' => 0,
+        'failed_variants' => []
+    ];
 
     try {
 
-        $db->beginTransaction();
+        // 1. Fetch the latest webhook from hosting.
+        $ch = curl_init($shopifyWebhookUrl);
 
-        $updatedCount = 0;
-        $insertedCount = 0;
-        $skippedCount = 0;
+        curl_setopt_array($ch, [
+            CURLOPT_RETURNTRANSFER => true,
+            CURLOPT_TIMEOUT => 30,
+            CURLOPT_SSL_VERIFYPEER => true,
+            CURLOPT_SSL_VERIFYHOST => 2
+        ]);
 
-        $zohoProducts = [];
+        $response = curl_exec($ch);
+        $httpCode = curl_getinfo($ch, CURLINFO_HTTP_CODE);
+        $curlError = curl_error($ch);
+
+        curl_close($ch);
+
+        if ($response === false || $httpCode !== 200) {
+            throw new Exception(
+                "Could not fetch Shopify webhook. HTTP: {$httpCode}. " . $curlError
+            );
+        }
+
+        // 2. Decode webhook JSON.
+        $decodedWebhook = json_decode($response, true);
+
+        if (!is_array($decodedWebhook)) {
+            throw new Exception("Invalid webhook JSON.");
+        }
+
+        $topic = $decodedWebhook['shopify']['topic'] ?? '';
+
+        if ($topic !== 'products/update') {
+            throw new Exception("Unsupported Shopify webhook topic: " . $topic);
+        }
+
+        $product = $decodedWebhook['product'] ?? null;
+
+        if (!is_array($product)) {
+            throw new Exception("Shopify product data is missing.");
+        }
+
+        // 3. Get Shopify parent product ID.
+        $rawProductId = $product['id'] ?? '';
+
+        if ($rawProductId === '') {
+            throw new Exception("Shopify product ID is missing.");
+        }
+
+        $shopifyProductGid = shopifyGid('Product', $rawProductId);
+
+        $title = trim($product['title'] ?? '');
+
+        if ($title === '') {
+            throw new Exception("Product title is missing.");
+        }
+
+        $description = $product['body_html'] ?? '';
+        $handle = trim($product['handle'] ?? '');
+
+        $shopifyStatus = strtolower($product['status'] ?? 'active');
+        $localStatus = ($shopifyStatus === 'active') ? 1 : 0;
+
+        // 4. Get product image.
+        $image = null;
+
+        if (!empty($product['image']['src'])) {
+            $image = $product['image']['src'];
+        } elseif (!empty($product['images'][0]['src'])) {
+            $image = $product['images'][0]['src'];
+        }
+
+        $variants = $product['variants'] ?? [];
+
+        if (!is_array($variants)) {
+            $variants = [];
+        }
+
+        // 5. Calculate parent product price using its cheapest variant.
+        $parentPrice = 0;
+        $parentOriginalPrice = null;
+        $parentDiscount = 0;
+
+        $cheapestPrice = null;
 
         foreach ($variants as $variant) {
 
-            $shopifySku =
-                trim(
-                    (string) (
-                        $variant['sku'] ?? ''
-                    )
-                );
+            $variantPrice = (float) ($variant['price'] ?? 0);
 
-            if ($shopifySku === '') {
-                $skippedCount++;
-                continue;
-            }
+            if ($cheapestPrice === null || $variantPrice < $cheapestPrice) {
 
-            $title =
-                trim(
-                    (string) (
-                        $shopifyProduct['title'] ?? ''
-                    )
-                );
+                $cheapestPrice = $variantPrice;
+                $parentPrice = $variantPrice;
 
-            if ($title === '') {
-                $title = 'Shopify Product';
-            }
+                $comparePrice = $variant['compare_at_price'] ?? null;
 
-           $description = $shopifyProduct['body_html'] ?? '';
-
-            $description = trim(
-                html_entity_decode(
-                    strip_tags($description),
-                    ENT_QUOTES | ENT_HTML5,
-                    'UTF-8'
-                )
-            );
-
-            if ($description === '') {
-                $description = null;
-          }
-
-            $shopifyHandle =
-                trim(
-                    (string) (
-                        $shopifyProduct['handle'] ?? ''
-                    )
-                );
-
-            $image = null;
-
-            if (
-                !empty($shopifyProduct['image']) &&
-                is_array($shopifyProduct['image'])
-            ) {
-                $image =
-                    $shopifyProduct['image']['src'] ?? null;
-            }
-
-            if (
-                empty($image) &&
-                !empty($shopifyProduct['images']) &&
-                is_array($shopifyProduct['images'])
-            ) {
-                $image =
-                    $shopifyProduct['images'][0]['src'] ?? null;
-            }
-
-            $priceValue =
-                isset($variant['price']) &&
-                is_numeric($variant['price'])
-                ? (float) $variant['price']
-                : 0.00;
-
-            $compareAtPrice =
-                $variant['compare_at_price'] ?? null;
-
-            $originalPriceValue =
-                (
-                    $compareAtPrice !== null &&
-                    $compareAtPrice !== '' &&
-                    is_numeric($compareAtPrice)
-                )
-                ? (float) $compareAtPrice
-                : $priceValue;
-
-            $discount = 0;
-
-            if (
-                $originalPriceValue > 0 &&
-                $originalPriceValue > $priceValue
-            ) {
-                $discount =
-                    round(
-                        (
-                            (
-                                $originalPriceValue -
-                                $priceValue
-                            )
-                            /
-                            $originalPriceValue
-                        ) * 100,
-                        2
-                    );
-            }
-
-            $stock =
-                isset($variant['inventory_quantity']) &&
-                is_numeric($variant['inventory_quantity'])
-                ? (int) $variant['inventory_quantity']
-                : 0;
-
-            $localStatus =
-                strtolower(
-                    $shopifyProduct['status'] ?? ''
-                ) === 'active'
-                ? 1
-                : 0;
-            $skuStmt = $db->prepare("
-                SELECT
-                    id,
-                    slug,
-                    image
-                FROM products
-                WHERE sku = :sku
-                LIMIT 1
-            ");
-
-            $skuStmt->execute([
-                ':sku' => $shopifySku
-            ]);
-
-            $existingProduct =
-                $skuStmt->fetch(PDO::FETCH_ASSOC);
-            if ($existingProduct) {
-
-                $localProductId =
-                    (int) $existingProduct['id'];
-
-                if ($shopifyHandle !== '') {
-
-                    $newSlug =
-                        createUniqueSlug(
-                            $db,
-                            $shopifyHandle,
-                            $localProductId
-                        );
-                } elseif (
-                    !empty($existingProduct['slug'])
-                ) {
-
-                    $newSlug =
-                        $existingProduct['slug'];
-                } else {
-
-                    $newSlug =
-                        createUniqueSlug(
-                            $db,
-                            $title,
-                            $localProductId
-                        );
-                }
-
-                $imageValue =
-                    !empty($image)
-                    ? $image
-                    : $existingProduct['image'];
-
-                $updateStmt = $db->prepare("
-                    UPDATE products
-                    SET
-                        shopify_product_id = :shopify_product_id,
-                        shopify_status = :shopify_status,
-                        shopify_synced_at = NOW(),
-
-                        sku = :sku,
-                        title = :title,
-                        slug = :slug,
-                        description = :description,
-                        image = :image,
-
-                        price = :price,
-                        original_price = :original_price,
-                        discount = :discount,
-                        stock = :stock,
-                        status = :status
-
-                    WHERE id = :id
-                ");
-
-                $updateStmt->execute([
-
-                    ':shopify_product_id' =>
-                    $shopifyProductId,
-
-                    ':shopify_status' =>
-                    $shopifyStatus !== ''
-                        ? $shopifyStatus
-                        : null,
-
-                    ':sku' =>
-                    $shopifySku,
-
-                    ':title' =>
-                    $title,
-
-                    ':slug' =>
-                    $newSlug,
-
-                    ':description' =>
-                    $description,
-
-                    ':image' =>
-                    $imageValue,
-
-                    ':price' =>
-                    $priceValue,
-
-                    ':original_price' =>
-                    $originalPriceValue,
-
-                    ':discount' =>
-                    $discount,
-
-                    ':stock' =>
-                    $stock,
-
-                    ':status' =>
-                    $localStatus,
-
-                    ':id' =>
-                    $localProductId
-                ]);
-
-                $updatedCount++;
-                 
-                $zohoProducts[] = [
-                'name' => $title,
-                'sku' => $shopifySku,
-                'description' => $description,
-                'rate' => $priceValue,
-                'purchase_rate' => $originalPriceValue,
-                'stock' => $stock
-            ];
-
-
-            } else {
-
-                if ($shopifyHandle !== '') {
-
-                    $newSlug =
-                        createUniqueSlug(
-                            $db,
-                            $shopifyHandle
-                        );
-                } else {
-
-                    $newSlug =
-                        createUniqueSlug(
-                            $db,
-                            $title
-                        );
-                }
-
-                $insertStmt = $db->prepare("
-                    INSERT INTO products
-                    (
-                        shopify_product_id,
-                        shopify_status,
-                        shopify_synced_at,
-
-                        sku,
-                        title,
-                        slug,
-                        description,
-                        image,
-
-                        price,
-                        original_price,
-                        discount,
-                        stock,
-
-                        category_id,
-                        brand_id,
-                        vendor_id,
-
-                        status
-                    )
-                    VALUES
-                    (
-                        :shopify_product_id,
-                        :shopify_status,
-                        NOW(),
-
-                        :sku,
-                        :title,
-                        :slug,
-                        :description,
-                        :image,
-
-                        :price,
-                        :original_price,
-                        :discount,
-                        :stock,
-
-                        NULL,
-                        NULL,
-                        NULL,
-
-                        :status
-                    )
-                ");
-
-                $insertStmt->execute([
-
-                    ':shopify_product_id' =>
-                    $shopifyProductId,
-
-                    ':shopify_status' =>
-                    $shopifyStatus !== ''
-                        ? $shopifyStatus
-                        : null,
-
-                    ':sku' =>
-                    $shopifySku,
-
-                    ':title' =>
-                    $title,
-
-                    ':slug' =>
-                    $newSlug,
-
-                    ':description' =>
-                    $description,
-
-                    ':image' =>
-                    $image,
-
-                    ':price' =>
-                    $priceValue,
-
-                    ':original_price' =>
-                    $originalPriceValue,
-
-                    ':discount' =>
-                    $discount,
-
-                    ':stock' =>
-                    $stock,
-
-                    ':status' =>
-                    $localStatus
-                ]);
-
-                $insertedCount++;
-
-                $zohoProducts[] = [
-                'name' => $title,
-                'sku' => $shopifySku,
-                'description' => $description,
-                'rate' => $priceValue,
-                'purchase_rate' => $originalPriceValue,
-                'stock' => $stock
-            ];
-
+                $parentOriginalPrice = (
+                    $comparePrice !== null && $comparePrice !== ''
+                ) ? (float) $comparePrice : null;
             }
         }
 
-       $db->commit();
+        if (
+            $parentOriginalPrice !== null &&
+            $parentOriginalPrice > $parentPrice &&
+            $parentOriginalPrice > 0
+        ) {
+            $parentDiscount = round(
+                (($parentOriginalPrice - $parentPrice) / $parentOriginalPrice) * 100,
+                2
+            );
+        }
 
-$zohoSuccess = 0;
-$zohoFailed = 0;
-$zohoErrors = [];
+        // 6. Start database transaction.
+        $db->beginTransaction();
 
-foreach ($zohoProducts as $zohoProduct) {
+        // 7. Find existing parent product using Shopify product ID.
+        $stmt = $db->prepare("
+            SELECT id
+            FROM products
+            WHERE shopify_product_id = :gid
+               OR shopify_product_id = :raw_id
+            LIMIT 1
+        ");
 
-    $zohoResult =
-        syncProductToZoho($zohoProduct);
+        $stmt->execute([
+            ':gid' => $shopifyProductGid,
+            ':raw_id' => (string) $rawProductId
+        ]);
 
-    if (!empty($zohoResult['success'])) {
+        $existingProduct = $stmt->fetch(PDO::FETCH_ASSOC);
 
-        $zohoSuccess++;
+        if ($existingProduct) {
 
-    } else {
+            $localProductId = (int) $existingProduct['id'];
+            $productAction = 'updated';
 
-        $zohoFailed++;
+            $slug = createUniqueSlug(
+                $db,
+                $handle !== '' ? $handle : $title,
+                $localProductId
+            );
 
-        $zohoErrors[] = [
-            'sku' => $zohoProduct['sku'],
-            'message' =>
-                $zohoResult['message']
-                ?? 'Unknown Zoho synchronization error.'
+            // Update existing parent product.
+            $stmt = $db->prepare("
+                UPDATE products
+                SET
+                    shopify_product_id = :shopify_product_id,
+                    shopify_status = :shopify_status,
+                    shopify_synced_at = NOW(),
+                    title = :title,
+                    slug = :slug,
+                    description = :description,
+                    image = COALESCE(:image, image),
+                    price = :price,
+                    original_price = :original_price,
+                    discount = :discount,
+                    status = :status
+                WHERE id = :id
+            ");
+
+            $stmt->execute([
+                ':shopify_product_id' => $shopifyProductGid,
+                ':shopify_status' => $shopifyStatus,
+                ':title' => $title,
+                ':slug' => $slug,
+                ':description' => $description,
+                ':image' => $image,
+                ':price' => $parentPrice,
+                ':original_price' => $parentOriginalPrice,
+                ':discount' => $parentDiscount,
+                ':status' => $localStatus,
+                ':id' => $localProductId
+            ]);
+        } else {
+
+            $productAction = 'created';
+
+            $slug = createUniqueSlug(
+                $db,
+                $handle !== '' ? $handle : $title
+            );
+
+            // Create new parent product.
+            $stmt = $db->prepare("
+                INSERT INTO products (
+                    shopify_product_id,
+                    shopify_status,
+                    shopify_synced_at,
+                    sku,
+                    title,
+                    slug,
+                    description,
+                    image,
+                    price,
+                    original_price,
+                    discount,
+                    stock,
+                    status
+                ) VALUES (
+                    :shopify_product_id,
+                    :shopify_status,
+                    NOW(),
+                    NULL,
+                    :title,
+                    :slug,
+                    :description,
+                    :image,
+                    :price,
+                    :original_price,
+                    :discount,
+                    0,
+                    :status
+                )
+            ");
+
+            $stmt->execute([
+                ':shopify_product_id' => $shopifyProductGid,
+                ':shopify_status' => $shopifyStatus,
+                ':title' => $title,
+                ':slug' => $slug,
+                ':description' => $description,
+                ':image' => $image,
+                ':price' => $parentPrice,
+                ':original_price' => $parentOriginalPrice,
+                ':discount' => $parentDiscount,
+                ':status' => $localStatus
+            ]);
+
+            $localProductId = (int) $db->lastInsertId();
+        }
+
+        // 8. Synchronize Shopify variants into product_variants.
+        $totalLocalVariantStock = 0;
+
+        foreach ($variants as $variant) {
+
+            try {
+
+                $rawVariantId = $variant['id'] ?? '';
+
+                if ($rawVariantId === '') {
+                    throw new Exception("Shopify variant ID is missing.");
+                }
+
+                $shopifyVariantGid = shopifyGid(
+                    'ProductVariant',
+                    $rawVariantId
+                );
+
+                $rawInventoryItemId = $variant['inventory_item_id'] ?? '';
+
+                $shopifyInventoryItemGid = $rawInventoryItemId !== ''
+                    ? shopifyGid('InventoryItem', $rawInventoryItemId)
+                    : null;
+
+                $variantTitle = trim($variant['title'] ?? '');
+
+                if ($variantTitle === '') {
+                    $variantTitle = 'Default Title';
+                }
+
+                $sku = trim($variant['sku'] ?? '');
+                $sku = ($sku !== '') ? $sku : null;
+
+                $variantPrice = (float) ($variant['price'] ?? 0);
+
+                $comparePrice = $variant['compare_at_price'] ?? null;
+
+                $originalPrice = (
+                    $comparePrice !== null && $comparePrice !== ''
+                ) ? (float) $comparePrice : null;
+
+                $variantStock = (int) ($variant['inventory_quantity'] ?? 0);
+
+                // Build variant attributes from Shopify options.
+                $attributes = [];
+
+                $options = $product['options'] ?? [];
+
+                foreach ($options as $index => $option) {
+
+                    $optionName = trim($option['name'] ?? '');
+
+                    $optionValue = trim(
+                        $variant['option' . ($index + 1)] ?? ''
+                    );
+
+                    if (
+                        $optionName !== '' &&
+                        strtolower($optionName) !== 'title' &&
+                        $optionValue !== ''
+                    ) {
+                        $attributes[$optionName] = $optionValue;
+                    }
+                }
+
+                $attributesJson = !empty($attributes)
+                    ? json_encode($attributes)
+                    : null;
+
+                // 9. First match using Shopify variant ID.
+                $stmt = $db->prepare("
+                    SELECT id
+                    FROM product_variants
+                    WHERE product_id = :product_id
+                      AND (
+                          shopify_variant_id = :variant_gid
+                          OR shopify_variant_id = :raw_variant_id
+                      )
+                    LIMIT 1
+                ");
+
+                $stmt->execute([
+                    ':product_id' => $localProductId,
+                    ':variant_gid' => $shopifyVariantGid,
+                    ':raw_variant_id' => (string) $rawVariantId
+                ]);
+
+                $existingVariant = $stmt->fetch(PDO::FETCH_ASSOC);
+
+                // 10. If Shopify ID did not match, try SKU.
+                if (!$existingVariant && $sku !== null) {
+
+                    $stmt = $db->prepare("
+                        SELECT id
+                        FROM product_variants
+                        WHERE product_id = :product_id
+                          AND sku = :sku
+                        LIMIT 1
+                    ");
+
+                    $stmt->execute([
+                        ':product_id' => $localProductId,
+                        ':sku' => $sku
+                    ]);
+
+                    $existingVariant = $stmt->fetch(PDO::FETCH_ASSOC);
+                }
+
+                $localVariantId = $existingVariant
+                    ? (int) $existingVariant['id']
+                    : 0;
+
+                // 11. Protect the unique SKU constraint.
+                if ($sku !== null) {
+
+                    $stmt = $db->prepare("
+                        SELECT id, product_id
+                        FROM product_variants
+                        WHERE sku = :sku
+                          AND id != :variant_id
+                        LIMIT 1
+                    ");
+
+                    $stmt->execute([
+                        ':sku' => $sku,
+                        ':variant_id' => $localVariantId
+                    ]);
+
+                    $skuConflict = $stmt->fetch(PDO::FETCH_ASSOC);
+
+                    if ($skuConflict) {
+                        throw new Exception(
+                            "SKU {$sku} already belongs to another local variant."
+                        );
+                    }
+                }
+
+                // 12. Update existing local variant.
+                if ($existingVariant) {
+
+                    $stmt = $db->prepare("
+                        UPDATE product_variants
+                        SET
+                            variant_title = :variant_title,
+                            sku = :sku,
+                            price = :price,
+                            original_price = :original_price,
+                            stock = :stock,
+                            attributes = :attributes,
+                            status = :status,
+                            shopify_variant_id = :shopify_variant_id,
+                            shopify_inventory_item_id = :inventory_item_id,
+                            shopify_sync_status = 'synced'
+                        WHERE id = :id
+                    ");
+
+                    $stmt->execute([
+                        ':variant_title' => $variantTitle,
+                        ':sku' => $sku,
+                        ':price' => $variantPrice,
+                        ':original_price' => $originalPrice,
+                        ':stock' => $variantStock,
+                        ':attributes' => $attributesJson,
+                        ':status' => $localStatus,
+                        ':shopify_variant_id' => $shopifyVariantGid,
+                        ':inventory_item_id' => $shopifyInventoryItemGid,
+                        ':id' => $localVariantId
+                    ]);
+
+                    $result['updated_variants']++;
+                } else {
+
+                    // 13. Create a new local variant.
+                    $stmt = $db->prepare("
+                        INSERT INTO product_variants (
+                            product_id,
+                            variant_title,
+                            sku,
+                            price,
+                            original_price,
+                            stock,
+                            attributes,
+                            status,
+                            shopify_variant_id,
+                            shopify_inventory_item_id,
+                            shopify_sync_status
+                        ) VALUES (
+                            :product_id,
+                            :variant_title,
+                            :sku,
+                            :price,
+                            :original_price,
+                            :stock,
+                            :attributes,
+                            :status,
+                            :shopify_variant_id,
+                            :inventory_item_id,
+                            'synced'
+                        )
+                    ");
+
+                    $stmt->execute([
+                        ':product_id' => $localProductId,
+                        ':variant_title' => $variantTitle,
+                        ':sku' => $sku,
+                        ':price' => $variantPrice,
+                        ':original_price' => $originalPrice,
+                        ':stock' => $variantStock,
+                        ':attributes' => $attributesJson,
+                        ':status' => $localStatus,
+                        ':shopify_variant_id' => $shopifyVariantGid,
+                        ':inventory_item_id' => $shopifyInventoryItemGid
+                    ]);
+
+                    $result['created_variants']++;
+                }
+
+                $totalLocalVariantStock += $variantStock;
+            } catch (Exception $variantError) {
+
+                $result['failed_variants'][] = [
+                    'sku' => $variant['sku'] ?? null,
+                    'variant_id' => $variant['id'] ?? null,
+                    'message' => $variantError->getMessage()
+                ];
+            }
+        }
+
+        // 14. Update parent stock with successfully synchronized variants.
+        $stmt = $db->prepare("
+            UPDATE products
+            SET
+                stock = :stock,
+                shopify_synced_at = NOW()
+            WHERE id = :id
+        ");
+
+        $stmt->execute([
+            ':stock' => $totalLocalVariantStock,
+            ':id' => $localProductId
+        ]);
+
+        // 15. Commit transaction.
+
+        // 15. Commit local database transaction.
+        $db->commit();
+
+        // 16. Synchronize parent product with Zoho.
+        $result['zoho_sync'] = [
+            'parent' => null,
+            'variants' => []
         ];
-    }
-}
 
-return [
-    'success' => true,
+        try {
 
-    'message' =>
-        "Shopify sync completed. " .
-        $updatedCount .
-        " product(s) updated, " .
-        $insertedCount .
-        " product(s) inserted. " .
-        "Zoho: " .
-        $zohoSuccess .
-        " synced, " .
-        $zohoFailed .
-        " failed.",
+            $stmt = $db->prepare("
+        SELECT
+            id,
+            title,
+            sku,
+            description,
+            price,
+            stock,
+            zoho_item_id
+        FROM products
+        WHERE id = :id
+        LIMIT 1
+    ");
 
-    'updated' => $updatedCount,
-    'inserted' => $insertedCount,
-    'skipped' => $skippedCount,
+            $stmt->execute([':id' => $localProductId]);
+            $localProduct = $stmt->fetch(PDO::FETCH_ASSOC);
 
-    'zoho_synced' => $zohoSuccess,
-    'zoho_failed' => $zohoFailed,
-    'zoho_errors' => $zohoErrors
-];
+            if ($localProduct && !empty($localProduct['sku'])) {
 
-    } catch (PDOException $e) {
+                $parentZohoData = [
+                    'name' => $localProduct['title'],
+                    'sku' => $localProduct['sku'],
+                    'description' => $localProduct['description'] ?? '',
+                    'rate' => (float) $localProduct['price'],
+                    'stock' => (float) $localProduct['stock']
+                ];
+
+                $savedZohoItemId = trim(
+                    (string) ($localProduct['zoho_item_id'] ?? '')
+                );
+
+                $parentZohoResult = syncProductToZoho(
+                    $parentZohoData,
+                    $savedZohoItemId !== '' ? $savedZohoItemId : null
+                );
+
+                if (!empty($parentZohoResult['success'])) {
+
+                    $zohoItemId = trim(
+                        (string) ($parentZohoResult['item']['item_id'] ?? '')
+                    );
+
+                    if ($zohoItemId !== '') {
+
+                        $updateStmt = $db->prepare("
+                    UPDATE products
+                    SET zoho_item_id = :zoho_item_id
+                    WHERE id = :id
+                ");
+
+                        $updateStmt->execute([
+                            ':zoho_item_id' => $zohoItemId,
+                            ':id' => $localProductId
+                        ]);
+                    }
+                }
+
+                $result['zoho_sync']['parent'] = $parentZohoResult;
+            } else {
+
+                $result['zoho_sync']['parent'] = [
+                    'success' => false,
+                    'message' => 'Parent product SKU is missing. Parent Zoho item synchronization skipped.'
+                ];
+            }
+        } catch (Throwable $zohoError) {
+
+            $result['zoho_sync']['parent'] = [
+                'success' => false,
+                'message' => $zohoError->getMessage()
+            ];
+        }
+
+        try {
+
+            $stmt = $db->prepare("
+        SELECT id
+        FROM product_variants
+        WHERE product_id = :product_id
+        ORDER BY id ASC
+    ");
+
+            $stmt->execute([
+                ':product_id' => $localProductId
+            ]);
+
+            $localVariants = $stmt->fetchAll(PDO::FETCH_ASSOC);
+
+            foreach ($localVariants as $localVariant) {
+
+                $variantId = (int) $localVariant['id'];
+
+                $variantZohoResult = syncVariantToZoho($variantId);
+
+                $result['zoho_sync']['variants'][] = [
+                    'variant_id' => $variantId,
+                    'result' => $variantZohoResult
+                ];
+            }
+        } catch (Throwable $zohoError) {
+
+            $result['zoho_sync']['variants_error'] =
+                $zohoError->getMessage();
+        }
+
+        $result['success'] = true;
+        $result['message'] = 'Shopify to Local synchronization completed.';
+        $result['product_action'] = $productAction;
+        $result['product_id'] = $localProductId;
+        $result['total_variant_stock'] = $totalLocalVariantStock;
+
+        return $result;
+    } catch (Exception $e) {
 
         if ($db->inTransaction()) {
             $db->rollBack();
         }
 
-        return [
-            'success' => false,
-            'message' => 'Shopify synchronization failed.',
-            'error' => $e->getMessage()
-        ];
+        $result['message'] = $e->getMessage();
+
+        return $result;
     }
 }
 
@@ -2032,7 +2145,7 @@ GRAPHQL;
                     'success' => true,
                     'found' => true,
                     'message' =>
-                        'Shopify product found by SKU.',
+                    'Shopify product found by SKU.',
                     'product' => $product,
                     'variant' => $variant
                 ];
@@ -2044,7 +2157,7 @@ GRAPHQL;
         'success' => true,
         'found' => false,
         'message' =>
-            'No Shopify product found with this SKU.',
+        'No Shopify product found with this SKU.',
         'product' => null,
         'variant' => null
     ];
@@ -2194,9 +2307,9 @@ GRAPHQL;
         return [
             'success' => false,
             'message' =>
-                'Shopify inventory tracking update failed.',
+            'Shopify inventory tracking update failed.',
             'errors' =>
-                $response['errors']
+            $response['errors']
         ];
     }
 
@@ -2208,7 +2321,7 @@ GRAPHQL;
         return [
             'success' => false,
             'message' =>
-                'Shopify inventoryItemUpdate response was not returned.',
+            'Shopify inventoryItemUpdate response was not returned.',
             'response' => $response
         ];
     }
@@ -2217,18 +2330,18 @@ GRAPHQL;
         return [
             'success' => false,
             'message' =>
-                'Unable to enable Shopify inventory tracking.',
+            'Unable to enable Shopify inventory tracking.',
             'errors' =>
-                $result['userErrors']
+            $result['userErrors']
         ];
     }
 
     return [
         'success' => true,
         'message' =>
-            'Shopify inventory tracking enabled.',
+        'Shopify inventory tracking enabled.',
         'data' =>
-            $result['inventoryItem'] ?? null
+        $result['inventoryItem'] ?? null
     ];
 }
 
@@ -2253,8 +2366,6 @@ function updateShopifyVariantInventory($inventoryItemId, $newQuantity)
             'message' => 'Inventory quantity cannot be negative.'
         ];
     }
-
-    // Get Shopify location.
     $locationInfo = getShopifyLocationId();
 
     if (empty($locationInfo['success'])) {
@@ -2275,8 +2386,6 @@ function updateShopifyVariantInventory($inventoryItemId, $newQuantity)
         'InventoryItem',
         $inventoryItemId
     );
-
-    // STEP 1: Read current available inventory.
     $query = <<<'GRAPHQL'
 query GetCurrentInventory(
     $inventoryItemId: ID!,
@@ -2342,8 +2451,6 @@ GRAPHQL;
             'message' => 'Current available inventory quantity was not returned.'
         ];
     }
-
-    // STEP 2: Update inventory using changeFromQuantity.
     $mutation = <<<'GRAPHQL'
 mutation SetVariantInventory(
     $input: InventorySetQuantitiesInput!,
@@ -2366,19 +2473,19 @@ mutation SetVariantInventory(
 }
 GRAPHQL;
 
-$variables = [
-    'input' => [
-        'name' => 'available',
-        'reason' => 'correction',
-        'quantities' => [[
-            'inventoryItemId' => $inventoryItemGid,
-            'locationId' => $locationId,
-            'quantity' => $newQuantity,
-            'changeFromQuantity' => $currentQuantity
-        ]]
-    ],
-    'idempotencyKey' => bin2hex(random_bytes(16))
-];
+    $variables = [
+        'input' => [
+            'name' => 'available',
+            'reason' => 'correction',
+            'quantities' => [[
+                'inventoryItemId' => $inventoryItemGid,
+                'locationId' => $locationId,
+                'quantity' => $newQuantity,
+                'changeFromQuantity' => $currentQuantity
+            ]]
+        ],
+        'idempotencyKey' => bin2hex(random_bytes(16))
+    ];
 
     $updateResponse = shopifyGraphQL($mutation, $variables);
 
@@ -2446,38 +2553,110 @@ function syncProductToShopify(array $product)
     $price =
         isset($product['price']) &&
         is_numeric($product['price'])
-            ? (float) $product['price']
-            : 0;
+        ? (float) $product['price']
+        : 0;
 
     $originalPrice =
         isset($product['original_price']) &&
         $product['original_price'] !== '' &&
         is_numeric($product['original_price'])
-            ? (float) $product['original_price']
-            : $price;
+        ? (float) $product['original_price']
+        : $price;
 
     $stock =
         isset($product['stock']) &&
         is_numeric($product['stock'])
-            ? (int) $product['stock']
-            : 0;
+        ? (int) $product['stock']
+        : 0;
 
     $status =
         !empty($product['status'])
-            ? 1
-            : 0;
-    $existing =
-        findShopifyProductBySKU($sku);
+        ? 1
+        : 0;
+    $savedProductId = trim(
+        (string) ($product['shopify_product_id'] ?? '')
+    );
+
+    $existing = null;
+
+    if ($savedProductId !== '') {
+
+        $savedProductGid = shopifyGid(
+            'Product',
+            $savedProductId
+        );
+
+        $lookupQuery = <<<'GRAPHQL'
+query GetSavedShopifyProduct($id: ID!) {
+    product(id: $id) {
+        id
+        title
+        variants(first: 1) {
+            nodes {
+                id
+                sku
+                price
+                compareAtPrice
+                inventoryItem {
+                    id
+                    tracked
+                }
+            }
+        }
+    }
+}
+GRAPHQL;
+
+        $lookupResponse = shopifyGraphQL(
+            $lookupQuery,
+            ['id' => $savedProductGid]
+        );
+
+        if (!empty($lookupResponse['errors'])) {
+            return [
+                'success' => false,
+                'message' => 'Unable to retrieve the saved Shopify product.',
+                'errors' => $lookupResponse['errors']
+            ];
+        }
+
+        $savedProduct =
+            $lookupResponse['data']['data']['product'] ?? null;
+
+        if ($savedProduct) {
+
+            $savedVariant =
+                $savedProduct['variants']['nodes'][0] ?? null;
+
+            if (!$savedVariant) {
+                return [
+                    'success' => false,
+                    'message' => 'Saved Shopify product has no default variant.'
+                ];
+            }
+
+            $existing = [
+                'success' => true,
+                'found' => true,
+                'product' => $savedProduct,
+                'variant' => $savedVariant
+            ];
+        }
+    }
+
+    if ($existing === null) {
+        $existing = findShopifyProductBySKU($sku);
+    }
 
     if (!$existing['success']) {
         return [
             'success' => false,
             'message' =>
-                $existing['message']
+            $existing['message']
                 ?? 'Shopify SKU lookup failed.',
             'action' => null,
             'errors' =>
-                $existing['errors'] ?? []
+            $existing['errors'] ?? []
         ];
     }
     if (!empty($existing['found'])) {
@@ -2495,7 +2674,7 @@ function syncProductToShopify(array $product)
             return [
                 'success' => false,
                 'message' =>
-                    'Shopify product was found but Product ID is missing.',
+                'Shopify product was found but Product ID is missing.',
                 'action' => 'update'
             ];
         }
@@ -2505,16 +2684,16 @@ function syncProductToShopify(array $product)
                 $shopifyProductId,
                 [
                     'title' =>
-                        $title,
+                    $title,
 
                     'description' =>
-                        $product['description'] ?? '',
+                    $product['description'] ?? '',
 
                     'slug' =>
-                        $product['slug'] ?? null,
+                    $product['slug'] ?? null,
 
                     'status' =>
-                        $status
+                    $status
                 ]
             );
 
@@ -2522,12 +2701,12 @@ function syncProductToShopify(array $product)
             return [
                 'success' => false,
                 'message' =>
-                    'Shopify product update failed.',
+                'Shopify product update failed.',
                 'action' => 'update',
                 'shopify_product_id' =>
-                    $shopifyProductId,
+                $shopifyProductId,
                 'errors' =>
-                    $productUpdate['errors'] ?? []
+                $productUpdate['errors'] ?? []
             ];
         }
 
@@ -2536,7 +2715,8 @@ function syncProductToShopify(array $product)
                 $shopifyProductId,
                 $price,
                 $originalPrice,
-                $sku
+                $sku,
+                $shopifyVariant['id'] ?? ''
             );
 
         $inventoryUpdate =
@@ -2552,40 +2732,40 @@ function syncProductToShopify(array $product)
             return [
                 'success' => false,
                 'message' =>
-                    'Shopify product updated, but one or more additional sync operations failed.',
+                'Shopify product updated, but one or more additional sync operations failed.',
                 'action' => 'update',
                 'shopify_product_id' =>
-                    $shopifyProductId,
+                $shopifyProductId,
                 'variant' =>
-                    $variantUpdate,
+                $variantUpdate,
                 'inventory' =>
-                    $inventoryUpdate
+                $inventoryUpdate
             ];
         }
 
         return [
             'success' => true,
             'message' =>
-                'Shopify product found by SKU and updated successfully.',
+            'Shopify product found by SKU and updated successfully.',
             'action' => 'update',
             'data' => [
                 'shopify_product_id' =>
-                    $shopifyProductId,
+                $shopifyProductId,
 
                 'shopify_variant_id' =>
-                    $shopifyVariant['id'] ?? null,
+                $shopifyVariant['id'] ?? null,
 
                 'sku' =>
-                    $sku,
+                $sku,
 
                 'price' =>
-                    $price,
+                $price,
 
                 'original_price' =>
-                    $originalPrice,
+                $originalPrice,
 
                 'stock' =>
-                    $stock
+                $stock
             ]
         ];
     }
@@ -2593,26 +2773,26 @@ function syncProductToShopify(array $product)
     $createResult =
         createShopifyProduct([
             'title' =>
-                $title,
+            $title,
 
             'description' =>
-                $product['description'] ?? '',
+            $product['description'] ?? '',
 
             'slug' =>
-                $product['slug'] ?? null,
+            $product['slug'] ?? null,
 
             'status' =>
-                $status
+            $status
         ]);
 
     if (empty($createResult['success'])) {
         return [
             'success' => false,
             'message' =>
-                'Unable to create Shopify product.',
+            'Unable to create Shopify product.',
             'action' => 'create',
             'errors' =>
-                $createResult['errors'] ?? []
+            $createResult['errors'] ?? []
         ];
     }
 
@@ -2623,7 +2803,7 @@ function syncProductToShopify(array $product)
         return [
             'success' => false,
             'message' =>
-                'Shopify product was created but Product ID was not returned.',
+            'Shopify product was created but Product ID was not returned.',
             'action' => 'create'
         ];
     }
@@ -2649,37 +2829,37 @@ function syncProductToShopify(array $product)
         return [
             'success' => false,
             'message' =>
-                'Shopify product was created, but variant or inventory sync failed.',
+            'Shopify product was created, but variant or inventory sync failed.',
             'action' => 'create',
             'shopify_product_id' =>
-                $shopifyProductId,
+            $shopifyProductId,
             'variant' =>
-                $variantUpdate,
+            $variantUpdate,
             'inventory' =>
-                $inventoryUpdate
+            $inventoryUpdate
         ];
     }
 
     return [
         'success' => true,
         'message' =>
-            'Shopify product created and fully synchronized successfully.',
+        'Shopify product created and fully synchronized successfully.',
         'action' => 'create',
         'data' => [
             'shopify_product_id' =>
-                $shopifyProductId,
+            $shopifyProductId,
 
             'sku' =>
-                $sku,
+            $sku,
 
             'price' =>
-                $price,
+            $price,
 
             'original_price' =>
-                $originalPrice,
+            $originalPrice,
 
             'stock' =>
-                $stock
+            $stock
         ]
     ];
 }
@@ -2817,7 +2997,6 @@ function syncParentProductVariantsToShopify($productId)
         ];
     }
 
-    // STEP 1: Load parent product.
     $stmt = $db->prepare("
         SELECT *
         FROM products
@@ -2834,8 +3013,6 @@ function syncParentProductVariantsToShopify($productId)
             'message' => 'Local parent product was not found.'
         ];
     }
-
-    // STEP 2: Load local variants.
     $variantStmt = $db->prepare("
         SELECT *
         FROM product_variants
@@ -2856,8 +3033,6 @@ function syncParentProductVariantsToShopify($productId)
     $shopifyProductId = trim(
         (string) ($product['shopify_product_id'] ?? '')
     );
-
-    // STEP 3: Find Shopify parent if mapping is missing.
     if ($shopifyProductId === '') {
 
         foreach ($variants as $localVariant) {
@@ -2897,8 +3072,6 @@ function syncParentProductVariantsToShopify($productId)
         'Product',
         $shopifyProductId
     );
-
-    // STEP 4: Retrieve existing Shopify variants.
     $query = <<<'GRAPHQL'
 query GetParentVariants($id: ID!) {
     product(id: $id) {
@@ -2942,8 +3115,24 @@ GRAPHQL;
             'message' => 'Shopify parent product was not found.'
         ];
     }
+    $parentUpdate = updateShopifyProduct(
+        $shopifyProductGid,
+        [
+            'title' => $product['title'],
+            'description' => $product['description'] ?? '',
+            'slug' => $product['slug'] ?? '',
+            'status' => $product['status']
+        ]
+    );
 
-    // Build SKU lookup.
+    if (empty($parentUpdate['success'])) {
+        return [
+            'success' => false,
+            'message' => 'Shopify parent product details could not be updated.',
+            'errors' => $parentUpdate['errors'] ?? [],
+            'details' => $parentUpdate['message'] ?? ''
+        ];
+    }
     $shopifyBySku = [];
 
     foreach ($shopifyProduct['variants']['nodes'] ?? [] as $shopifyVariant) {
@@ -2958,8 +3147,6 @@ GRAPHQL;
     $synced = [];
     $created = [];
     $failed = [];
-
-    // STEP 5: Process every local variant.
     foreach ($variants as $localVariant) {
 
         $variantId = (int) $localVariant['id'];
@@ -2984,11 +3171,30 @@ GRAPHQL;
             ];
             continue;
         }
+        $shopifyVariant = null;
+        $savedShopifyVariantId = trim(
+            (string) ($localVariant['shopify_variant_id'] ?? '')
+        );
 
-        // STEP 6: Check whether Shopify variant already exists.
-        $shopifyVariant = $shopifyBySku[$sku] ?? null;
+        if ($savedShopifyVariantId !== '') {
 
-        // Create only if it does not exist.
+            $savedShopifyVariantGid = shopifyGid(
+                'ProductVariant',
+                $savedShopifyVariantId
+            );
+
+            foreach ($shopifyProduct['variants']['nodes'] ?? [] as $existingVariant) {
+
+                if (($existingVariant['id'] ?? '') === $savedShopifyVariantGid) {
+                    $shopifyVariant = $existingVariant;
+                    break;
+                }
+            }
+        }
+        if (!$shopifyVariant) {
+            $shopifyVariant = $shopifyBySku[$sku] ?? null;
+        }
+
         if (!$shopifyVariant) {
 
             $creationResult = createShopifyVariantForParent(
@@ -3009,8 +3215,6 @@ GRAPHQL;
 
             $shopifyVariant = $creationResult['variant'];
 
-            // Add it to the lookup immediately to prevent
-            // another creation during this same execution.
             $shopifyBySku[$sku] = $shopifyVariant;
 
             $created[] = [
@@ -3032,8 +3236,6 @@ GRAPHQL;
             ];
             continue;
         }
-
-        // STEP 7: Save mapping before further operations.
         try {
 
             $mappingStmt = $db->prepare("
@@ -3052,7 +3254,6 @@ GRAPHQL;
                 ':id' => $variantId,
                 ':product_id' => $productId
             ]);
-
         } catch (PDOException $e) {
 
             $failed[] = [
@@ -3064,13 +3265,13 @@ GRAPHQL;
 
             continue;
         }
-
-        // STEP 8: Update exact Shopify variant by SKU.
         $variantUpdate = updateShopifyProductVariant(
             $shopifyProductGid,
             $localVariant['price'],
             $localVariant['original_price'] ?? null,
-            $sku
+            $sku,
+            $shopifyVariantId,
+            $localVariant['variant_title'] ?? ''
         );
 
         if (empty($variantUpdate['success'])) {
@@ -3085,8 +3286,6 @@ GRAPHQL;
         }
 
         $updatedVariant = $variantUpdate['data'] ?? [];
-
-        // Use IDs returned by Shopify.
         $shopifyVariantId =
             $updatedVariant['id'] ?? $shopifyVariantId;
 
@@ -3102,8 +3301,6 @@ GRAPHQL;
             ];
             continue;
         }
-
-        // STEP 9: Enable inventory tracking.
         $trackingResult = enableShopifyInventoryTracking(
             $inventoryItemId
         );
@@ -3117,8 +3314,6 @@ GRAPHQL;
             ];
             continue;
         }
-
-        // STEP 10: Synchronize stock.
         $inventoryResult = updateShopifyVariantInventory(
             $inventoryItemId,
             (int) $localVariant['stock']
@@ -3134,8 +3329,6 @@ GRAPHQL;
             ];
             continue;
         }
-
-        // STEP 11: Save final mappings and sync status.
         $saveStmt = $db->prepare("
             UPDATE product_variants
             SET
@@ -3161,8 +3354,6 @@ GRAPHQL;
             'stock' => (int) $localVariant['stock']
         ];
     }
-
-    // STEP 12: Recalculate parent stock.
     $stockStmt = $db->prepare("
         SELECT COALESCE(SUM(stock), 0)
         FROM product_variants
@@ -3174,17 +3365,19 @@ GRAPHQL;
     $totalStock = (int) $stockStmt->fetchColumn();
 
     $parentStockStmt = $db->prepare("
-        UPDATE products
-        SET
-            stock = :stock,
-            shopify_product_id = :shopify_product_id,
-            shopify_synced_at = NOW()
-        WHERE id = :id
-    ");
+    UPDATE products
+    SET
+        stock = :stock,
+        shopify_product_id = :shopify_product_id,
+        shopify_status = :shopify_status,
+        shopify_synced_at = NOW()
+    WHERE id = :id
+");
 
     $parentStockStmt->execute([
         ':stock' => $totalStock,
         ':shopify_product_id' => $shopifyProductGid,
+        ':shopify_status' => !empty($product['status']) ? 'ACTIVE' : 'DRAFT',
         ':id' => $productId
     ]);
 
@@ -3204,4 +3397,3 @@ GRAPHQL;
         'failed_variants' => $failed
     ];
 }
-

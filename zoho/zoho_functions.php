@@ -1854,7 +1854,6 @@ function syncZohoWebhookToDatabase(array $decodedPayload)
                 $action = 'product_updated';
             } else {
 
-                // Create a new standalone local product.
                 $slug = createUniqueSlug($db, $name);
 
                 $insertProduct = $db->prepare("
@@ -1928,14 +1927,12 @@ function syncZohoWebhookToDatabase(array $decodedPayload)
         ];
     } catch (Throwable $e) {
 
-        if ($db->inTransaction()) {
-            $db->rollBack();
-        }
-
-        error_log(
+         error_log(
             'Zoho webhook database sync error: ' . $e->getMessage()
         );
-
+      if ($db->inTransaction()) {
+            $db->rollBack();
+        }
         return [
             'success' => false,
             'message' => 'Zoho database synchronization failed.',

@@ -937,6 +937,122 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
 
             $pdo->commit();
 
+            $shopifySyncMessages = [];
+            $shopifySyncWarning = false;
+
+            try {
+                $stmt = $pdo->prepare("
+        SELECT
+            id,
+            title,
+            sku,
+            description,
+            slug,
+            price,
+            original_price,
+            stock,
+            status,
+            shopify_product_id
+        FROM products
+        WHERE id = :id
+        LIMIT 1
+    ");
+
+                $stmt->execute([':id' => $productId]);
+                $shopifyProduct = $stmt->fetch(PDO::FETCH_ASSOC);
+
+                if (!$shopifyProduct) {
+                    throw new Exception("Product not found for Shopify synchronization.");
+                }
+                $variantCheck = $pdo->prepare("
+        SELECT COUNT(*)
+        FROM product_variants
+        WHERE product_id = :product_id
+    ");
+
+                $variantCheck->execute([':product_id' => $productId]);
+                $variantCount = (int) $variantCheck->fetchColumn();
+
+                if ($variantCount > 0) {
+
+                    $variantSync = syncParentProductVariantsToShopify($productId);
+
+                    if (!empty($variantSync['success'])) {
+                        $shopifySyncMessages[] =
+                            "Product and variants synchronized with Shopify.";
+                    } else {
+                        $shopifySyncWarning = true;
+                        $shopifySyncMessages[] =
+                            "Shopify variant synchronization needs checking.";
+                    }
+                } else {
+                    $parentSync = syncProductToShopify([
+                        'title' => $shopifyProduct['title'],
+                        'name' => $shopifyProduct['title'],
+                        'sku' => $shopifyProduct['sku'],
+                        'description' => $shopifyProduct['description'],
+                        'slug' => $shopifyProduct['slug'],
+                        'price' => $shopifyProduct['price'],
+                        'original_price' => $shopifyProduct['original_price'],
+                        'stock' => $shopifyProduct['stock'],
+                        'status' => $shopifyProduct['status'],
+                        'shopify_product_id' => $shopifyProduct['shopify_product_id']
+                    ]);
+                    if (!empty($parentSync['success'])) {
+
+                        $syncedShopifyProductId =
+                            $parentSync['data']['shopify_product_id'] ?? '';
+
+                        if ($syncedShopifyProductId !== '') {
+
+                            $syncedShopifyProductGid = shopifyGid(
+                                'Product',
+                                $syncedShopifyProductId
+                            );
+
+                            $saveShopifyMapping = $pdo->prepare("
+            UPDATE products
+            SET
+                shopify_product_id = :shopify_product_id,
+                shopify_status = :shopify_status,
+                shopify_synced_at = NOW()
+            WHERE id = :id
+        ");
+
+                            $saveShopifyMapping->execute([
+                                ':shopify_product_id' => $syncedShopifyProductGid,
+                                ':shopify_status' => !empty($shopifyProduct['status'])
+                                    ? 'ACTIVE'
+                                    : 'DRAFT',
+                                ':id' => $productId
+                            ]);
+
+                            $shopifySyncMessages[] =
+                                "Product synchronized with Shopify.";
+                        } else {
+
+                            $shopifySyncWarning = true;
+
+                            $shopifySyncMessages[] =
+                                "Shopify sync succeeded, but the product ID was not returned.";
+                        }
+                    } else {
+
+                        $shopifySyncWarning = true;
+
+                        $shopifySyncMessages[] =
+                            "Shopify product synchronization needs checking.";
+                    }
+                }
+            } catch (Throwable $e) {
+
+                error_log("Shopify product edit sync error: " . $e->getMessage());
+
+                $shopifySyncWarning = true;
+                $shopifySyncMessages[] =
+                    "Shopify synchronization encountered an error. The product is saved locally.";
+            }
+
             if (($removeMainImage || ($imageName !== ($product['image'] ?? ''))) && !empty($product['image'])) {
                 $removedImagePaths[] = $product['image'];
             }
@@ -996,7 +1112,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
                     );
 
                     if ($parentZohoItemId !== '') {
-                
+
                         $saveParentZohoStmt = $pdo->prepare("
                 UPDATE products
                 SET zoho_item_id = :zoho_item_id
