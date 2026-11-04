@@ -2,57 +2,52 @@
 
 require_once __DIR__ . '/../connection/dbconnect.php';
 
-header('Content-Type: application/json; charset=utf-8');
+require_once __DIR__ . '/functions.php';
 
-$database = new Database();
-$db = $database->connect();
+echo "<h2>Shopify to Local Database Sync Test</h2>";
 
-$productId = 82;
+try {
+    $result = syncShopifyProductsToDatabase();
 
-// Fetch parent product
-$productStmt = $db->prepare("
-    SELECT
-        id,
-        title,
-        sku,
-        stock,
-        shopify_product_id,
-        shopify_status
-    FROM products
-    WHERE id = :product_id
-");
+    echo "<h3>Function Response</h3>";
+    echo '<pre>';
+    print_r($result);
+    echo '</pre>';
 
-$productStmt->execute([
-    ':product_id' => $productId
-]);
+    if (!empty($result['success'])) {
+        echo "<h3>Local Product Data</h3>";
 
-$product = $productStmt->fetch(PDO::FETCH_ASSOC);
+        $productId = (int) $result['product_id'];
 
-// Fetch variants
-$variantStmt = $db->prepare("
-    SELECT
-        id,
-        variant_title,
-        sku,
-        price,
-        original_price,
-        stock,
-        shopify_variant_id,
-        shopify_inventory_item_id,
-        shopify_sync_status
-    FROM product_variants
-    WHERE product_id = :product_id
-");
+        $stmt = $db->prepare("
+            SELECT *
+            FROM products
+            WHERE id = :id
+        ");
+        $stmt->execute([':id' => $productId]);
+        $product = $stmt->fetch(PDO::FETCH_ASSOC);
 
-$variantStmt->execute([
-    ':product_id' => $productId
-]);
+        echo '<pre>';
+        print_r($product);
+        echo '</pre>';
 
-$variants = $variantStmt->fetchAll(PDO::FETCH_ASSOC);
+        echo "<h3>Local Product Variants</h3>";
 
-// Output
-echo json_encode([
-    'success' => true,
-    'product' => $product,
-    'variants' => $variants
-], JSON_PRETTY_PRINT | JSON_UNESCAPED_SLASHES);
+        $stmt = $db->prepare("
+            SELECT *
+            FROM product_variants
+            WHERE product_id = :product_id
+            ORDER BY id ASC
+        ");
+        $stmt->execute([':product_id' => $productId]);
+        $variants = $stmt->fetchAll(PDO::FETCH_ASSOC);
+
+        echo '<pre>';
+        print_r($variants);
+        echo '</pre>';
+    }
+
+} catch (Throwable $e) {
+    echo "<h3>Test Error</h3>";
+    echo '<pre>' . htmlspecialchars($e->getMessage()) . '</pre>';
+}

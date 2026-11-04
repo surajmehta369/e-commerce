@@ -8,7 +8,7 @@ require_once "../zoho/zoho_functions.php";
 $database = new Database();
 $db = $database->connect();
 
-// syncShopifyProductsToDatabase();
+syncShopifyProductsToDatabase();
 // syncZohoWebhookItemToShopify();
 $message = "";
 $messageType = "success";
