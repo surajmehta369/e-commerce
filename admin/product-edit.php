@@ -626,8 +626,6 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
 
         try {
             $stockToSave = $stock;
-
-            // Validate image IDs against this product before deleting any records.
             if ($removeGalleryIds) {
                 $marks = implode(',', array_fill(0, count($removeGalleryIds), '?'));
                 $check = $pdo->prepare("SELECT id, image_path FROM product_images WHERE product_id = ? AND id IN ($marks)");
@@ -1411,8 +1409,6 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
                             enctype="multipart/form-data">
 
                             <div class="row g-4">
-
-                                <!-- SKU -->
                                 <div class="col-md-6">
 
                                     <label class="form-label">
@@ -1566,9 +1562,6 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
                                         rows="5"><?= htmlspecialchars($product['description'] ?? '') ?></textarea>
 
                                 </div>
-
-
-                                <!-- PRODUCT VARIANTS -->
                                 <hr class="my-4">
 
                                 <div class="d-flex justify-content-between align-items-center mb-3">
@@ -1949,13 +1942,8 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
                                         readonly>
 
                                 </div>
-
                             </div>
-
-
                             <hr class="my-4">
-
-
                             <div class="d-flex justify-content-end gap-2">
 
                                 <a
@@ -1972,17 +1960,11 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
                                 </button>
 
                             </div>
-
                         </form>
-
                     </div>
-
                 </div>
-
             </div>
-
         </div>
-
     </div>
 
     <script
@@ -1990,8 +1972,6 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
 
     <script>
         document.addEventListener("DOMContentLoaded", function() {
-            // Handle removal of existing main, gallery, and variant images.
-            // Use delegation so the handler works for images inside existing and dynamic variant cards.
             document.addEventListener("click", function(event) {
                 const button = event.target.closest(".image-cut-btn");
                 if (!button) return;
@@ -2096,5 +2076,4 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
     </script>
 
 </body>
-
 </html>

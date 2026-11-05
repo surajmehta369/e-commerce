@@ -9,15 +9,6 @@
     $database = new Database();
     $db = $database->connect();
 
-
-    /*
-|--------------------------------------------------------------------------
-| Homepage product pricing and stock logic
-|--------------------------------------------------------------------------
-| Active variants: use the cheapest variant price and its original price.
-| No active variants: use the main product values.
-*/
-
     $hasVariantsSql = "
     EXISTS (
         SELECT 1

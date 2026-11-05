@@ -8,7 +8,7 @@ require_once "../zoho/zoho_functions.php";
 $database = new Database();
 $db = $database->connect();
 
-syncShopifyProductsToDatabase();
+// syncShopifyProductsToDatabase();
 // syncZohoWebhookItemToShopify();
 $message = "";
 $messageType = "success";
@@ -26,11 +26,32 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['test_zoho_webhook']))
         $messageType = 'error';
     }
 }
+if (
+    $_SERVER['REQUEST_METHOD'] === 'POST' &&
+    isset($_POST['test_shopify_webhook'])
+) {
 
+    $syncResult = syncShopifyProductsToDatabase();
+
+    if (!empty($syncResult['success'])) {
+
+        $message = $syncResult['message']
+            ?? 'Shopify webhook sync completed successfully.';
+
+        $messageType = 'success';
+    } else {
+
+        $message = $syncResult['message']
+            ?? 'Shopify webhook sync failed.';
+
+        $messageType = 'danger';
+    }
+}
 
 if (
     $_SERVER['REQUEST_METHOD'] === 'POST' &&
-    !isset($_POST['test_zoho_webhook'])
+    !isset($_POST['test_zoho_webhook']) &&
+    !isset($_POST['test_shopify_webhook'])
 ) {
     $action = $_POST['action'] ?? '';
     $productId = (int) ($_POST['product_id'] ?? 0);
@@ -327,83 +348,181 @@ LIMIT 1
                         $messageType = 'warning';
                     }
                 } elseif ($action === 'delete') {
-
                     $shopifySuccess = true;
+
+                    $shopifyResult = [
+                        'success' => true,
+                        'message' => 'No Shopify product linked.'
+                    ];
 
                     if ($shopifyProductId !== '') {
 
-                        $shopifyResult =
-                            updateShopifyProduct(
-                                $shopifyProductId,
-                                [
-                                    'title' => $product['title'],
-                                    'status' => 0
-                                ]
-                            );
+                        $shopifyResult = deleteShopifyProduct(
+                            $shopifyProductId
+                        );
 
-                        if (empty($shopifyResult['success'])) {
-
-                            $shopifySuccess = false;
-                        }
+                        $shopifySuccess = !empty($shopifyResult['success']);
                     }
 
-                    if (!$shopifySuccess) {
+                    if (empty($shopifySuccess)) {
 
-                        $message =
-                            "Product was not deleted because Shopify archive failed.";
+                        $message = 'Product was not deleted because Shopify deletion failed: '
+                            . ($shopifyResult['message'] ?? 'Unknown Shopify error.');
 
-                        $messageType = "danger";
+                        $messageType = 'danger';
                     } else {
+                        $zohoErrors = [];
 
-                        $sql = "
-                            DELETE FROM products
-                            WHERE id = :id
-                        ";
+                        $zohoItemIds = [];
 
-                        $stmt = $db->prepare($sql);
+                        $parentZohoItemId = trim(
+                            $product['zoho_item_id'] ?? ''
+                        );
 
-                        $stmt->execute([
-                            ':id' => $productId
+                        if ($parentZohoItemId !== '') {
+                            $zohoItemIds[] = $parentZohoItemId;
+                        }
+                        $variantStmt = $db->prepare("
+            SELECT id, zoho_item_id
+            FROM product_variants
+            WHERE product_id = :product_id
+        ");
+
+                        $variantStmt->execute([
+                            ':product_id' => $productId
                         ]);
 
-                        if (!empty($product['image'])) {
+                        $productVariants = $variantStmt->fetchAll(PDO::FETCH_ASSOC);
 
-                            $imagePath =
-                                "../" .
-                                ltrim(
-                                    $product['image'],
-                                    "/"
-                                );
+                        foreach ($productVariants as $variant) {
 
-                            if (
-                                file_exists($imagePath) &&
-                                is_file($imagePath)
-                            ) {
+                            $variantZohoId = trim(
+                                $variant['zoho_item_id'] ?? ''
+                            );
 
-                                @unlink($imagePath);
+                            if ($variantZohoId !== '') {
+                                $zohoItemIds[] = $variantZohoId;
+                            }
+                        }
+                        $zohoItemIds = array_unique($zohoItemIds);
+
+                        foreach ($zohoItemIds as $zohoItemId) {
+
+                            $zohoResult = setZohoItemStatus(
+                                $zohoItemId,
+                                'inactive'
+                            );
+
+                            if (empty($zohoResult['success'])) {
+
+                                $zohoErrors[] = $zohoItemId . ': '
+                                    . ($zohoResult['message'] ?? 'Deactivation failed.');
                             }
                         }
 
+                        if (!empty($zohoErrors)) {
 
-                        $message =
-                            "Product deleted successfully and archived on Shopify.";
-
-                        $messageType = "success";
-                    }
-
-                    $zohoItemId = trim($product['zoho_item_id'] ?? '');
-
-                    if ($zohoItemId !== '') {
-                        $zohoResult = setZohoItemStatus(
-                            $zohoItemId,
-                            'inactive'
-                        );
-
-                        if (empty($zohoResult['success'])) {
                             $message = 'Product was not deleted because Zoho deactivation failed: '
-                                . ($zohoResult['message'] ?? 'Unknown error.');
+                                . implode(' | ', $zohoErrors);
 
                             $messageType = 'danger';
+                        } else {
+                            try {
+
+                                $db->beginTransaction();
+                                $stmt = $db->prepare("
+                    DELETE FROM wishlists
+                    WHERE product_id = :product_id
+                    OR variant_id IN (
+                        SELECT id
+                        FROM product_variants
+                        WHERE product_id = :variant_product_id
+                    )
+                ");
+
+                                $stmt->execute([
+                                    ':product_id' => $productId,
+                                    ':variant_product_id' => $productId
+                                ]);
+                                $stmt = $db->prepare("
+                    DELETE FROM product_variant_images
+                    WHERE variant_id IN (
+                        SELECT id
+                        FROM product_variants
+                        WHERE product_id = :product_id
+                    )
+                ");
+
+                                $stmt->execute([
+                                    ':product_id' => $productId
+                                ]);
+                                $stmt = $db->prepare("
+                    DELETE FROM product_images
+                    WHERE product_id = :product_id
+                ");
+
+                                $stmt->execute([
+                                    ':product_id' => $productId
+                                ]);
+                                $stmt = $db->prepare("
+                    DELETE FROM product_reviews
+                    WHERE product_id = :product_id
+                ");
+
+                                $stmt->execute([
+                                    ':product_id' => $productId
+                                ]);
+                                $stmt = $db->prepare("
+                    DELETE FROM product_variants
+                    WHERE product_id = :product_id
+                ");
+
+                                $stmt->execute([
+                                    ':product_id' => $productId
+                                ]);
+                                $stmt = $db->prepare("
+                    DELETE FROM products
+                    WHERE id = :product_id
+                ");
+
+                                $stmt->execute([
+                                    ':product_id' => $productId
+                                ]);
+
+                                if ($stmt->rowCount() !== 1) {
+                                    throw new Exception('Product was not found during local deletion.');
+                                }
+
+                                $db->commit();
+                                if (!empty($product['image'])) {
+
+                                    $imagePath = "../" . ltrim(
+                                        $product['image'],
+                                        "/"
+                                    );
+
+                                    if (
+                                        file_exists($imagePath) &&
+                                        is_file($imagePath)
+                                    ) {
+                                        @unlink($imagePath);
+                                    }
+                                }
+
+                                $message = 'Product and its variants deleted successfully from local database, Shopify and Zoho.';
+
+                                $messageType = 'success';
+                            } catch (Throwable $e) {
+
+                                if ($db->inTransaction()) {
+                                    $db->rollBack();
+                                }
+
+                                $message = 'Local product deletion failed: '
+                                    . $e->getMessage();
+
+                                $messageType = 'danger';
+                            }
                         }
                     }
                 } else {
@@ -587,6 +706,38 @@ $stmt->execute();
 
 $products = $stmt->fetchAll(PDO::FETCH_ASSOC);
 
+$variantStocksByProduct = [];
+
+if (!empty($products)) {
+
+    $productIds = array_column($products, 'id');
+
+    $placeholders = implode(
+        ',',
+        array_fill(0, count($productIds), '?')
+    );
+
+    $variantStockStmt = $db->prepare("
+        SELECT
+            product_id,
+            variant_title,
+            sku,
+            stock
+        FROM product_variants
+        WHERE product_id IN ($placeholders)
+        ORDER BY id ASC
+    ");
+
+    $variantStockStmt->execute($productIds);
+
+    $allVariantStocks = $variantStockStmt->fetchAll(PDO::FETCH_ASSOC);
+
+    foreach ($allVariantStocks as $variant) {
+
+        $variantStocksByProduct[$variant['product_id']][] = $variant;
+    }
+}
+
 
 function productStatusBadge($status)
 {
@@ -767,6 +918,73 @@ function stockBadge($stock)
                 margin-left: 0;
             }
 
+        }
+
+        .stock-details-dropdown {
+            position: relative;
+            display: inline-block;
+        }
+
+        .stock-details-btn {
+            border: 1px solid #dbe2ea;
+            background: #fff;
+            color: #475569;
+            border-radius: 6px;
+            padding: 4px 7px;
+            margin-left: 4px;
+            font-size: 12px;
+            vertical-align: middle;
+        }
+
+        .stock-details-btn:hover {
+            background: #f1f5f9;
+            border-color: #94a3b8;
+        }
+
+        .stock-details-menu {
+            min-width: 230px;
+            padding: 12px;
+            border: 1px solid #e5e7eb;
+            border-radius: 9px;
+            box-shadow: 0 8px 25px rgba(0, 0, 0, 0.12);
+        }
+
+        .stock-details-title {
+            font-size: 13px;
+            font-weight: 700;
+            color: #374151;
+            margin-bottom: 10px;
+        }
+
+        .stock-variant-row {
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            gap: 15px;
+            padding: 7px 0;
+            border-bottom: 1px solid #f1f5f9;
+            font-size: 12px;
+        }
+
+        .stock-variant-name {
+            color: #475569;
+            max-width: 155px;
+            overflow-wrap: anywhere;
+        }
+
+        .stock-variant-quantity {
+            font-weight: 600;
+            color: #111827;
+        }
+
+        .stock-total-row {
+            display: flex;
+            justify-content: space-between;
+            padding-top: 10px;
+            margin-top: 5px;
+            font-size: 13px;
+            font-weight: 700;
+            color: #111827;
         }
     </style>
 
@@ -1043,11 +1261,33 @@ function stockBadge($stock)
                     <h5 class="mb-0">
                         Products
                     </h5>
-                    <form method="POST" action="products.php" style="margin-bottom: 15px;">
-                        <button type="submit" name="test_zoho_webhook" value="1">
-                            Test Zoho Webhook Sync
-                        </button>
-                    </form>
+                    <div class="d-flex gap-2 flex-wrap" style="margin-bottom: 15px;">
+
+                        <form method="POST" action="products.php">
+                            <button
+                                type="submit"
+                                name="test_zoho_webhook"
+                                value="1"
+                                class="btn btn-outline-success">
+
+                                Zoho Webhook Sync
+
+                            </button>
+                        </form>
+
+                        <form method="POST" action="products.php">
+                            <button
+                                type="submit"
+                                name="test_shopify_webhook"
+                                value="1"
+                                class="btn btn-outline-primary">
+
+                                Shopify Webhook Sync
+
+                            </button>
+                        </form>
+
+                    </div>
 
                     <span class="text-muted">
                         Showing <?php echo count($products); ?>
@@ -1275,10 +1515,91 @@ function stockBadge($stock)
                                         <td>
 
                                             <?php
-                                            echo stockBadge(
-                                                $product['stock']
-                                            );
+
+                                            $productId = (int) $product['id'];
+
+                                            $variantStocks = $variantStocksByProduct[$productId] ?? [];
+
+                                            echo stockBadge($product['stock']);
+
                                             ?>
+
+                                            <?php if (!empty($variantStocks)): ?>
+
+                                                <div class="dropdown stock-details-dropdown">
+
+                                                    <button
+                                                        type="button"
+                                                        class="stock-details-btn dropdown-toggle"
+                                                        data-bs-toggle="dropdown"
+                                                        data-bs-auto-close="true"
+                                                        aria-expanded="false"
+                                                        title="View variant-wise stock">
+
+                                                        <i class="bi bi-list-ul"></i>
+
+                                                    </button>
+
+                                                    <div class="dropdown-menu stock-details-menu">
+
+                                                        <div class="stock-details-title">
+                                                            <i class="bi bi-box-seam me-1"></i>
+                                                            Variant Stock Details
+                                                        </div>
+
+                                                        <?php
+
+                                                        $variantTotal = 0;
+
+                                                        foreach ($variantStocks as $variant):
+
+                                                            $variantStock = (int) $variant['stock'];
+
+                                                            $variantTotal += $variantStock;
+
+                                                            $variantName = trim($variant['variant_title'] ?? '');
+
+                                                            if ($variantName === '') {
+                                                                $variantName = !empty($variant['sku'])
+                                                                    ? $variant['sku']
+                                                                    : 'Variant';
+                                                            }
+
+                                                        ?>
+
+                                                            <div class="stock-variant-row">
+
+                                                                <span class="stock-variant-name">
+
+                                                                    <?php echo htmlspecialchars($variantName); ?>
+
+                                                                </span>
+
+                                                                <span class="stock-variant-quantity">
+
+                                                                    <?php echo $variantStock; ?>
+
+                                                                </span>
+
+                                                            </div>
+
+                                                        <?php endforeach; ?>
+
+                                                        <div class="stock-total-row">
+
+                                                            <span>Total Stock</span>
+
+                                                            <span>
+                                                                <?php echo $variantTotal; ?>
+                                                            </span>
+
+                                                        </div>
+
+                                                    </div>
+
+                                                </div>
+
+                                            <?php endif; ?>
 
                                         </td>
                                         <td>

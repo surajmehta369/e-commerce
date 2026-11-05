@@ -39,14 +39,10 @@ function generateZohoAccessToken()
 
     if ($response === false) {
         $error = curl_error($curl);
-        curl_close($curl);
-
         throw new Exception('Zoho token request failed: ' . $error);
     }
 
     $httpCode = curl_getinfo($curl, CURLINFO_HTTP_CODE);
-    curl_close($curl);
-
     $data = json_decode($response, true);
 
     if (!is_array($data)) {
@@ -124,9 +120,6 @@ function zohoInventoryApi(
     array $query = [],
     $body = null
 ): array {
-
-    // 1. Get Zoho access token.
-
     $method = strtoupper(trim($method));
 
     if (!in_array($method, ['GET', 'POST', 'PUT', 'DELETE'], true)) {
@@ -162,8 +155,6 @@ function zohoInventoryApi(
             ]]
         ];
     }
-
-    // 2. Build API URL.
     $url = rtrim(ZOHO_API_DOMAIN, '/') .
         '/inventory/v1/' .
         ltrim($endpoint, '/');
@@ -171,8 +162,6 @@ function zohoInventoryApi(
     if (!empty($query)) {
         $url .= '?' . http_build_query($query);
     }
-
-    // 3. Prepare request headers.
     $headers = [
         'Authorization: Zoho-oauthtoken ' . $accessToken,
         'Accept: application/json'
@@ -187,8 +176,6 @@ function zohoInventoryApi(
         CURLOPT_SSL_VERIFYPEER => true,
         CURLOPT_SSL_VERIFYHOST => 2
     ];
-
-    // 4. Encode request body when supplied.
     if ($body !== null) {
         $jsonBody = json_encode($body);
 
@@ -209,8 +196,6 @@ function zohoInventoryApi(
         $options[CURLOPT_HTTPHEADER] = $headers;
         $options[CURLOPT_POSTFIELDS] = $jsonBody;
     }
-
-    // 5. Execute request.
     $curl = curl_init($url);
 
     if ($curl === false) {
@@ -233,10 +218,6 @@ function zohoInventoryApi(
         $curl,
         CURLINFO_HTTP_CODE
     );
-
-    curl_close($curl);
-
-    // 6. Handle cURL errors.
     if ($rawResponse === false) {
         return [
             'http_code' => $httpCode,
@@ -247,8 +228,6 @@ function zohoInventoryApi(
             ]]
         ];
     }
-
-    // 7. Decode Zoho response.
     $data = json_decode($rawResponse, true);
 
     if (!is_array($data)) {
@@ -263,14 +242,10 @@ function zohoInventoryApi(
             ]]
         ];
     }
-
-    // 8. Validate HTTP response.
     $httpSuccess = (
         $httpCode >= 200 &&
         $httpCode < 300
     );
-
-    // 9. Validate Zoho API response.
     $zohoSuccess = (
         isset($data['code']) &&
         (int) $data['code'] === 0
@@ -527,8 +502,6 @@ function getZohoItemDetailsById(string $itemId): array
             'item' => null
         ];
     }
-
-    // First, try retrieving it as an individual variant.
     $variantResponse = zohoInventoryApi(
         'GET',
         'itemvariants/' . rawurlencode($itemId),
@@ -549,8 +522,6 @@ function getZohoItemDetailsById(string $itemId): array
             ];
         }
     }
-
-    // If it is not a variant, try retrieving it as a normal item.
     $itemResponse = zohoInventoryApi(
         'GET',
         'items/' . rawurlencode($itemId),
@@ -1056,11 +1027,7 @@ function syncProductToZoho(
             'item' => null
         ];
     }
-
-    // 1. Prefer the already-saved Zoho Item ID.
     $itemId = trim((string) ($zohoItemId ?? ''));
-
-    // 2. If no saved ID exists, search Zoho by SKU.
     if ($itemId === '') {
         $existing = findZohoItemBySKU($sku);
 
@@ -1081,8 +1048,6 @@ function syncProductToZoho(
             );
         }
     }
-
-    // 3. Update the existing Zoho item.
     if ($itemId !== '') {
 
         $result = updateZohoItem($itemId, $product);
@@ -1099,8 +1064,6 @@ function syncProductToZoho(
         }
 
         $stockResult = null;
-
-        // 4. Synchronize stock separately.
         if (isset($product['stock'])) {
 
             $stockResult = adjustZohoItemStock(
@@ -1136,8 +1099,6 @@ function syncProductToZoho(
             ]
         ];
     }
-
-    // 5. Create only when no existing item was found.
     $result = createZohoItem($product);
 
     return [
@@ -1149,9 +1110,6 @@ function syncProductToZoho(
         'response' => $result
     ];
 }
-
-
-
 
 function syncVariantToZoho(int $variantId)
 {
@@ -1167,7 +1125,6 @@ function syncVariantToZoho(int $variantId)
     }
 
     try {
-        // 1. Fetch the local variant and its parent product.
         $stmt = $db->prepare("
                     SELECT
                         v.id AS variant_id,
@@ -1212,8 +1169,6 @@ function syncVariantToZoho(int $variantId)
                 'item' => null
             ];
         }
-
-        // 2. Prepare the Zoho item data.
         $variantName = trim((string) $variant['variant_title']);
 
         if ($variantName === '') {
@@ -1276,8 +1231,6 @@ function syncVariantToZoho(int $variantId)
                 'response' => $result
             ];
         }
-
-        // 4. Get the Zoho item ID.
         $zohoItemId = trim(
             (string) ($result['item']['item_id'] ?? '')
         );
@@ -1292,8 +1245,6 @@ function syncVariantToZoho(int $variantId)
                 'item' => $result['item'] ?? null
             ];
         }
-
-        // 5. Save the Zoho item ID against this exact local variant.
         $updateStmt = $db->prepare("
                     UPDATE product_variants
                     SET
@@ -1547,8 +1498,6 @@ function syncZohoWebhookToDatabase(array $decodedPayload)
     ) === 'active' ? 1 : 0;
 
     $itemType = $detailsResult['type'] ?? '';
-
-    // A variant must have a valid parent group ID.
     $groupId = trim((string)(
         $item['group_id']
         ?? $item['item_master_id']
@@ -1573,10 +1522,6 @@ function syncZohoWebhookToDatabase(array $decodedPayload)
 
     try {
         $db->beginTransaction();
-
-        /*
-         * STEP 1: Check variants by Zoho item ID first.
-         */
         $variant = false;
 
         $variantStmt = $db->prepare("
@@ -1592,10 +1537,6 @@ function syncZohoWebhookToDatabase(array $decodedPayload)
         ]);
 
         $variant = $variantStmt->fetch(PDO::FETCH_ASSOC);
-
-        /*
-         * STEP 2: If not found by Zoho ID, check SKU.
-         */
         if (!$variant) {
             $variantStmt = $db->prepare("
                 SELECT id, product_id, sku, zoho_item_id
@@ -1611,10 +1552,6 @@ function syncZohoWebhookToDatabase(array $decodedPayload)
 
             $variant = $variantStmt->fetch(PDO::FETCH_ASSOC);
         }
-
-        /*
-         * STEP 3: Existing variant update.
-         */
         if ($variant) {
 
             if (
@@ -1672,10 +1609,7 @@ function syncZohoWebhookToDatabase(array $decodedPayload)
             $action = 'variant_updated';
             $variantId = (int)$variant['id'];
         }
-
-        /*
-         * STEP 4: New variant in an existing local group.
-         */ elseif ($itemType === 'variant' || $itemType === 'group_variant') {
+ elseif ($itemType === 'variant' || $itemType === 'group_variant') {
 
             $parentStmt = $db->prepare("
                 SELECT id, zoho_group_id
@@ -1698,8 +1632,6 @@ function syncZohoWebhookToDatabase(array $decodedPayload)
             }
 
             $productId = (int)$parent['id'];
-
-            // Check SKU again before inserting.
             $skuCheck = $db->prepare("
                 SELECT id
                 FROM product_variants
@@ -1756,11 +1688,8 @@ function syncZohoWebhookToDatabase(array $decodedPayload)
             $action = 'variant_created';
         }
 
-        /*
-         * STEP 5: Standalone item.
-         */ else {
+     else {
 
-            // First look for the standalone item by Zoho ID.
             $productStmt = $db->prepare("
                 SELECT id, sku, slug, zoho_item_id
                 FROM products
@@ -1774,8 +1703,6 @@ function syncZohoWebhookToDatabase(array $decodedPayload)
             ]);
 
             $product = $productStmt->fetch(PDO::FETCH_ASSOC);
-
-            // Then look for its SKU.
             if (!$product) {
                 $productStmt = $db->prepare("
                     SELECT id, sku, slug, zoho_item_id

@@ -319,7 +319,7 @@ $inactiveBrands = $totalBrands - $activeBrands;
 <body>
 
 <aside class="sidebar">
-    <h4>Admin Panel</h4>
+    <h4>E-Commerce Admin</h4>
 
     <a href="index.php">Dashboard</a>
     <a href="vendors.php">Vendors</a>

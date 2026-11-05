@@ -554,20 +554,6 @@ GRAPHQL;
             ];
         }
     }
-
-    // foreach ($locations as $location) {
-
-    //     if (!empty($location['isActive'])) {
-    //         return [
-    //             'success' => true,
-    //             'message' => 'Shopify active location found.',
-    //             'location_id' => $location['id'],
-    //             'location_name' => $location['name'],
-    //             'data' => $location
-    //         ];
-    //     }
-    // }
-
     return [
         'success' => false,
         'message' => 'Shopify locations were returned, but no active inventory location was found.',
@@ -1299,6 +1285,7 @@ GRAPHQL;
     ];
 }
 
+
 function deleteShopifyProduct($shopifyProductId)
 {
     $shopifyProductId = shopifyGid(
@@ -1313,13 +1300,43 @@ function deleteShopifyProduct($shopifyProductId)
         ];
     }
 
+
+    $checkQuery = <<<'GRAPHQL'
+query CheckProductExists($id: ID!) {
+    product(id: $id) {
+        id
+    }
+}
+GRAPHQL;
+
+    $checkResponse = shopifyGraphQL(
+        $checkQuery,
+        ['id' => $shopifyProductId]
+    );
+
+    if (!empty($checkResponse['errors'])) {
+        return [
+            'success' => false,
+            'message' => 'Could not verify Shopify product existence.',
+            'errors' => $checkResponse['errors']
+        ];
+    }
+
+    $existingProduct =
+        $checkResponse['data']['data']['product'] ?? null;
+    if (!$existingProduct) {
+        return [
+            'success' => true,
+            'message' => 'Product was already deleted from Shopify.',
+            'already_deleted' => true
+        ];
+    }
+
     $query = <<<'GRAPHQL'
 mutation ProductDelete(
     $input: ProductDeleteInput!
 ) {
-    productDelete(
-        input: $input
-    ) {
+    productDelete(input: $input) {
         deletedProductId
         userErrors {
             field
@@ -1344,55 +1361,45 @@ GRAPHQL;
         return [
             'success' => false,
             'message' => 'Shopify product deletion request failed.',
-            'errors' => $response['errors'],
-            'response' => $response
+            'errors' => $response['errors']
         ];
     }
 
-    $shopifyData =
-        $response['data']['data'] ?? [];
-
     $result =
-        $shopifyData['productDelete'] ?? null;
+        $response['data']['data']['productDelete'] ?? null;
 
     if (!$result) {
         return [
             'success' => false,
-            'message' =>
-            'Shopify productDelete response was not returned.',
+            'message' => 'Shopify productDelete response was not returned.',
             'response' => $response
         ];
     }
 
-    $userErrors =
-        $result['userErrors'] ?? [];
-
-    if (!empty($userErrors)) {
+    if (!empty($result['userErrors'])) {
         return [
             'success' => false,
-            'message' =>
-            'Shopify product deletion failed.',
-            'errors' => $userErrors
+            'message' => 'Shopify product deletion failed.',
+            'errors' => $result['userErrors']
         ];
     }
 
     if (empty($result['deletedProductId'])) {
         return [
             'success' => false,
-            'message' =>
-            'Shopify did not return a deleted product ID.',
+            'message' => 'Shopify did not return a deleted product ID.',
             'response' => $response
         ];
     }
 
     return [
         'success' => true,
-        'message' =>
-        'Shopify product deleted successfully.',
-        'deleted_product_id' =>
-        $result['deletedProductId']
+        'message' => 'Shopify product deleted successfully.',
+        'deleted_product_id' => $result['deletedProductId'],
+        'already_deleted' => false
     ];
 }
+
 
 function createUniqueSlug($db, $title, $excludeId = 0)
 {
@@ -1460,8 +1467,6 @@ function syncShopifyProductsToDatabase()
     ];
 
     try {
-
-        // 1. Fetch the latest webhook from hosting.
         $ch = curl_init($shopifyWebhookUrl);
 
         curl_setopt_array($ch, [
@@ -1474,16 +1479,11 @@ function syncShopifyProductsToDatabase()
         $response = curl_exec($ch);
         $httpCode = curl_getinfo($ch, CURLINFO_HTTP_CODE);
         $curlError = curl_error($ch);
-
-        curl_close($ch);
-
         if ($response === false || $httpCode !== 200) {
             throw new Exception(
                 "Could not fetch Shopify webhook. HTTP: {$httpCode}. " . $curlError
             );
         }
-
-        // 2. Decode webhook JSON.
         $decodedWebhook = json_decode($response, true);
 
         if (!is_array($decodedWebhook)) {
@@ -1501,8 +1501,6 @@ function syncShopifyProductsToDatabase()
         if (!is_array($product)) {
             throw new Exception("Shopify product data is missing.");
         }
-
-        // 3. Get Shopify parent product ID.
         $rawProductId = $product['id'] ?? '';
 
         if ($rawProductId === '') {
@@ -1523,7 +1521,6 @@ function syncShopifyProductsToDatabase()
         $shopifyStatus = strtolower($product['status'] ?? 'active');
         $localStatus = ($shopifyStatus === 'active') ? 1 : 0;
 
-        // 4. Get product image.
         $image = null;
 
         if (!empty($product['image']['src'])) {
@@ -1537,8 +1534,6 @@ function syncShopifyProductsToDatabase()
         if (!is_array($variants)) {
             $variants = [];
         }
-
-        // 5. Calculate parent product price using its cheapest variant.
         $parentPrice = 0;
         $parentOriginalPrice = null;
         $parentDiscount = 0;
@@ -1572,11 +1567,7 @@ function syncShopifyProductsToDatabase()
                 2
             );
         }
-
-        // 6. Start database transaction.
         $db->beginTransaction();
-
-        // 7. Find existing parent product using Shopify product ID.
         $stmt = $db->prepare("
             SELECT id
             FROM products
@@ -1602,8 +1593,6 @@ function syncShopifyProductsToDatabase()
                 $handle !== '' ? $handle : $title,
                 $localProductId
             );
-
-            // Update existing parent product.
             $stmt = $db->prepare("
                 UPDATE products
                 SET
@@ -1642,8 +1631,6 @@ function syncShopifyProductsToDatabase()
                 $db,
                 $handle !== '' ? $handle : $title
             );
-
-            // Create new parent product.
             $stmt = $db->prepare("
                 INSERT INTO products (
                     shopify_product_id,
@@ -1691,8 +1678,6 @@ function syncShopifyProductsToDatabase()
 
             $localProductId = (int) $db->lastInsertId();
         }
-
-        // 8. Synchronize Shopify variants into product_variants.
         $totalLocalVariantStock = 0;
 
         foreach ($variants as $variant) {
@@ -1734,8 +1719,6 @@ function syncShopifyProductsToDatabase()
                 ) ? (float) $comparePrice : null;
 
                 $variantStock = (int) ($variant['inventory_quantity'] ?? 0);
-
-                // Build variant attributes from Shopify options.
                 $attributes = [];
 
                 $options = $product['options'] ?? [];
@@ -1760,8 +1743,6 @@ function syncShopifyProductsToDatabase()
                 $attributesJson = !empty($attributes)
                     ? json_encode($attributes)
                     : null;
-
-                // 9. First match using Shopify variant ID.
                 $stmt = $db->prepare("
                     SELECT id
                     FROM product_variants
@@ -1780,8 +1761,6 @@ function syncShopifyProductsToDatabase()
                 ]);
 
                 $existingVariant = $stmt->fetch(PDO::FETCH_ASSOC);
-
-                // 10. If Shopify ID did not match, try SKU.
                 if (!$existingVariant && $sku !== null) {
 
                     $stmt = $db->prepare("
@@ -1803,8 +1782,6 @@ function syncShopifyProductsToDatabase()
                 $localVariantId = $existingVariant
                     ? (int) $existingVariant['id']
                     : 0;
-
-                // 11. Protect the unique SKU constraint.
                 if ($sku !== null) {
 
                     $stmt = $db->prepare("
@@ -1828,8 +1805,6 @@ function syncShopifyProductsToDatabase()
                         );
                     }
                 }
-
-                // 12. Update existing local variant.
                 if ($existingVariant) {
 
                     $stmt = $db->prepare("
@@ -1864,7 +1839,6 @@ function syncShopifyProductsToDatabase()
                     $result['updated_variants']++;
                 } else {
 
-                    // 13. Create a new local variant.
                     $stmt = $db->prepare("
                         INSERT INTO product_variants (
                             product_id,
@@ -1919,8 +1893,6 @@ function syncShopifyProductsToDatabase()
                 ];
             }
         }
-
-        // 14. Update parent stock with successfully synchronized variants.
         $stmt = $db->prepare("
             UPDATE products
             SET
@@ -1933,13 +1905,7 @@ function syncShopifyProductsToDatabase()
             ':stock' => $totalLocalVariantStock,
             ':id' => $localProductId
         ]);
-
-        // 15. Commit transaction.
-
-        // 15. Commit local database transaction.
         $db->commit();
-
-        // 16. Synchronize parent product with Zoho.
         $result['zoho_sync'] = [
             'parent' => null,
             'variants' => []
