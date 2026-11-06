@@ -1,6 +1,6 @@
 <?php
 
-require_once "auth.php";
+require_once __DIR__ . "/includes/layout.php";
 require_once "../connection/dbconnect.php";
 require_once "../shopify/functions.php";
 require_once "../zoho/zoho_functions.php";
@@ -8,11 +8,22 @@ require_once "../zoho/zoho_functions.php";
 $database = new Database();
 $db = $database->connect();
 
-// syncShopifyProductsToDatabase();
+// Runs on a full page load or when ?sync=1 is used ("Sync Shopify" button).
+// It no longer runs on every AJAX page change, which keeps navigation fast.
+if (!isAjaxRequest() || isset($_GET['sync'])) {
+    syncShopifyProductsToDatabase();
+}
 // syncZohoWebhookItemToShopify();
 $message = "";
 $messageType = "success";
 
+// CSRF protection for every POST on this page
+if ($_SERVER['REQUEST_METHOD'] === 'POST' && !adminVerifyCsrf()) {
+    http_response_code(419);
+    $_POST = [];
+    $message = 'Security token expired. Please try again.';
+    $messageType = 'danger';
+}
 
 if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['test_zoho_webhook'])) {
 
@@ -26,32 +37,12 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['test_zoho_webhook']))
         $messageType = 'error';
     }
 }
-if (
-    $_SERVER['REQUEST_METHOD'] === 'POST' &&
-    isset($_POST['test_shopify_webhook'])
-) {
 
-    $syncResult = syncShopifyProductsToDatabase();
-
-    if (!empty($syncResult['success'])) {
-
-        $message = $syncResult['message']
-            ?? 'Shopify webhook sync completed successfully.';
-
-        $messageType = 'success';
-    } else {
-
-        $message = $syncResult['message']
-            ?? 'Shopify webhook sync failed.';
-
-        $messageType = 'danger';
-    }
-}
 
 if (
     $_SERVER['REQUEST_METHOD'] === 'POST' &&
-    !isset($_POST['test_zoho_webhook']) &&
-    !isset($_POST['test_shopify_webhook'])
+    !empty($_POST) &&
+    !isset($_POST['test_zoho_webhook'])
 ) {
     $action = $_POST['action'] ?? '';
     $productId = (int) ($_POST['product_id'] ?? 0);
@@ -775,68 +766,10 @@ function stockBadge($stock)
             </span>';
 }
 
+
+adminHeader('Products', 'products');
 ?>
-
-<!DOCTYPE html>
-<html lang="en">
-
-<head>
-
-    <meta charset="UTF-8">
-
-    <meta
-        name="viewport"
-        content="width=device-width, initial-scale=1.0">
-
-    <title>Product Management - Admin</title>
-
-    <link
-        href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.3/dist/css/bootstrap.min.css"
-        rel="stylesheet">
-
-    <style>
-        body {
-            background: #f5f7fb;
-            font-family: Arial, sans-serif;
-        }
-
-        .sidebar {
-            min-height: 100vh;
-            background: #111827;
-            color: #fff;
-            position: fixed;
-            width: 240px;
-            left: 0;
-            top: 0;
-            bottom: 0;
-            padding: 20px 15px;
-        }
-
-        .sidebar h4 {
-            font-weight: 700;
-            margin-bottom: 30px;
-        }
-
-        .sidebar a {
-            display: block;
-            color: #d1d5db;
-            text-decoration: none;
-            padding: 11px 14px;
-            border-radius: 8px;
-            margin-bottom: 5px;
-        }
-
-        .sidebar a:hover,
-        .sidebar a.active {
-            background: #1f2937;
-            color: #fff;
-        }
-
-        .main {
-            margin-left: 240px;
-            padding: 30px;
-        }
-
+<style>
         .page-header {
             display: flex;
             justify-content: space-between;
@@ -904,20 +837,6 @@ function stockBadge($stock)
             object-fit: cover;
             border-radius: 10px;
             border: 1px solid #e5e7eb;
-        }
-
-        @media (max-width: 992px) {
-
-            .sidebar {
-                position: static;
-                width: 100%;
-                min-height: auto;
-            }
-
-            .main {
-                margin-left: 0;
-            }
-
         }
 
         .stock-details-dropdown {
@@ -988,54 +907,6 @@ function stockBadge($stock)
         }
     </style>
 
-</head>
-
-<body>
-    <div class="sidebar">
-
-        <h4>E-Commerce Admin</h4>
-
-        <a href="index.php">
-            Dashboard
-        </a>
-
-        <a href="vendors.php">
-            Vendors
-        </a>
-
-        <a href="products.php" class="active">
-            Products
-        </a>
-
-        <a href="customers.php">
-            Customers
-        </a>
-
-        <a href="categories.php">
-            Categories
-        </a>
-
-        <a href="brands.php">
-            Brands
-        </a>
-
-        <a href="orders.php">
-            Orders
-        </a>
-        <a href="reviews.php">
-            Product Reviews
-        </a>
-
-        <a href="profile.php">
-            Admin Profile
-        </a>
-
-        <a href="../outh/logout.php">
-            Logout
-        </a>
-
-    </div>
-    <div class="main">
 
         <div class="page-header">
 
@@ -1048,10 +919,16 @@ function stockBadge($stock)
                 </p>
 
             </div>
+            <div class="d-flex gap-2">
+            <a href="products.php?sync=1" class="btn btn-outline-secondary">
+                <i class="bi bi-arrow-repeat me-1"></i>
+                Sync Shopify
+            </a>
             <a href="product-add.php" class="btn btn-primary">
                 <i class="bi bi-plus-circle me-1"></i>
                 Add Product
             </a>
+            </div>
 
         </div>
         <?php if ($message !== ""): ?>
@@ -1261,33 +1138,11 @@ function stockBadge($stock)
                     <h5 class="mb-0">
                         Products
                     </h5>
-                    <div class="d-flex gap-2 flex-wrap" style="margin-bottom: 15px;">
-
-                        <form method="POST" action="products.php">
-                            <button
-                                type="submit"
-                                name="test_zoho_webhook"
-                                value="1"
-                                class="btn btn-outline-success">
-
-                                Zoho Webhook Sync
-
-                            </button>
-                        </form>
-
-                        <form method="POST" action="products.php">
-                            <button
-                                type="submit"
-                                name="test_shopify_webhook"
-                                value="1"
-                                class="btn btn-outline-primary">
-
-                                Shopify Webhook Sync
-
-                            </button>
-                        </form>
-
-                    </div>
+                    <form method="POST" action="products.php" style="margin-bottom: 15px;">
+                        <button type="submit" name="test_zoho_webhook" value="1">
+                            Test Zoho Webhook Sync
+                        </button>
+                    </form>
 
                     <span class="text-muted">
                         Showing <?php echo count($products); ?>
@@ -1469,7 +1324,7 @@ function stockBadge($stock)
                                         <td>
 
                                             <strong>
-                                                $<?php
+                                                ₹<?php
                                                     echo number_format(
                                                         (float) $product['price'],
                                                         2
@@ -1489,7 +1344,7 @@ function stockBadge($stock)
                                                 <div class="small-text">
 
                                                     <del>
-                                                        $<?php
+                                                        ₹<?php
                                                             echo number_format(
                                                                 (float) $product['original_price'],
                                                                 2
@@ -1884,7 +1739,7 @@ function stockBadge($stock)
                                                             <strong>Price</strong>
 
                                                             <div>
-                                                                $<?php
+                                                                ₹<?php
                                                                     echo number_format(
                                                                         (float) $product['price'],
                                                                         2
@@ -1900,7 +1755,7 @@ function stockBadge($stock)
                                                             <strong>Original Price</strong>
 
                                                             <div>
-                                                                $<?php
+                                                                ₹<?php
                                                                     echo number_format(
                                                                         (float) $product['original_price'],
                                                                         2
@@ -2066,11 +1921,4 @@ function stockBadge($stock)
             </div>
         </div>
 
-    </div>
-    <script
-        src="https://cdn.jsdelivr.net/npm/bootstrap@5.3.3/dist/js/bootstrap.bundle.min.js">
-    </script>
-
-</body>
-
-</html>
+<?php adminFooter();
