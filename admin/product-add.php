@@ -342,8 +342,6 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
 
             $stockValue = (int) $stock;
         }
-
-        // TEMPORARY JSON TEST: Do not save or sync anything.
         if ($testStockJson) {
 
             if (!empty($variantsToSave)) {
@@ -829,8 +827,6 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
                 'purchase_rate' => $originalPriceValue,
                 'stock' => $stockValue
             ]);
-
-            // Debug Zoho parent sync response in browser console.
             echo '<script>';
             echo 'console.group("ZOHO PARENT SYNC DEBUG");';
             echo 'console.log("SKU:", ' . json_encode($sku) . ');';
@@ -839,8 +835,6 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
                 ');';
             echo 'console.groupEnd();';
             echo '</script>';
-
-            // Also save the response in PHP error log.
             error_log(
                 "ZOHO PARENT SYNC DEBUG: " .
                     print_r($zohoResult, true)

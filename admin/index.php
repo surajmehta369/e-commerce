@@ -178,7 +178,7 @@ function orderStatusBadge($status)
 
         .sidebar {
             min-height: 100vh;
-            background: #212529;
+            background: #111827;
         }
 
         .sidebar .brand {
