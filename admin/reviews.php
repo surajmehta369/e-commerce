@@ -1,6 +1,6 @@
-
 <?php
-require_once "auth.php";
+
+require_once __DIR__ . "/includes/layout.php";
 require_once "../connection/dbconnect.php";
 
 $database = new Database();
@@ -53,8 +53,8 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
         if ($stmt->rowCount() > 0) {
             $_SESSION['admin_reviews_message'] =
                 $newStatus === 'hidden'
-                    ? "Review hidden successfully."
-                    : "Review published successfully.";
+                ? "Review hidden successfully."
+                : "Review published successfully.";
         } else {
             $check = $db->prepare(
                 "SELECT status FROM product_reviews WHERE id = ?"
@@ -67,8 +67,8 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
             } else {
                 $_SESSION['admin_reviews_message'] =
                     $existingStatus === $newStatus
-                        ? "The review already has that status."
-                        : "Unable to update the review.";
+                    ? "The review already has that status."
+                    : "Unable to update the review.";
             }
         }
     } catch (Throwable $e) {
@@ -175,313 +175,161 @@ $summaryStmt = $db->query("
 ");
 
 $summary = $summaryStmt->fetch(PDO::FETCH_ASSOC);
+
+adminHeader('Product Reviews', 'reviews');
 ?>
 
+<style>
+    .page-title { font-weight: 700; font-size: 28px; }
 
-<!DOCTYPE html>
-<html lang="en">
-<head>
-    <meta charset="UTF-8">
-    <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Product Reviews | Admin Dashboard</title>
+    .stat-card,
+    .table-card {
+        background: #fff;
+        border: 0;
+        border-radius: 14px;
+        box-shadow: 0 3px 15px rgba(15, 23, 42, .05);
+    }
 
-    <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.3/dist/css/bootstrap.min.css"
-          rel="stylesheet">
+    .stat-card { padding: 22px; height: 100%; }
+    .stat-label { color: #6b7280; font-size: 14px; margin-bottom: 10px; }
+    .stat-number { font-size: 27px; font-weight: 700; }
+    .table-card { padding: 22px; }
 
-    <style>
-        body {
-            background: #f5f7fb;
-            font-family: Arial, sans-serif;
-            color: #1f2937;
-        }
+    .table th {
+        color: #64748b;
+        font-size: 12px;
+        text-transform: uppercase;
+        white-space: nowrap;
+        background: #f8fafc;
+    }
 
-        .sidebar {
-            width: 240px;
-            min-height: 100vh;
-            background: #111827;
-            position: fixed;
-            top: 0;
-            left: 0;
-            padding: 25px 16px;
-            color: white;
-            z-index: 1000;
-        }
+    .table td { vertical-align: middle; font-size: 13px; }
 
-        .sidebar h4 {
-            font-size: 21px;
-            margin: 0 0 30px 10px;
-            font-weight: 700;
-        }
+    .review-text {
+        min-width: 220px;
+        max-width: 350px;
+        white-space: pre-wrap;
+        overflow-wrap: anywhere;
+        line-height: 1.5;
+    }
 
-        .sidebar a {
-            display: block;
-            color: #cbd5e1;
-            text-decoration: none;
-            padding: 12px 14px;
-            border-radius: 8px;
-            margin-bottom: 5px;
-            font-size: 14px;
-        }
+    .review-title { font-weight: 600; margin-bottom: 5px; }
+    .review-stars { color: #f59e0b; white-space: nowrap; font-size: 16px; }
 
-        .sidebar a:hover,
-        .sidebar a.active {
-            background: #263449;
-            color: #fff;
-        }
+    .verified {
+        display: inline-block;
+        color: #166534;
+        font-size: 11px;
+        font-weight: 600;
+        margin-top: 5px;
+    }
 
-        .main-content {
-            margin-left: 240px;
-            padding: 30px;
-        }
+    .small-muted { color: #6b7280; font-size: 12px; }
+    .badge { font-weight: 600; padding: 7px 9px; }
 
-        .page-title {
-            font-weight: 700;
-            font-size: 28px;
-        }
+    .pagination-area {
+        display: flex;
+        justify-content: space-between;
+        align-items: center;
+        flex-wrap: wrap;
+        gap: 15px;
+        margin-top: 22px;
+        padding-top: 18px;
+        border-top: 1px solid #e5e7eb;
+    }
 
-        .stat-card,
-        .table-card {
-            background: #fff;
-            border: 0;
-            border-radius: 14px;
-            box-shadow: 0 3px 15px rgba(15, 23, 42, .05);
-        }
+    .pagination .page-link { color: #374151; border-radius: 6px; margin: 0 2px; }
 
-        .stat-card {
-            padding: 22px;
-            height: 100%;
-        }
+    .pagination .page-item.active .page-link {
+        background: #2563eb;
+        border-color: #2563eb;
+        color: #fff;
+    }
 
-        .stat-label {
-            color: #6b7280;
-            font-size: 14px;
-            margin-bottom: 10px;
-        }
+    .pagination .page-item.disabled .page-link { color: #9ca3af; }
 
-        .stat-number {
-            font-size: 27px;
-            font-weight: 700;
-        }
+    .empty-state {
+        text-align: center;
+        color: #6b7280;
+        padding: 45px 15px !important;
+    }
+</style>
 
-        .table-card {
-            padding: 22px;
-        }
+<div class="d-flex flex-wrap justify-content-between align-items-center gap-3 mb-4">
+    <div>
+        <h1 class="page-title mb-1">Product Reviews</h1>
+        <p class="text-secondary mb-0">Manage customer ratings and product feedback.</p>
+    </div>
 
-        .table th {
-            color: #64748b;
-            font-size: 12px;
-            text-transform: uppercase;
-            white-space: nowrap;
-            background: #f8fafc;
-        }
+    <div class="text-secondary small">
+        Total reviews: <strong><?= (int)$summary['total'] ?></strong>
+    </div>
+</div>
 
-        .table td {
-            vertical-align: middle;
-            font-size: 13px;
-        }
+<?php if ($message !== ''): ?>
+    <div class="alert alert-info alert-dismissible fade show" role="alert">
+        <?= escapeHtml($message) ?>
+        <button type="button" class="btn-close" data-bs-dismiss="alert" aria-label="Close"></button>
+    </div>
+<?php endif; ?>
 
-        .review-text {
-            min-width: 220px;
-            max-width: 350px;
-            white-space: pre-wrap;
-            overflow-wrap: anywhere;
-            line-height: 1.5;
-        }
+<div class="row g-3 mb-4">
 
-        .review-title {
-            font-weight: 600;
-            margin-bottom: 5px;
-        }
-
-        .review-stars {
-            color: #f59e0b;
-            white-space: nowrap;
-            font-size: 16px;
-        }
-
-        .verified {
-            display: inline-block;
-            color: #166534;
-            font-size: 11px;
-            font-weight: 600;
-            margin-top: 5px;
-        }
-
-        .small-muted {
-            color: #6b7280;
-            font-size: 12px;
-        }
-
-        .badge {
-            font-weight: 600;
-            padding: 7px 9px;
-        }
-
-        .pagination-area {
-            display: flex;
-            justify-content: space-between;
-            align-items: center;
-            flex-wrap: wrap;
-            gap: 15px;
-            margin-top: 22px;
-            padding-top: 18px;
-            border-top: 1px solid #e5e7eb;
-        }
-
-        .pagination .page-link {
-            color: #374151;
-            border-radius: 6px;
-            margin: 0 2px;
-        }
-
-        .pagination .page-item.active .page-link {
-            background: #2563eb;
-            border-color: #2563eb;
-            color: #fff;
-        }
-
-        .pagination .page-item.disabled .page-link {
-            color: #9ca3af;
-        }
-
-        .empty-state {
-            text-align: center;
-            color: #6b7280;
-            padding: 45px 15px !important;
-        }
-
-        @media (max-width: 900px) {
-            .sidebar {
-                position: static;
-                width: 100%;
-                min-height: auto;
-            }
-
-            .main-content {
-                margin-left: 0;
-                padding: 18px;
-            }
-        }
-    </style>
-</head>
-
-<body>
-
-<aside class="sidebar">
-    <h4>Admin Panel</h4>
-
-    <a href="index.php">Dashboard</a>
-    <a href="vendors.php">Vendors</a>
-    <a href="products.php">Products</a>
-    <a href="customers.php">Customers</a>
-    <a href="categories.php">Categories</a>
-    <a href="brands.php">Brands</a>
-    <a href="orders.php">Orders</a>
-    <a href="reviews.php" class="active">Product Reviews</a>
-    <a href="profile.php">Admin Profile</a>
-    <a href="../outh/logout.php">Logout</a>
-</aside>
-
-<main class="main-content">
-
-    <div class="d-flex flex-wrap justify-content-between align-items-center gap-3 mb-4">
-        <div>
-            <h1 class="page-title mb-1">Product Reviews</h1>
-            <p class="text-secondary mb-0">
-                Manage customer ratings and product feedback.
-            </p>
-        </div>
-
-        <div class="text-secondary small">
-            Total reviews:
-            <strong><?= (int)$summary['total'] ?></strong>
+    <div class="col-6 col-xl-4">
+        <div class="stat-card">
+            <div class="stat-label">Total Reviews</div>
+            <div class="stat-number"><?= (int)$summary['total'] ?></div>
         </div>
     </div>
 
-    <?php if ($message !== ''): ?>
-        <div class="alert alert-info alert-dismissible fade show" role="alert">
-            <?= escapeHtml($message) ?>
-            <button type="button" class="btn-close" data-bs-dismiss="alert"
-                    aria-label="Close"></button>
+    <div class="col-6 col-xl-4">
+        <div class="stat-card">
+            <div class="stat-label">Published Reviews</div>
+            <div class="stat-number text-success"><?= (int)$summary['published'] ?></div>
         </div>
-    <?php endif; ?>
-
-    <div class="row g-3 mb-4">
-
-        <div class="col-6 col-xl-4">
-            <div class="stat-card">
-                <div class="stat-label">Total Reviews</div>
-                <div class="stat-number"><?= (int)$summary['total'] ?></div>
-            </div>
-        </div>
-
-        <div class="col-6 col-xl-4">
-            <div class="stat-card">
-                <div class="stat-label">Published Reviews</div>
-                <div class="stat-number text-success">
-                    <?= (int)$summary['published'] ?>
-                </div>
-            </div>
-        </div>
-
-        <div class="col-6 col-xl-4">
-            <div class="stat-card">
-                <div class="stat-label">Hidden Reviews</div>
-                <div class="stat-number text-danger">
-                    <?= (int)$summary['hidden'] ?>
-                </div>
-            </div>
-        </div>
-
     </div>
 
-    <div class="table-card">
+    <div class="col-6 col-xl-4">
+        <div class="stat-card">
+            <div class="stat-label">Hidden Reviews</div>
+            <div class="stat-number text-danger"><?= (int)$summary['hidden'] ?></div>
+        </div>
+    </div>
 
-        <form method="GET" action="reviews.php" class="row g-2 mb-4">
+</div>
 
-            <div class="col-12 col-lg-6">
-                <input
-                    type="search"
-                    name="search"
-                    class="form-control"
-                    placeholder="Search product, customer, or email..."
-                    value="<?= escapeHtml($search) ?>"
-                >
-            </div>
+<div class="table-card">
 
-            <div class="col-12 col-md-5 col-lg-3">
-                <select name="status" class="form-select">
-                    <option value="all"
-                        <?= $statusFilter === 'all' ? 'selected' : '' ?>>
-                        All Reviews
-                    </option>
+    <form method="GET" action="reviews.php" class="row g-2 mb-4">
 
-                    <option value="published"
-                        <?= $statusFilter === 'published' ? 'selected' : '' ?>>
-                        Published
-                    </option>
+        <div class="col-12 col-lg-6">
+            <input type="search" name="search" class="form-control"
+                placeholder="Search product, customer, or email..."
+                value="<?= escapeHtml($search) ?>">
+        </div>
 
-                    <option value="hidden"
-                        <?= $statusFilter === 'hidden' ? 'selected' : '' ?>>
-                        Hidden
-                    </option>
-                </select>
-            </div>
+        <div class="col-12 col-md-5 col-lg-3">
+            <select name="status" class="form-select">
+                <option value="all" <?= $statusFilter === 'all' ? 'selected' : '' ?>>All Reviews</option>
+                <option value="published" <?= $statusFilter === 'published' ? 'selected' : '' ?>>Published</option>
+                <option value="hidden" <?= $statusFilter === 'hidden' ? 'selected' : '' ?>>Hidden</option>
+            </select>
+        </div>
 
-            <div class="col-6 col-md-3 col-lg-1 d-grid">
-                <button type="submit" class="btn btn-dark">Search</button>
-            </div>
+        <div class="col-6 col-md-3 col-lg-1 d-grid">
+            <button type="submit" class="btn btn-dark">Search</button>
+        </div>
 
-            <div class="col-6 col-md-4 col-lg-2 d-grid">
-                <a href="reviews.php" class="btn btn-outline-secondary">Reset Filters</a>
-            </div>
+        <div class="col-6 col-md-4 col-lg-2 d-grid">
+            <a href="reviews.php" class="btn btn-outline-secondary">Reset Filters</a>
+        </div>
 
-        </form>
+    </form>
 
-        <div class="table-responsive">
-            <table class="table table-hover align-middle">
+    <div class="table-responsive">
+        <table class="table table-hover align-middle">
 
-                <thead>
+            <thead>
                 <tr>
                     <th>Product</th>
                     <th>Customer</th>
@@ -491,9 +339,9 @@ $summary = $summaryStmt->fetch(PDO::FETCH_ASSOC);
                     <th>Status</th>
                     <th>Action</th>
                 </tr>
-                </thead>
+            </thead>
 
-                <tbody>
+            <tbody>
 
                 <?php if (!empty($reviews)): ?>
 
@@ -501,21 +349,13 @@ $summary = $summaryStmt->fetch(PDO::FETCH_ASSOC);
                         <tr>
 
                             <td>
-                                <div class="fw-semibold">
-                                    <?= escapeHtml($review['product_title']) ?>
-                                </div>
-                                <div class="small-muted">
-                                    ID: <?= (int)$review['product_id'] ?>
-                                </div>
+                                <div class="fw-semibold"><?= escapeHtml($review['product_title']) ?></div>
+                                <div class="small-muted">ID: <?= (int)$review['product_id'] ?></div>
                             </td>
 
                             <td>
-                                <div class="fw-semibold">
-                                    <?= escapeHtml($review['customer_name']) ?>
-                                </div>
-                                <div class="small-muted">
-                                    <?= escapeHtml($review['customer_email']) ?>
-                                </div>
+                                <div class="fw-semibold"><?= escapeHtml($review['customer_name']) ?></div>
+                                <div class="small-muted"><?= escapeHtml($review['customer_email']) ?></div>
                             </td>
 
                             <td>
@@ -523,21 +363,15 @@ $summary = $summaryStmt->fetch(PDO::FETCH_ASSOC);
                                     <?= str_repeat('★', (int)$review['rating']) ?>
                                     <?= str_repeat('☆', 5 - (int)$review['rating']) ?>
                                 </div>
-                                <div class="small-muted">
-                                    <?= (int)$review['rating'] ?>/5
-                                </div>
+                                <div class="small-muted"><?= (int)$review['rating'] ?>/5</div>
                             </td>
 
                             <td>
                                 <?php if (!empty($review['review_title'])): ?>
-                                    <div class="review-title">
-                                        <?= escapeHtml($review['review_title']) ?>
-                                    </div>
+                                    <div class="review-title"><?= escapeHtml($review['review_title']) ?></div>
                                 <?php endif; ?>
 
-                                <div class="review-text">
-                                    <?= escapeHtml($review['review_text']) ?>
-                                </div>
+                                <div class="review-text"><?= escapeHtml($review['review_text']) ?></div>
 
                                 <?php if ((int)$review['is_verified_purchase'] === 1): ?>
                                     <div class="verified">✓ Verified purchase</div>
@@ -545,16 +379,9 @@ $summary = $summaryStmt->fetch(PDO::FETCH_ASSOC);
                             </td>
 
                             <td class="text-nowrap">
-                                <?= escapeHtml(date(
-                                    'd M Y',
-                                    strtotime($review['created_at'])
-                                )) ?>
-
+                                <?= escapeHtml(date('d M Y', strtotime($review['created_at']))) ?>
                                 <div class="small-muted">
-                                    <?= escapeHtml(date(
-                                        'h:i A',
-                                        strtotime($review['created_at'])
-                                    )) ?>
+                                    <?= escapeHtml(date('h:i A', strtotime($review['created_at']))) ?>
                                 </div>
                             </td>
 
@@ -567,48 +394,30 @@ $summary = $summaryStmt->fetch(PDO::FETCH_ASSOC);
                             </td>
 
                             <td>
-                                <form
-                                    method="POST"
-                                    action="reviews.php"
-                                     class="review-action-form"
-                                >
-                                    <input type="hidden" name="csrf_token"
-                                           value="<?= escapeHtml($csrfToken) ?>">
-
-                                    <input type="hidden" name="review_id"
-                                           value="<?= (int)$review['id'] ?>">
-
-                                    <input type="hidden" name="search"
-                                           value="<?= escapeHtml($search) ?>">
-
-                                    <input type="hidden" name="status_filter"
-                                           value="<?= escapeHtml($statusFilter) ?>">
-
-                                    <input type="hidden" name="page"
-                                           value="<?= (int)$page ?>">
+                                <form method="POST" action="reviews.php" class="review-action-form">
+                                    <input type="hidden" name="csrf_token" value="<?= escapeHtml($csrfToken) ?>">
+                                    <input type="hidden" name="review_id" value="<?= (int)$review['id'] ?>">
+                                    <input type="hidden" name="search" value="<?= escapeHtml($search) ?>">
+                                    <input type="hidden" name="status_filter" value="<?= escapeHtml($statusFilter) ?>">
+                                    <input type="hidden" name="page" value="<?= (int)$page ?>">
 
                                     <?php if ($review['status'] === 'published'): ?>
 
-                                        <input type="hidden" name="new_status"
-                                               value="hidden">
+                                        <input type="hidden" name="new_status" value="hidden">
 
-                                        <button type="submit"
-                                                class="btn btn-sm btn-outline-danger text-nowrap">
+                                        <button type="submit" class="btn btn-sm btn-outline-danger text-nowrap">
                                             Hide Review
                                         </button>
 
                                     <?php else: ?>
 
-                                        <input type="hidden" name="new_status"
-                                               value="published">
+                                        <input type="hidden" name="new_status" value="published">
 
-                                        <button type="submit"
-                                                class="btn btn-sm btn-outline-success text-nowrap">
+                                        <button type="submit" class="btn btn-sm btn-outline-success text-nowrap">
                                             Republish
                                         </button>
 
                                     <?php endif; ?>
-
                                 </form>
                             </td>
 
@@ -626,162 +435,168 @@ $summary = $summaryStmt->fetch(PDO::FETCH_ASSOC);
 
                 <?php endif; ?>
 
-                </tbody>
-            </table>
+            </tbody>
+        </table>
+    </div>
+
+    <div class="pagination-area">
+
+        <div class="small text-secondary">
+            Showing
+            <strong><?= $totalReviews > 0 ? $offset + 1 : 0 ?></strong>
+            to
+            <strong><?= min($offset + $perPage, $totalReviews) ?></strong>
+            of
+            <strong><?= (int)$totalReviews ?></strong>
+            reviews
+            <span class="ms-1">(10 per page)</span>
         </div>
 
-        <div class="pagination-area">
+        <?php if ($totalPages > 1): ?>
 
-            <div class="small text-secondary">
-                Showing
-                <strong><?= $totalReviews > 0 ? $offset + 1 : 0 ?></strong>
-                to
-                <strong><?= min($offset + $perPage, $totalReviews) ?></strong>
-                of
-                <strong><?= (int)$totalReviews ?></strong>
-                reviews
-                <span class="ms-1">(10 per page)</span>
-            </div>
+            <?php
+            $baseParams = [
+                'search' => $search,
+                'status' => $statusFilter
+            ];
 
-            <?php if ($totalPages > 1): ?>
+            $startPage = max(1, $page - 2);
+            $endPage = min($totalPages, $page + 2);
+            ?>
 
-                <?php
-                $baseParams = [
-                    'search' => $search,
-                    'status' => $statusFilter
-                ];
+            <nav aria-label="Review pagination">
+                <ul class="pagination pagination-sm mb-0">
 
-                $startPage = max(1, $page - 2);
-                $endPage = min($totalPages, $page + 2);
-                ?>
+                    <li class="page-item <?= $page <= 1 ? 'disabled' : '' ?>">
+                        <?php if ($page > 1): ?>
+                            <a class="page-link"
+                                href="?<?= escapeHtml(http_build_query($baseParams + ['page' => $page - 1])) ?>">
+                                Previous
+                            </a>
+                        <?php else: ?>
+                            <span class="page-link">Previous</span>
+                        <?php endif; ?>
+                    </li>
 
-                <nav aria-label="Review pagination">
-                    <ul class="pagination pagination-sm mb-0">
-
-                        <li class="page-item <?= $page <= 1 ? 'disabled' : '' ?>">
-                            <?php if ($page > 1): ?>
-                                <a class="page-link"
-                                   href="?<?= escapeHtml(http_build_query(
-                                       $baseParams + ['page' => $page - 1]
-                                   )) ?>">
-                                    Previous
-                                </a>
-                            <?php else: ?>
-                                <span class="page-link">Previous</span>
-                            <?php endif; ?>
+                    <?php if ($startPage > 1): ?>
+                        <li class="page-item">
+                            <a class="page-link"
+                                href="?<?= escapeHtml(http_build_query($baseParams + ['page' => 1])) ?>">1</a>
                         </li>
 
-                        <?php if ($startPage > 1): ?>
-                            <li class="page-item">
-                                <a class="page-link"
-                                   href="?<?= escapeHtml(http_build_query(
-                                       $baseParams + ['page' => 1]
-                                   )) ?>">1</a>
-                            </li>
-
-                            <?php if ($startPage > 2): ?>
-                                <li class="page-item disabled">
-                                    <span class="page-link">…</span>
-                                </li>
-                            <?php endif; ?>
+                        <?php if ($startPage > 2): ?>
+                            <li class="page-item disabled"><span class="page-link">…</span></li>
                         <?php endif; ?>
+                    <?php endif; ?>
 
-                        <?php for ($i = $startPage; $i <= $endPage; $i++): ?>
-                            <li class="page-item <?= $i === $page ? 'active' : '' ?>">
-                                <?php if ($i === $page): ?>
-                                    <span class="page-link" aria-current="page">
-                                        <?= $i ?>
-                                    </span>
-                                <?php else: ?>
-                                    <a class="page-link"
-                                       href="?<?= escapeHtml(http_build_query(
-                                           $baseParams + ['page' => $i]
-                                       )) ?>">
-                                        <?= $i ?>
-                                    </a>
-                                <?php endif; ?>
-                            </li>
-                        <?php endfor; ?>
-
-                        <?php if ($endPage < $totalPages): ?>
-
-                            <?php if ($endPage < $totalPages - 1): ?>
-                                <li class="page-item disabled">
-                                    <span class="page-link">…</span>
-                                </li>
-                            <?php endif; ?>
-
-                            <li class="page-item">
-                                <a class="page-link"
-                                   href="?<?= escapeHtml(http_build_query(
-                                       $baseParams + ['page' => $totalPages]
-                                   )) ?>">
-                                    <?= $totalPages ?>
-                                </a>
-                            </li>
-                        <?php endif; ?>
-
-                        <li class="page-item <?= $page >= $totalPages ? 'disabled' : '' ?>">
-                            <?php if ($page < $totalPages): ?>
-                                <a class="page-link"
-                                   href="?<?= escapeHtml(http_build_query(
-                                       $baseParams + ['page' => $page + 1]
-                                   )) ?>">
-                                    Next
-                                </a>
+                    <?php for ($i = $startPage; $i <= $endPage; $i++): ?>
+                        <li class="page-item <?= $i === $page ? 'active' : '' ?>">
+                            <?php if ($i === $page): ?>
+                                <span class="page-link" aria-current="page"><?= $i ?></span>
                             <?php else: ?>
-                                <span class="page-link">Next</span>
+                                <a class="page-link"
+                                    href="?<?= escapeHtml(http_build_query($baseParams + ['page' => $i])) ?>">
+                                    <?= $i ?>
+                                </a>
                             <?php endif; ?>
                         </li>
+                    <?php endfor; ?>
 
-                    </ul>
-                </nav>
+                    <?php if ($endPage < $totalPages): ?>
 
-            <?php endif; ?>
+                        <?php if ($endPage < $totalPages - 1): ?>
+                            <li class="page-item disabled"><span class="page-link">…</span></li>
+                        <?php endif; ?>
 
-        </div>
+                        <li class="page-item">
+                            <a class="page-link"
+                                href="?<?= escapeHtml(http_build_query($baseParams + ['page' => $totalPages])) ?>">
+                                <?= $totalPages ?>
+                            </a>
+                        </li>
+                    <?php endif; ?>
+
+                    <li class="page-item <?= $page >= $totalPages ? 'disabled' : '' ?>">
+                        <?php if ($page < $totalPages): ?>
+                            <a class="page-link"
+                                href="?<?= escapeHtml(http_build_query($baseParams + ['page' => $page + 1])) ?>">
+                                Next
+                            </a>
+                        <?php else: ?>
+                            <span class="page-link">Next</span>
+                        <?php endif; ?>
+                    </li>
+
+                </ul>
+            </nav>
+
+        <?php endif; ?>
 
     </div>
 
-</main>
-   <script src="https://cdn.jsdelivr.net/npm/bootstrap@5.3.3/dist/js/bootstrap.bundle.min.js"></script>
-    <script src="https://cdn.jsdelivr.net/npm/sweetalert2@11"></script>
+</div>
+
+<script src="https://cdn.jsdelivr.net/npm/sweetalert2@11"></script>
 <script>
-document.querySelectorAll('form.review-action-form').forEach(function (form) {
-    form.addEventListener('submit', function (event) {
-        event.preventDefault();
+    // Admin.onReady runs AFTER sweetalert2 has finished loading (also after AJAX navigation).
+    Admin.onReady(function() {
+        document.querySelectorAll('form.review-action-form').forEach(function(form) {
+            form.addEventListener('submit', function(event) {
 
-        const statusInput = form.querySelector('[name="new_status"]');
-        const action = statusInput.value;
-        const isHiding = action === 'hidden';
+                // Already confirmed: let the event continue so admin.js sends it with AJAX.
+                if (form.dataset.confirmed === '1') {
+                    return;
+                }
 
-        Swal.fire({
-            title: isHiding ? 'Hide this review?' : 'Publish this review?',
-            text: isHiding
-                ? 'This review will no longer be visible on the storefront.'
-                : 'This review will become visible on the storefront.',
-            icon: 'question',
-            showCancelButton: true,
-            confirmButtonText: isHiding ? 'Yes, hide it' : 'Yes, publish it',
-            cancelButtonText: 'Cancel',
-            confirmButtonColor: isHiding ? '#dc3545' : '#198754',
-            cancelButtonColor: '#6c757d',
-            reverseButtons: true,
-            focusCancel: true,
-            customClass: {
-                popup: 'rounded-4',
-                confirmButton: 'rounded-3 px-4',
-                cancelButton: 'rounded-3 px-4'
-            },
-            buttonsStyling: true
-        }).then(function (result) {
-            if (result.isConfirmed) {
-                form.submit();
-            }
+                event.preventDefault();
+
+                const statusInput = form.querySelector('[name="new_status"]');
+                const isHiding = statusInput.value === 'hidden';
+
+                function send() {
+                    form.dataset.confirmed = '1';
+                    if (form.requestSubmit) {
+                        form.requestSubmit();
+                    } else {
+                        form.submit();
+                    }
+                    form.dataset.confirmed = '0';
+                }
+
+                if (typeof Swal === 'undefined') {
+                    if (confirm(isHiding ? 'Hide this review?' : 'Publish this review?')) {
+                        send();
+                    }
+                    return;
+                }
+
+                Swal.fire({
+                    title: isHiding ? 'Hide this review?' : 'Publish this review?',
+                    text: isHiding ?
+                        'This review will no longer be visible on the storefront.' :
+                        'This review will become visible on the storefront.',
+                    icon: 'question',
+                    showCancelButton: true,
+                    confirmButtonText: isHiding ? 'Yes, hide it' : 'Yes, publish it',
+                    cancelButtonText: 'Cancel',
+                    confirmButtonColor: isHiding ? '#dc3545' : '#198754',
+                    cancelButtonColor: '#6c757d',
+                    reverseButtons: true,
+                    focusCancel: true,
+                    customClass: {
+                        popup: 'rounded-4',
+                        confirmButton: 'rounded-3 px-4',
+                        cancelButton: 'rounded-3 px-4'
+                    },
+                    buttonsStyling: true
+                }).then(function(result) {
+                    if (result.isConfirmed) {
+                        send();
+                    }
+                });
+            });
         });
     });
-});
 </script>
 
-</body>
-</html>
+<?php adminFooter();

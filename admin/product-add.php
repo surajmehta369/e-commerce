@@ -1,6 +1,6 @@
 <?php
 
-require_once "auth.php";
+require_once __DIR__ . "/includes/layout.php";
 require_once "../connection/dbconnect.php";
 require_once "../shopify/functions.php";
 require_once "../zoho/zoho_functions.php";
@@ -42,7 +42,16 @@ $brandStmt = $db->prepare("
 $brandStmt->execute();
 $brands = $brandStmt->fetchAll(PDO::FETCH_ASSOC);
 
-if ($_SERVER['REQUEST_METHOD'] === 'POST') {
+// CSRF protection (admin.js adds the token to every POST form automatically)
+$csrfFailed = false;
+
+if ($_SERVER['REQUEST_METHOD'] === 'POST' && !adminVerifyCsrf()) {
+    $csrfFailed = true;
+    $message = 'Security token expired. Please try again.';
+    $messageType = 'danger';
+}
+
+if ($_SERVER['REQUEST_METHOD'] === 'POST' && !$csrfFailed) {
 
     $sku = trim($_POST['sku'] ?? '');
     $title = trim($_POST['title'] ?? '');
@@ -360,6 +369,11 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
                 }
 
                 $stockValue = (int) $stock;
+            }
+
+            // discard anything buffered so the response is pure JSON
+            while (ob_get_level() > 0) {
+                ob_end_clean();
             }
 
             header('Content-Type: application/json; charset=utf-8');
@@ -827,14 +841,9 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
                 'purchase_rate' => $originalPriceValue,
                 'stock' => $stockValue
             ]);
-            echo '<script>';
-            echo 'console.group("ZOHO PARENT SYNC DEBUG");';
-            echo 'console.log("SKU:", ' . json_encode($sku) . ');';
-            echo 'console.log("Complete Zoho Response:", ' .
-                json_encode($zohoResult, JSON_HEX_TAG | JSON_HEX_APOS | JSON_HEX_QUOT | JSON_HEX_AMP) .
-                ');';
-            echo 'console.groupEnd();';
-            echo '</script>';
+
+            // (The old inline <script> console.log debug output was removed:
+            //  it printed JavaScript above the page. The log below is kept.)
             error_log(
                 "ZOHO PARENT SYNC DEBUG: " .
                     print_r($zohoResult, true)
@@ -968,738 +977,295 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
     }
 }
 
+adminHeader('Add Product', 'products');
 ?>
 
+<style>
+    .page-title { font-weight: 700; color: #111827; }
+    .card { border-radius: 14px; box-shadow: 0 4px 20px rgba(0, 0, 0, .05); }
+    .form-label { font-weight: 600; color: #374151; }
+    .form-control, .form-select { min-height: 46px; border-radius: 8px; }
+    textarea.form-control { min-height: 130px; }
+    .required { color: #dc2626; }
+    .image-note { font-size: 13px; color: #6b7280; }
+</style>
 
-<!DOCTYPE html>
-<html lang="en">
+<div class="page-header">
+    <div>
+        <h2 class="page-title mb-1">Add Product</h2>
+        <p class="text-muted mb-0">Create a new product for your store.</p>
+    </div>
 
-<head>
+    <a href="products.php" class="btn btn-outline-secondary">
+        <i class="bi bi-arrow-left me-1"></i>
+        Back to Products
+    </a>
+</div>
 
-    <meta charset="UTF-8">
+<?php if ($message !== ""): ?>
+    <div class="alert alert-<?= htmlspecialchars($messageType); ?> alert-dismissible fade show" role="alert">
+        <?= htmlspecialchars($message); ?>
+        <button type="button" class="btn-close" data-bs-dismiss="alert"></button>
+    </div>
+<?php endif; ?>
 
-    <meta
-        name="viewport"
-        content="width=device-width, initial-scale=1.0">
+<form method="POST" enctype="multipart/form-data">
 
-    <title>Add Product | Admin</title>
+    <div class="card">
+        <div class="card-body p-4">
 
-    <link
-        href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.3/dist/css/bootstrap.min.css"
-        rel="stylesheet">
+            <div class="row g-4">
 
-    <link
-        rel="stylesheet"
-        href="https://cdn.jsdelivr.net/npm/bootstrap-icons@1.11.3/font/bootstrap-icons.min.css">
-
-    <style>
-        body {
-            background: #f5f7fb;
-        }
-
-        .sidebar {
-            min-height: 100vh;
-            background: #111827;
-        }
-
-        .sidebar .brand {
-            color: #fff;
-            font-size: 21px;
-            font-weight: 700;
-            padding: 22px 20px;
-            display: block;
-            text-decoration: none;
-            border-bottom: 1px solid rgba(255, 255, 255, .08);
-        }
-
-        .sidebar .nav-link {
-            color: #9ca3af;
-            padding: 12px 20px;
-            margin: 3px 10px;
-            border-radius: 8px;
-        }
-
-        .sidebar .nav-link:hover,
-        .sidebar .nav-link.active {
-            background: #1f2937;
-            color: #fff;
-        }
-
-        .main-content {
-            padding: 30px;
-        }
-
-        .page-title {
-            font-weight: 700;
-            color: #111827;
-        }
-
-        .card {
-            border: 0;
-            border-radius: 14px;
-            box-shadow: 0 4px 20px rgba(0, 0, 0, .05);
-        }
-
-        .form-label {
-            font-weight: 600;
-            color: #374151;
-        }
-
-        .form-control,
-        .form-select {
-            min-height: 46px;
-            border-radius: 8px;
-        }
-
-        textarea.form-control {
-            min-height: 130px;
-        }
-
-        .required {
-            color: #dc2626;
-        }
-
-        .image-note {
-            font-size: 13px;
-            color: #6b7280;
-        }
-    </style>
-
-</head>
-
-<body>
-
-    <div class="container-fluid">
-
-        <div class="row">
-            <div class="col-md-3 col-lg-2 px-0 sidebar">
-
-                <a
-                    href="index.php"
-                    class="brand">
-                    Admin Panel
-                </a>
-
-                <nav class="nav flex-column mt-3">
-
-                    <a
-                        href="index.php"
-                        class="nav-link">
-                        <i class="bi bi-speedometer2 me-2"></i>
-                        Dashboard
-                    </a>
-
-                    <a
-                        href="vendors.php"
-                        class="nav-link">
-                        <i class="bi bi-shop me-2"></i>
-                        Vendors
-                    </a>
-
-                    <a
-                        href="products.php"
-                        class="nav-link active">
-                        <i class="bi bi-box-seam me-2"></i>
-                        Products
-                    </a>
-
-                    <a
-                        href="customers.php"
-                        class="nav-link">
-                        <i class="bi bi-people me-2"></i>
-                        Customers
-                    </a>
-
-                    <a
-                        href="categories.php"
-                        class="nav-link">
-                        <i class="bi bi-grid me-2"></i>
-                        Categories
-                    </a>
-
-                    <a
-                        href="brands.php"
-                        class="nav-link">
-                        <i class="bi bi-tags me-2"></i>
-                        Brands
-                    </a>
-
-                    <a
-                        href="orders.php"
-                        class="nav-link">
-                        <i class="bi bi-cart-check me-2"></i>
-                        Orders
-                    </a>
-                    <a
-                        href="reviews.php"
-                        class="nav-link">
-                        <i class="bi bi-cart-check me-2"></i>
-                        Product Reviews
-                    </a>
-
-
-                    <a
-                        href="profile.php"
-                        class="nav-link">
-                        <i class="bi bi-person-circle me-2"></i>
-                        Admin Profile
-                    </a>
-
-                    <a
-                        href="../outh/logout.php"
-                        class="nav-link text-danger mt-3">
-                        <i class="bi bi-box-arrow-right me-2"></i>
-                        Logout
-                    </a>
-
-                </nav>
-
-            </div>
-            <div class="col-md-9 col-lg-10 main-content">
-
-                <div class="d-flex justify-content-between align-items-center mb-4">
-
-                    <div>
-
-                        <h2 class="page-title mb-1">
-                            Add Product
-                        </h2>
-
-                        <p class="text-muted mb-0">
-                            Create a new product for your store.
-                        </p>
-
-                    </div>
-
-                    <a
-                        href="products.php"
-                        class="btn btn-outline-secondary">
-                        <i class="bi bi-arrow-left me-1"></i>
-                        Back to Products
-                    </a>
-
+                <div class="col-md-6">
+                    <label class="form-label">SKU <span class="required">*</span></label>
+                    <input type="text" name="sku" class="form-control"
+                        value="<?= htmlspecialchars($sku ?? ''); ?>"
+                        placeholder="e.g. PROD-001" required>
                 </div>
 
+                <div class="col-md-6">
+                    <label class="form-label">Product Title <span class="required">*</span></label>
+                    <input type="text" name="title" class="form-control"
+                        value="<?= htmlspecialchars($title ?? ''); ?>"
+                        placeholder="Enter product title" required>
+                </div>
 
-                <?php if ($message !== ""): ?>
+                <div class="col-md-6">
+                    <label class="form-label">Category <span class="required">*</span></label>
+                    <select name="category_id" class="form-select" required>
+                        <option value="">Select Category</option>
+                        <?php foreach ($categories as $category): ?>
+                            <option value="<?= (int) $category['id']; ?>"
+                                <?= (($categoryId ?? 0) == $category['id']) ? 'selected' : ''; ?>>
+                                <?= htmlspecialchars($category['name']); ?>
+                            </option>
+                        <?php endforeach; ?>
+                    </select>
+                </div>
 
-                    <div
-                        class="alert alert-<?= htmlspecialchars($messageType); ?> alert-dismissible fade show"
-                        role="alert">
+                <div class="col-md-6">
+                    <label class="form-label">Brand <span class="required">*</span></label>
+                    <select name="brand_id" class="form-select" required>
+                        <option value="">Select Brand</option>
+                        <?php foreach ($brands as $brand): ?>
+                            <option value="<?= (int) $brand['id']; ?>"
+                                <?= (($brandId ?? 0) == $brand['id']) ? 'selected' : ''; ?>>
+                                <?= htmlspecialchars($brand['name']); ?>
+                            </option>
+                        <?php endforeach; ?>
+                    </select>
+                </div>
 
-                        <?= htmlspecialchars($message); ?>
+                <div class="col-md-4">
+                    <label class="form-label">Selling Price <span class="required">*</span></label>
+                    <input type="number" name="price" class="form-control" step="0.01" min="0"
+                        value="<?= htmlspecialchars($price ?? ''); ?>" placeholder="0.00" required>
+                </div>
 
-                        <button
-                            type="button"
-                            class="btn-close"
-                            data-bs-dismiss="alert"></button>
+                <div class="col-md-4">
+                    <label class="form-label">Original Price</label>
+                    <input type="number" name="original_price" class="form-control" step="0.01" min="0"
+                        value="<?= htmlspecialchars($originalPrice ?? ''); ?>" placeholder="0.00">
+                    <div class="image-note mt-1">Discount is calculated automatically.</div>
+                </div>
 
+                <div class="col-md-4">
+                    <label class="form-label">Stock <span class="required">*</span></label>
+                    <input type="number" name="stock" id="productStock" class="form-control" min="0"
+                        value="<?= htmlspecialchars($stock ?? ''); ?>" placeholder="0" required>
+                    <div class="image-note mt-1">
+                        When variants are added, total stock is calculated automatically.
+                    </div>
+                </div>
+
+                <div class="col-12">
+                    <label class="form-label">Description</label>
+                    <textarea name="description" class="form-control"
+                        placeholder="Enter product description"><?= htmlspecialchars($description ?? ''); ?></textarea>
+                </div>
+
+                <div class="col-12">
+                    <label for="productImages" class="form-label">Select Product Images</label>
+                    <input type="file" name="images[]" id="productImages" class="form-control"
+                        accept="image/jpeg,image/png,image/webp" multiple>
+                    <small class="text-muted">You can select multiple images at once.</small>
+                    <div id="imagePreview" class="d-flex flex-wrap gap-3 mt-3"></div>
+                </div>
+
+                <div class="col-md-4">
+                    <label class="form-label">Status</label>
+                    <select name="status" class="form-select">
+                        <option value="1" <?= (($status ?? 1) == 1) ? 'selected' : ''; ?>>Active</option>
+                        <option value="0" <?= (($status ?? 1) == 0) ? 'selected' : ''; ?>>Inactive</option>
+                    </select>
+                </div>
+
+            </div>
+
+            <hr class="my-4">
+
+            <div class="d-flex justify-content-between align-items-center mb-3">
+                <div>
+                    <h5 class="mb-1">Product Variants</h5>
+                    <p class="text-muted small mb-0">
+                        Optional. Add variants such as Small/Red or Large/Blue.
+                    </p>
+                </div>
+
+                <button type="button" class="btn btn-outline-primary" id="addVariantBtn">
+                    <i class="bi bi-plus-circle me-1"></i>
+                    Add Variant
+                </button>
+            </div>
+
+            <div id="variantsContainer"></div>
+
+            <template id="variantTemplate">
+                <div class="variant-card border rounded-3 p-3 mb-3">
+
+                    <div class="d-flex justify-content-between align-items-center mb-3">
+                        <strong class="variant-heading">Variant</strong>
+                        <button type="button" class="btn btn-sm btn-outline-danger remove-variant">Remove</button>
                     </div>
 
-                <?php endif; ?>
+                    <div class="row g-3">
 
+                        <div class="col-md-6">
+                            <label class="form-label">Variant Title *</label>
+                            <input type="text" data-field="title" class="form-control"
+                                maxlength="255" placeholder="e.g. Small / Red">
+                        </div>
 
-                <form
-                    method="POST"
-                    enctype="multipart/form-data">
+                        <div class="col-md-6">
+                            <label class="form-label">Variant SKU *</label>
+                            <input type="text" data-field="sku" class="form-control"
+                                maxlength="100" placeholder="e.g. SHIRT-S-RED">
+                        </div>
 
-                    <div class="card">
+                        <div class="col-md-4">
+                            <label class="form-label">Selling Price *</label>
+                            <input type="number" data-field="price" class="form-control"
+                                min="0" max="99999999.99" step="0.01" placeholder="0.00">
+                        </div>
 
-                        <div class="card-body p-4">
+                        <div class="col-md-4">
+                            <label class="form-label">Original Price</label>
+                            <input type="number" data-field="original_price" class="form-control"
+                                min="0" max="99999999.99" step="0.01" placeholder="0.00">
+                        </div>
 
-                            <div class="row g-4">
-                                <div class="col-md-6">
+                        <div class="col-md-4">
+                            <label class="form-label">Stock *</label>
+                            <input type="number" data-field="stock" class="form-control"
+                                min="0" step="1" placeholder="0">
+                        </div>
 
-                                    <label class="form-label">
-                                        SKU <span class="required">*</span>
-                                    </label>
+                        <div class="col-12">
+                            <label class="form-label">Attributes</label>
+                            <input type="text" data-field="attributes" class="form-control"
+                                placeholder="Size: Small, Color: Red">
+                            <div class="image-note mt-1">Optional. Separate attributes with commas.</div>
+                        </div>
 
-                                    <input
-                                        type="text"
-                                        name="sku"
-                                        class="form-control"
-                                        value="<?= htmlspecialchars($sku ?? ''); ?>"
-                                        placeholder="e.g. PROD-001"
-                                        required>
-
-                                </div>
-                                <div class="col-md-6">
-
-                                    <label class="form-label">
-                                        Product Title <span class="required">*</span>
-                                    </label>
-
-                                    <input
-                                        type="text"
-                                        name="title"
-                                        class="form-control"
-                                        value="<?= htmlspecialchars($title ?? ''); ?>"
-                                        placeholder="Enter product title"
-                                        required>
-
-                                </div>
-                                <div class="col-md-6">
-
-                                    <label class="form-label">
-                                        Category <span class="required">*</span>
-                                    </label>
-
-                                    <select
-                                        name="category_id"
-                                        class="form-select"
-                                        required>
-
-                                        <option value="">
-                                            Select Category
-                                        </option>
-
-                                        <?php foreach ($categories as $category): ?>
-
-                                            <option
-                                                value="<?= (int) $category['id']; ?>"
-                                                <?= (($categoryId ?? 0) == $category['id']) ? 'selected' : ''; ?>>
-
-                                                <?= htmlspecialchars($category['name']); ?>
-
-                                            </option>
-
-                                        <?php endforeach; ?>
-
-                                    </select>
-
-                                </div>
-                                <div class="col-md-6">
-
-                                    <label class="form-label">
-                                        Brand <span class="required">*</span>
-                                    </label>
-
-                                    <select
-                                        name="brand_id"
-                                        class="form-select"
-                                        required>
-
-                                        <option value="">
-                                            Select Brand
-                                        </option>
-
-                                        <?php foreach ($brands as $brand): ?>
-
-                                            <option
-                                                value="<?= (int) $brand['id']; ?>"
-                                                <?= (($brandId ?? 0) == $brand['id']) ? 'selected' : ''; ?>>
-
-                                                <?= htmlspecialchars($brand['name']); ?>
-
-                                            </option>
-
-                                        <?php endforeach; ?>
-
-                                    </select>
-
-                                </div>
-                                <div class="col-md-4">
-
-                                    <label class="form-label">
-                                        Selling Price <span class="required">*</span>
-                                    </label>
-
-                                    <input
-                                        type="number"
-                                        name="price"
-                                        class="form-control"
-                                        step="0.01"
-                                        min="0"
-                                        value="<?= htmlspecialchars($price ?? ''); ?>"
-                                        placeholder="0.00"
-                                        required>
-
-                                </div>
-                                <div class="col-md-4">
-
-                                    <label class="form-label">
-                                        Original Price
-                                    </label>
-
-                                    <input
-                                        type="number"
-                                        name="original_price"
-                                        class="form-control"
-                                        step="0.01"
-                                        min="0"
-                                        value="<?= htmlspecialchars($originalPrice ?? ''); ?>"
-                                        placeholder="0.00">
-
-                                    <div class="image-note mt-1">
-                                        Discount is calculated automatically.
-                                    </div>
-
-                                </div>
-                                <div class="col-md-4">
-
-                                    <label class="form-label">
-                                        Stock <span class="required">*</span>
-                                    </label>
-
-                                    <input
-                                        type="number"
-                                        name="stock"
-                                        id="productStock"
-                                        class="form-control"
-                                        min="0"
-                                        value="<?= htmlspecialchars($stock ?? ''); ?>"
-                                        placeholder="0"
-                                        required>
-                                    <div class="image-note mt-1">
-                                        When variants are added, total stock is calculated automatically.
-                                    </div>
-
-                                </div>
-
-                                <div class="col-12">
-
-                                    <label class="form-label">
-                                        Description
-                                    </label>
-
-                                    <textarea
-                                        name="description"
-                                        class="form-control"
-                                        placeholder="Enter product description"><?= htmlspecialchars($description ?? ''); ?></textarea>
-
-                                </div>
-
-
-                                <div class="col-12">
-                                    <label for="productImages" class="form-label">
-                                        Select Product Images
-                                    </label>
-
-                                    <input
-                                        type="file"
-                                        name="images[]"
-                                        id="productImages"
-                                        class="form-control"
-                                        accept="image/jpeg,image/png,image/webp"
-                                        multiple>
-
-                                    <small class="text-muted">
-                                        You can select multiple images at once.
-                                    </small>
-
-                                    <div id="imagePreview" class="d-flex flex-wrap gap-3 mt-3"></div>
-                                </div>
-
-
-                                <div class="col-md-4">
-
-                                    <label class="form-label">
-                                        Status
-                                    </label>
-
-                                    <select
-                                        name="status"
-                                        class="form-select">
-
-                                        <option
-                                            value="1"
-                                            <?= (($status ?? 1) == 1) ? 'selected' : ''; ?>>
-                                            Active
-                                        </option>
-
-                                        <option
-                                            value="0"
-                                            <?= (($status ?? 1) == 0) ? 'selected' : ''; ?>>
-                                            Inactive
-                                        </option>
-
-                                    </select>
-
-                                </div>
-
+                        <div class="col-12">
+                            <label class="form-label">Variant Images</label>
+                            <input type="file" class="form-control variant-images"
+                                accept="image/jpeg,image/png,image/webp" multiple>
+                            <div class="image-note mt-1">
+                                Select multiple JPG, PNG, or WEBP images for this variant.
                             </div>
-
-
-
-                            <hr class="my-4">
-
-                            <div class="d-flex justify-content-between align-items-center mb-3">
-                                <div>
-                                    <h5 class="mb-1">Product Variants</h5>
-                                    <p class="text-muted small mb-0">
-                                        Optional. Add variants such as Small/Red or Large/Blue.
-                                    </p>
-                                </div>
-
-                                <button
-                                    type="button"
-                                    class="btn btn-outline-primary"
-                                    id="addVariantBtn">
-                                    <i class="bi bi-plus-circle me-1"></i>
-                                    Add Variant
-                                </button>
-                            </div>
-
-                            <div id="variantsContainer"></div>
-
-                            <template id="variantTemplate">
-                                <div class="variant-card border rounded-3 p-3 mb-3">
-
-                                    <div class="d-flex justify-content-between align-items-center mb-3">
-                                        <strong class="variant-heading">Variant</strong>
-
-                                        <button
-                                            type="button"
-                                            class="btn btn-sm btn-outline-danger remove-variant">
-                                            Remove
-                                        </button>
-                                    </div>
-
-                                    <div class="row g-3">
-
-                                        <div class="col-md-6">
-                                            <label class="form-label">Variant Title *</label>
-                                            <input
-                                                type="text"
-                                                data-field="title"
-                                                class="form-control"
-                                                maxlength="255"
-                                                placeholder="e.g. Small / Red">
-                                        </div>
-
-                                        <div class="col-md-6">
-                                            <label class="form-label">Variant SKU *</label>
-                                            <input
-                                                type="text"
-                                                data-field="sku"
-                                                class="form-control"
-                                                maxlength="100"
-                                                placeholder="e.g. SHIRT-S-RED">
-                                        </div>
-
-                                        <div class="col-md-4">
-                                            <label class="form-label">Selling Price *</label>
-                                            <input
-                                                type="number"
-                                                data-field="price"
-                                                class="form-control"
-                                                min="0"
-                                                max="99999999.99"
-                                                step="0.01"
-                                                placeholder="0.00">
-                                        </div>
-
-                                        <div class="col-md-4">
-                                            <label class="form-label">Original Price</label>
-                                            <input
-                                                type="number"
-                                                data-field="original_price"
-                                                class="form-control"
-                                                min="0"
-                                                max="99999999.99"
-                                                step="0.01"
-                                                placeholder="0.00">
-                                        </div>
-
-                                        <div class="col-md-4">
-                                            <label class="form-label">Stock *</label>
-                                            <input
-                                                type="number"
-                                                data-field="stock"
-                                                class="form-control"
-                                                min="0"
-                                                step="1"
-                                                placeholder="0">
-                                        </div>
-
-                                        <div class="col-12">
-                                            <label class="form-label">Attributes</label>
-                                            <input
-                                                type="text"
-                                                data-field="attributes"
-                                                class="form-control"
-                                                placeholder="Size: Small, Color: Red">
-
-                                            <div class="image-note mt-1">
-                                                Optional. Separate attributes with commas.
-                                            </div>
-                                        </div>
-
-                                        <div class="col-12">
-                                            <label class="form-label">Variant Images</label>
-                                            <input
-                                                type="file"
-                                                class="form-control variant-images"
-                                                accept="image/jpeg,image/png,image/webp"
-                                                multiple>
-
-                                            <div class="image-note mt-1">
-                                                Select multiple JPG, PNG, or WEBP images for this variant.
-                                            </div>
-
-                                            <div class="variant-image-preview d-flex flex-wrap gap-2 mt-3"></div>
-                                        </div>
-
-                                    </div>
-                                </div>
-                            </template>
-
-                            <hr class="my-4">
-                            <div class="d-flex justify-content-end gap-2">
-
-                                <a
-                                    href="products.php"
-                                    class="btn btn-light border">
-                                    Cancel
-                                </a>
-
-                                <button
-                                    type="submit"
-                                    class="btn btn-primary px-4">
-                                    <i class="bi bi-plus-circle me-1"></i>
-                                    Create Product
-                                </button>
-
-                            </div>
-
+                            <div class="variant-image-preview d-flex flex-wrap gap-2 mt-3"></div>
                         </div>
 
                     </div>
+                </div>
+            </template>
 
-                </form>
+            <hr class="my-4">
 
+            <div class="d-flex justify-content-end gap-2">
+                <a href="products.php" class="btn btn-light border">Cancel</a>
+
+                <button type="submit" class="btn btn-primary px-4">
+                    <i class="bi bi-plus-circle me-1"></i>
+                    Create Product
+                </button>
             </div>
 
         </div>
-
     </div>
-    <script
-        src="https://cdn.jsdelivr.net/npm/bootstrap@5.3.3/dist/js/bootstrap.bundle.min.js"></script>
 
+</form>
 
-    <script>
-        document.addEventListener("DOMContentLoaded", function() {
+<script>
+    Admin.onReady(function() {
 
-            const addVariantBtn = document.getElementById("addVariantBtn");
-            const variantsContainer = document.getElementById("variantsContainer");
-            const variantTemplate = document.getElementById("variantTemplate");
+        const addVariantBtn = document.getElementById("addVariantBtn");
+        const variantsContainer = document.getElementById("variantsContainer");
+        const variantTemplate = document.getElementById("variantTemplate");
 
-            const productStock = document.getElementById("productStock");
+        const productStock = document.getElementById("productStock");
 
-            function updateProductStock() {
-                const variantCards = variantsContainer.querySelectorAll(".variant-card");
+        function updateProductStock() {
+            const variantCards = variantsContainer.querySelectorAll(".variant-card");
 
-                if (variantCards.length > 0) {
-                    let totalStock = 0;
+            if (variantCards.length > 0) {
+                let totalStock = 0;
 
-                    variantCards.forEach(function(card) {
-                        const stockInput = card.querySelector('[data-field="stock"]');
-                        totalStock += Math.max(0, parseInt(stockInput.value, 10) || 0);
-                    });
+                variantCards.forEach(function(card) {
+                    const stockInput = card.querySelector('[data-field="stock"]');
+                    totalStock += Math.max(0, parseInt(stockInput.value, 10) || 0);
+                });
 
-                    productStock.value = totalStock;
-                    productStock.readOnly = true;
-                } else {
-                    productStock.readOnly = false;
-                }
+                productStock.value = totalStock;
+                productStock.readOnly = true;
+            } else {
+                productStock.readOnly = false;
             }
+        }
 
-            variantsContainer.addEventListener("input", function(event) {
-                if (event.target.matches('[data-field="stock"]')) {
-                    updateProductStock();
+        variantsContainer.addEventListener("input", function(event) {
+            if (event.target.matches('[data-field="stock"]')) {
+                updateProductStock();
+            }
+        });
+
+        const productImages = document.getElementById("productImages");
+        const imagePreview = document.getElementById("imagePreview");
+
+        let variantIndex = 0;
+        let previewUrls = [];
+
+        addVariantBtn.addEventListener("click", function() {
+
+            const fragment = variantTemplate.content.cloneNode(true);
+            const card = fragment.querySelector(".variant-card");
+
+            card.querySelectorAll("[data-field]").forEach(function(input) {
+                const field = input.dataset.field;
+                input.name = `variants[${variantIndex}][${field}]`;
+                if (["title", "sku", "price", "stock"].includes(field)) {
+                    input.required = true;
                 }
             });
 
-            const productImages = document.getElementById("productImages");
-            const imagePreview = document.getElementById("imagePreview");
+            const variantImageInput = card.querySelector(".variant-images");
 
-            let variantIndex = 0;
-            let previewUrls = [];
+            variantImageInput.name =
+                `variant_images[${variantIndex}][]`;
 
-            addVariantBtn.addEventListener("click", function() {
+            const variantImagePreview =
+                card.querySelector(".variant-image-preview");
 
-                const fragment = variantTemplate.content.cloneNode(true);
-                const card = fragment.querySelector(".variant-card");
+            variantImageInput.addEventListener("change", function() {
+                variantImagePreview.replaceChildren();
 
-                card.querySelectorAll("[data-field]").forEach(function(input) {
-                    const field = input.dataset.field;
-                    input.name = `variants[${variantIndex}][${field}]`;
-                    if (["title", "sku", "price", "stock"].includes(field)) {
-                        input.required = true;
-                    }
-                });
-
-                const variantImageInput = card.querySelector(".variant-images");
-
-                variantImageInput.name =
-                    `variant_images[${variantIndex}][]`;
-
-                const variantImagePreview =
-                    card.querySelector(".variant-image-preview");
-
-                variantImageInput.addEventListener("change", function() {
-                    variantImagePreview.replaceChildren();
-
-                    Array.from(variantImageInput.files).forEach(function(file) {
-                        if (![
-                                "image/jpeg",
-                                "image/png",
-                                "image/webp"
-                            ].includes(file.type)) {
-                            return;
-                        }
-
-                        const wrapper = document.createElement("div");
-                        wrapper.className = "text-center";
-
-                        const image = document.createElement("img");
-                        image.src = URL.createObjectURL(file);
-                        image.alt = file.name;
-                        image.style.width = "90px";
-                        image.style.height = "90px";
-                        image.style.objectFit = "cover";
-                        image.className = "rounded border";
-
-                        wrapper.appendChild(image);
-                        variantImagePreview.appendChild(wrapper);
-                    });
-                });
-
-
-                card.querySelector(".variant-heading").textContent =
-                    `Variant ${variantIndex + 1}`;
-
-                card.querySelector(".remove-variant").addEventListener(
-                    "click",
-                    function() {
-                        card.remove();
-                        updateProductStock();
-                    }
-                );
-
-                variantsContainer.appendChild(fragment);
-                variantIndex++;
-                updateProductStock();
-            });
-
-            productImages.addEventListener("change", function() {
-
-                previewUrls.forEach(function(url) {
-                    URL.revokeObjectURL(url);
-                });
-
-                previewUrls = [];
-                imagePreview.replaceChildren();
-
-                Array.from(productImages.files).forEach(function(file) {
-
-                    const allowedTypes = [
-                        "image/jpeg",
-                        "image/png",
-                        "image/webp"
-                    ];
-
-                    if (!allowedTypes.includes(file.type)) {
+                Array.from(variantImageInput.files).forEach(function(file) {
+                    if (![
+                            "image/jpeg",
+                            "image/png",
+                            "image/webp"
+                        ].includes(file.type)) {
                         return;
                     }
 
@@ -1707,34 +1273,86 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
                     wrapper.className = "text-center";
 
                     const image = document.createElement("img");
-                    const objectUrl = URL.createObjectURL(file);
-
-                    previewUrls.push(objectUrl);
-
-                    image.src = objectUrl;
+                    image.src = URL.createObjectURL(file);
                     image.alt = file.name;
-                    image.style.width = "110px";
-                    image.style.height = "110px";
+                    image.style.width = "90px";
+                    image.style.height = "90px";
                     image.style.objectFit = "cover";
                     image.className = "rounded border";
 
-                    const caption = document.createElement("div");
-                    caption.className = "small text-muted mt-1";
-                    caption.textContent = file.name;
-
-                    if (imagePreview.children.length === 0) {
-                        caption.textContent += " (Main image)";
-                    }
-
                     wrapper.appendChild(image);
-                    wrapper.appendChild(caption);
-                    imagePreview.appendChild(wrapper);
+                    variantImagePreview.appendChild(wrapper);
                 });
             });
 
+
+            card.querySelector(".variant-heading").textContent =
+                `Variant ${variantIndex + 1}`;
+
+            card.querySelector(".remove-variant").addEventListener(
+                "click",
+                function() {
+                    card.remove();
+                    updateProductStock();
+                }
+            );
+
+            variantsContainer.appendChild(fragment);
+            variantIndex++;
+            updateProductStock();
         });
-    </script>
 
-</body>
+        productImages.addEventListener("change", function() {
 
-</html>
+            previewUrls.forEach(function(url) {
+                URL.revokeObjectURL(url);
+            });
+
+            previewUrls = [];
+            imagePreview.replaceChildren();
+
+            Array.from(productImages.files).forEach(function(file) {
+
+                const allowedTypes = [
+                    "image/jpeg",
+                    "image/png",
+                    "image/webp"
+                ];
+
+                if (!allowedTypes.includes(file.type)) {
+                    return;
+                }
+
+                const wrapper = document.createElement("div");
+                wrapper.className = "text-center";
+
+                const image = document.createElement("img");
+                const objectUrl = URL.createObjectURL(file);
+
+                previewUrls.push(objectUrl);
+
+                image.src = objectUrl;
+                image.alt = file.name;
+                image.style.width = "110px";
+                image.style.height = "110px";
+                image.style.objectFit = "cover";
+                image.className = "rounded border";
+
+                const caption = document.createElement("div");
+                caption.className = "small text-muted mt-1";
+                caption.textContent = file.name;
+
+                if (imagePreview.children.length === 0) {
+                    caption.textContent += " (Main image)";
+                }
+
+                wrapper.appendChild(image);
+                wrapper.appendChild(caption);
+                imagePreview.appendChild(wrapper);
+            });
+        });
+
+    });
+</script>
+
+<?php adminFooter();

@@ -1,6 +1,6 @@
 <?php
 
-require_once "auth.php";
+require_once __DIR__ . "/includes/layout.php";
 require_once "../connection/dbconnect.php";
 require_once "../shopify/functions.php";
 require_once "../zoho/zoho_functions.php";
@@ -8,10 +8,6 @@ require_once "../zoho/zoho_functions.php";
 
 $database = new Database();
 $pdo = $database->connect();
-
-if (session_status() === PHP_SESSION_NONE) {
-    session_start();
-}
 
 if (!isset($_GET['id']) || !is_numeric($_GET['id'])) {
     header("Location: products.php");
@@ -127,7 +123,16 @@ $brandStmt = $pdo->query("
 
 $brands = $brandStmt->fetchAll(PDO::FETCH_ASSOC);
 
-if ($_SERVER['REQUEST_METHOD'] === 'POST') {
+// CSRF protection (admin.js adds the token to every POST form automatically)
+$csrfFailed = false;
+
+if ($_SERVER['REQUEST_METHOD'] === 'POST' && !adminVerifyCsrf()) {
+    $csrfFailed = true;
+    $message = 'Security token expired. Please try again.';
+    $messageType = 'danger';
+}
+
+if ($_SERVER['REQUEST_METHOD'] === 'POST' && !$csrfFailed) {
 
     $sku = trim($_POST['sku'] ?? '');
     $title = trim($_POST['title'] ?? '');
@@ -1190,890 +1195,522 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
     }
 }
 
+adminHeader('Edit Product', 'products');
 ?>
 
-<!DOCTYPE html>
-<html lang="en">
-
-<head>
-
-    <meta charset="UTF-8">
-
-    <meta
-        name="viewport"
-        content="width=device-width, initial-scale=1.0">
-
-    <title>Edit Product - Admin</title>
-
-    <link
-        href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.3/dist/css/bootstrap.min.css"
-        rel="stylesheet">
-
-    <link
-        href="https://cdn.jsdelivr.net/npm/bootstrap-icons@1.11.3/font/bootstrap-icons.css"
-        rel="stylesheet">
-
-    <style>
-        body {
-            background: #f5f7fb;
-        }
-
-        .sidebar {
-            min-height: 100vh;
-            background: #212529;
-        }
-
-        .sidebar .brand {
-            font-size: 20px;
-            font-weight: 600;
-            color: #fff;
-            padding: 20px;
-            display: block;
-            text-decoration: none;
-        }
-
-        .sidebar a {
-            color: #adb5bd;
-            text-decoration: none;
-            display: block;
-            padding: 11px 20px;
-        }
-
-        .sidebar a:hover,
-        .sidebar a.active {
-            background: #343a40;
-            color: #fff;
-        }
-
-        .main-content {
-            padding: 30px;
-        }
-
-        .card {
-            border: none;
-            border-radius: 12px;
-            box-shadow: 0 2px 12px rgba(0, 0, 0, 0.05);
-        }
-
-        .form-label {
-            font-weight: 500;
-        }
-
-        .current-image {
-            width: 110px;
-            height: 110px;
-            object-fit: cover;
-            border-radius: 10px;
-            border: 1px solid #dee2e6;
-        }
-
-        .image-tile {
-            position: relative;
-            display: inline-block;
-            margin: 4px 8px 8px 0;
-        }
-
-        .image-cut-btn {
-            position: absolute;
-            top: -7px;
-            right: -7px;
-            z-index: 2;
-            width: 23px;
-            height: 23px;
-            border: 0;
-            border-radius: 50%;
-            background: #dc3545;
-            color: #fff;
-            font-size: 17px;
-            line-height: 20px;
-            padding: 0;
-            cursor: pointer;
-            box-shadow: 0 1px 4px #999;
-        }
-
-        .image-cut-btn:hover {
-            background: #bb2d3b;
-        }
-    </style>
-
-</head>
-
-<body>
-
-    <div class="container-fluid">
-
-        <div class="row">
-            <div class="col-md-2 px-0 sidebar">
-
-                <a href="index.php" class="brand">
-                    <i class="bi bi-speedometer2 me-2"></i>
-                    Admin Panel
-                </a>
-
-                <a href="index.php">
-                    <i class="bi bi-grid me-2"></i>
-                    Dashboard
-                </a>
-
-                <a href="vendors.php">
-                    <i class="bi bi-shop me-2"></i>
-                    Vendors
-                </a>
-
-                <a href="products.php" class="active">
-                    <i class="bi bi-box-seam me-2"></i>
-                    Products
-                </a>
-
-                <a href="customers.php">
-                    <i class="bi bi-people me-2"></i>
-                    Customers
-                </a>
-
-                <a href="categories.php">
-                    <i class="bi bi-folder me-2"></i>
-                    Categories
-                </a>
-
-                <a href="brands.php">
-                    <i class="bi bi-tags me-2"></i>
-                    Brands
-                </a>
-
-                <a href="orders.php">
-                    <i class="bi bi-cart-check me-2"></i>
-                    Orders
-                </a>
-                <a href="reviews.php">
-                    <i class="bi bi-cart-check me-2"></i>
-                    Product Reviews
-                </a>
-
-                <a href="profile.php">
-                    <i class="bi bi-person-circle me-2"></i>
-                    Admin Profile
-                </a>
-
-                <a href="../outh/logout.php">
-                    <i class="bi bi-box-arrow-right me-2"></i>
-                    Logout
-                </a>
-
-            </div>
-            <div class="col-md-10 main-content">
-
-                <div class="d-flex justify-content-between align-items-center mb-4">
-
-                    <div>
-                        <h2 class="mb-1">Edit Product</h2>
-
-                        <p class="text-muted mb-0">
-                            Update product information
-                        </p>
-                    </div>
-
-                    <a
-                        href="products.php"
-                        class="btn btn-outline-secondary">
-                        <i class="bi bi-arrow-left me-1"></i>
-                        Back to Products
-                    </a>
-
-                </div>
-
-
-                <?php if ($message !== ''): ?>
-
-                    <div
-                        class="alert alert-<?= htmlspecialchars($messageType) ?> alert-dismissible fade show"
-                        role="alert">
-
-                        <?= htmlspecialchars($message) ?>
-
-                        <button
-                            type="button"
-                            class="btn-close"
-                            data-bs-dismiss="alert"></button>
-
-                    </div>
-
-                <?php endif; ?>
-
-
-                <div class="card">
-
-                    <div class="card-body p-4">
-
-                        <form
-                            method="POST"
-                            enctype="multipart/form-data">
-
-                            <div class="row g-4">
-                                <div class="col-md-6">
-
-                                    <label class="form-label">
-                                        SKU
-                                        <span class="text-danger">*</span>
-                                    </label>
-
-                                    <input
-                                        type="text"
-                                        name="sku"
-                                        class="form-control"
-                                        value="<?= htmlspecialchars($product['sku'] ?? '') ?>"
-                                        required>
-
-                                </div>
-                                <div class="col-md-6">
-
-                                    <label class="form-label">
-                                        Product Title
-                                        <span class="text-danger">*</span>
-                                    </label>
-
-                                    <input
-                                        type="text"
-                                        name="title"
-                                        class="form-control"
-                                        value="<?= htmlspecialchars($product['title'] ?? '') ?>"
-                                        required>
-
-                                </div>
-                                <div class="col-md-6">
-
-                                    <label class="form-label">
-                                        Category
-                                        <span class="text-danger">*</span>
-                                    </label>
-
-                                    <select
-                                        name="category_id"
-                                        class="form-select"
-                                        required>
-
-                                        <option value="">
-                                            Select Category
-                                        </option>
-
-                                        <?php foreach ($categories as $category): ?>
-
-                                            <option
-                                                value="<?= (int) $category['id'] ?>"
-                                                <?= ((int) $product['category_id'] === (int) $category['id']) ? 'selected' : '' ?>>
-                                                <?= htmlspecialchars($category['name']) ?>
-                                            </option>
-
-                                        <?php endforeach; ?>
-
-                                    </select>
-
-                                </div>
-
-                                <div class="col-md-6">
-
-                                    <label class="form-label">
-                                        Brand
-                                        <span class="text-danger">*</span>
-                                    </label>
-
-                                    <select
-                                        name="brand_id"
-                                        class="form-select"
-                                        required>
-
-                                        <option value="">
-                                            Select Brand
-                                        </option>
-
-                                        <?php foreach ($brands as $brand): ?>
-
-                                            <option
-                                                value="<?= (int) $brand['id'] ?>"
-                                                <?= ((int) $product['brand_id'] === (int) $brand['id']) ? 'selected' : '' ?>>
-                                                <?= htmlspecialchars($brand['name']) ?>
-                                            </option>
-
-                                        <?php endforeach; ?>
-
-                                    </select>
-
-                                </div>
-                                <div class="col-md-4">
-
-                                    <label class="form-label">
-                                        Price
-                                        <span class="text-danger">*</span>
-                                    </label>
-
-                                    <input
-                                        type="number"
-                                        name="price"
-                                        class="form-control"
-                                        min="0"
-                                        step="0.01"
-                                        value="<?= htmlspecialchars($product['price'] ?? '') ?>"
-                                        required>
-
-                                </div>
-                                <div class="col-md-4">
-
-                                    <label class="form-label">
-                                        Original Price
-                                    </label>
-
-                                    <input
-                                        type="number"
-                                        name="original_price"
-                                        class="form-control"
-                                        min="0"
-                                        step="0.01"
-                                        value="<?= htmlspecialchars($product['original_price'] ?? '') ?>">
-
-                                    <small class="text-muted">
-                                        Discount is calculated automatically.
-                                    </small>
-
-                                </div>
-                                <div class="col-md-4">
-
-                                    <label class="form-label">
-                                        Stock
-                                        <span class="text-danger">*</span>
-                                    </label>
-
-                                    <input
-                                        type="number"
-                                        name="stock"
-                                        class="form-control"
-                                        min="0"
-                                        value="<?= htmlspecialchars($product['stock'] ?? '') ?>"
-                                        required>
-
-                                </div>
-                                <div class="col-md-12">
-
-                                    <label class="form-label">
-                                        Description
-                                    </label>
-
-                                    <textarea
-                                        name="description"
-                                        class="form-control"
-                                        rows="5"><?= htmlspecialchars($product['description'] ?? '') ?></textarea>
-
-                                </div>
-                                <hr class="my-4">
-
-                                <div class="d-flex justify-content-between align-items-center mb-3">
-                                    <div>
-                                        <h5 class="mb-1">Product Variants</h5>
-                                        <p class="text-muted small mb-0">
-                                            Edit existing variants or add new options.
-                                        </p>
-                                    </div>
-
-                                    <button
-                                        type="button"
-                                        class="btn btn-outline-primary"
-                                        id="addVariantBtn">
-                                        <i class="bi bi-plus-circle me-1"></i>
-                                        Add Variant
-                                    </button>
-                                </div>
-
-                                <div id="variantsContainer">
-
-                                    <?php foreach ($variants as $index => $variant): ?>
-
-                                        <div class="variant-card border rounded-3 p-3 mb-3">
-
-                                            <div class="d-flex justify-content-between align-items-center mb-3">
-                                                <strong class="variant-heading">
-                                                    Variant <?= $index + 1 ?>
-                                                </strong>
-
-                                                <button
-                                                    type="button"
-                                                    class="btn btn-sm btn-outline-danger remove-variant">
-                                                    Remove
-                                                </button>
-                                            </div>
-
-                                            <input
-                                                type="hidden"
-                                                name="variants[<?= $index ?>][id]"
-                                                value="<?= (int) $variant['id'] ?>">
-
-                                            <div class="row g-3">
-
-                                                <div class="col-md-6">
-                                                    <label class="form-label">Variant Title *</label>
-                                                    <input
-                                                        type="text"
-                                                        name="variants[<?= $index ?>][title]"
-                                                        class="form-control"
-                                                        maxlength="255"
-                                                        value="<?= htmlspecialchars($variant['variant_title'] ?? '') ?>"
-                                                        required>
-                                                </div>
-
-                                                <div class="col-md-6">
-                                                    <label class="form-label">Variant SKU *</label>
-                                                    <input
-                                                        type="text"
-                                                        name="variants[<?= $index ?>][sku]"
-                                                        class="form-control"
-                                                        maxlength="100"
-                                                        value="<?= htmlspecialchars($variant['sku'] ?? '') ?>"
-                                                        required>
-                                                </div>
-
-                                                <div class="col-md-4">
-                                                    <label class="form-label">Selling Price *</label>
-                                                    <input
-                                                        type="number"
-                                                        name="variants[<?= $index ?>][price]"
-                                                        class="form-control"
-                                                        min="0"
-                                                        max="99999999.99"
-                                                        step="0.01"
-                                                        value="<?= htmlspecialchars($variant['price'] ?? '') ?>"
-                                                        required>
-                                                </div>
-
-                                                <div class="col-md-4">
-                                                    <label class="form-label">Original Price</label>
-                                                    <input
-                                                        type="number"
-                                                        name="variants[<?= $index ?>][original_price]"
-                                                        class="form-control"
-                                                        min="0"
-                                                        max="99999999.99"
-                                                        step="0.01"
-                                                        value="<?= htmlspecialchars($variant['original_price'] ?? '') ?>">
-                                                </div>
-
-                                                <div class="col-md-4">
-                                                    <label class="form-label">Stock *</label>
-                                                    <input
-                                                        type="number"
-                                                        name="variants[<?= $index ?>][stock]"
-                                                        class="form-control"
-                                                        min="0"
-                                                        step="1"
-                                                        value="<?= (int) $variant['stock'] ?>"
-                                                        required>
-                                                </div>
-
-                                                <div class="col-12">
-                                                    <label class="form-label">Attributes</label>
-                                                    <input
-                                                        type="text"
-                                                        name="variants[<?= $index ?>][attributes]"
-                                                        class="form-control"
-                                                        value="<?= htmlspecialchars(
-                                                                    implode(', ', array_map(
-                                                                        static function ($key, $value) {
-                                                                            return $key . ': ' . $value;
-                                                                        },
-                                                                        array_keys($variant['decoded_attributes']),
-                                                                        $variant['decoded_attributes']
-                                                                    ))
-                                                                ) ?>"
-                                                        placeholder="Size: Small, Color: Red">
-                                                </div>
-
-                                                <div class="col-12">
-                                                    <label class="form-label">Existing Variant Images</label>
-
-                                                    <?php if (!empty($variant['images'])): ?>
-
-                                                        <div class="d-flex flex-wrap gap-3">
-
-                                                            <?php foreach ($variant['images'] as $variantImage): ?>
-
-                                                                <?php
-                                                                $variantImagePath = $variantImage['image_path'];
-
-                                                                if (
-                                                                    strpos($variantImagePath, 'assets/uploads/') !== 0
-                                                                ) {
-                                                                    $variantImagePath = 'assets/uploads/' . $variantImagePath;
-                                                                }
-                                                                ?>
-
-                                                                <div class="image-tile text-center">
-                                                                    <img src="../<?= htmlspecialchars($variantImagePath) ?>" alt="<?= htmlspecialchars($variantImage['alt_text'] ?? $variant['variant_title']) ?>" style="width:90px;height:90px;object-fit:cover" class="rounded border">
-                                                                    <button type="button" class="image-cut-btn" data-remove-name="remove_variant_images[]" data-remove-id="<?= (int) $variantImage['id'] ?>" aria-label="Remove variant image">×</button>
-                                                                    <div class="small text-muted mt-1">Image #<?= (int) $variantImage['id'] ?></div>
-                                                                </div>
-
-                                                            <?php endforeach; ?>
-
-                                                        </div>
-
-                                                    <?php else: ?>
-
-                                                        <p class="text-muted small mb-0">
-                                                            No variant images saved.
-                                                        </p>
-
-                                                    <?php endif; ?>
-                                                </div>
-
-                                            </div>
-                                            <div class="mb-3">
-                                                <label class="form-label">Variant Images</label>
-
-                                                <input
-                                                    type="file"
-                                                    class="form-control"
-                                                    name="variants[<?= $index ?>][images][]"
-                                                    accept="image/jpeg,image/png,image/webp"
-                                                    multiple>
-
-                                                <small class="text-muted">
-                                                    Select multiple JPG, PNG or WEBP images. Existing images will be preserved.
-                                                </small>
-
-                                                <?php if (!empty($variant['images'])): ?>
-                                                    <div class="d-flex flex-wrap gap-2 mt-3">
-                                                        <?php foreach ($variant['images'] as $variantImage): ?>
-                                                            <div class="border rounded p-2">
-                                                                <img
-                                                                    src="../<?= htmlspecialchars($variantImage['image_path']) ?>"
-                                                                    alt="<?= htmlspecialchars($variantImage['alt_text'] ?? $variant['variant_title']) ?>"
-                                                                    style="width: 75px; height: 75px; object-fit: cover;">
-                                                            </div>
-                                                        <?php endforeach; ?>
-                                                    </div>
-                                                <?php endif; ?>
-                                            </div>
-
-                                        </div>
-
-
-                                    <?php endforeach; ?>
-
-                                </div>
-                                <div id="deletedVariantsContainer"></div>
-
-                                <template id="variantTemplate">
-                                    <div class="variant-card border rounded-3 p-3 mb-3">
-
-                                        <div class="d-flex justify-content-between align-items-center mb-3">
-                                            <strong class="variant-heading">New Variant</strong>
-
-                                            <button
-                                                type="button"
-                                                class="btn btn-sm btn-outline-danger remove-variant">
-                                                Remove
-                                            </button>
-                                        </div>
-
-                                        <div class="row g-3">
-
-                                            <div class="col-md-6">
-                                                <label class="form-label">Variant Title *</label>
-                                                <input type="text" data-field="title"
-                                                    class="form-control" maxlength="255" required>
-                                            </div>
-
-                                            <div class="col-md-6">
-                                                <label class="form-label">Variant SKU *</label>
-                                                <input type="text" data-field="sku"
-                                                    class="form-control" maxlength="100" required>
-                                            </div>
-
-                                            <div class="col-md-4">
-                                                <label class="form-label">Selling Price *</label>
-                                                <input type="number" data-field="price"
-                                                    class="form-control" min="0"
-                                                    max="99999999.99" step="0.01" required>
-                                            </div>
-
-                                            <div class="col-md-4">
-                                                <label class="form-label">Original Price</label>
-                                                <input type="number" data-field="original_price"
-                                                    class="form-control" min="0"
-                                                    max="99999999.99" step="0.01">
-                                            </div>
-
-                                            <div class="col-md-4">
-                                                <label class="form-label">Stock *</label>
-                                                <input type="number" data-field="stock"
-                                                    class="form-control" min="0"
-                                                    step="1" required>
-                                            </div>
-
-                                            <div class="col-12">
-                                                <label class="form-label">Attributes</label>
-                                                <input type="text" data-field="attributes"
-                                                    class="form-control"
-                                                    placeholder="Size: Small, Color: Red">
-                                            </div>
-
-
-                                            <div class="mb-3">
-                                                <label class="form-label">Variant Images</label>
-
-                                                <input
-                                                    type="file"
-                                                    class="form-control"
-                                                    data-image-upload="1"
-                                                    accept="image/jpeg,image/png,image/webp"
-                                                    multiple>
-
-                                                <small class="text-muted">
-                                                    Select multiple JPG, PNG or WEBP images.
-                                                </small>
-                                            </div>
-
-
-                                        </div>
-                                    </div>
-                                </template>
-
-
-                                <div class="col-12">
-                                    <label class="form-label d-block">Existing Additional Product Images</label>
-                                    <?php if (!empty($productImages)): ?>
-                                        <div class="d-flex flex-wrap gap-2">
-                                            <?php foreach ($productImages as $galleryImage): ?>
-                                                <?php $galleryPath = $galleryImage['image_path'];
-                                                if (strpos($galleryPath, 'assets/uploads/') !== 0) $galleryPath = 'assets/uploads/' . ltrim($galleryPath, '/'); ?>
-                                                <div class="image-tile">
-                                                    <img src="../<?= htmlspecialchars($galleryPath) ?>" alt="<?= htmlspecialchars($galleryImage['alt_text'] ?? $title) ?>" style="width:90px;height:90px;object-fit:cover" class="rounded border">
-                                                    <button type="button" class="image-cut-btn" data-remove-name="remove_gallery_images[]" data-remove-id="<?= (int) $galleryImage['id'] ?>" aria-label="Remove gallery image">×</button>
-                                                </div>
-                                            <?php endforeach; ?>
-                                        </div>
-                                    <?php else: ?>
-                                        <p class="small text-muted">No additional product images saved.</p>
-                                    <?php endif; ?>
-                                </div>
-
-                                <div class="col-md-6">
-
-                                    <label class="form-label d-block">
-                                        Current Image
-                                    </label>
-
-                                    <?php if (!empty($product['image'])): ?>
-
-                                        <?php
-                                        $currentImage = $product['image'];
-                                        if (
-                                            strpos($currentImage, 'assets/uploads/') !== 0
-                                        ) {
-                                            $currentImage =
-                                                'assets/uploads/' . $currentImage;
-                                        }
-                                        ?>
-
-                                        <div class="image-tile">
-                                            <img src="../<?= htmlspecialchars($currentImage) ?>" alt="Product Image" class="current-image">
-                                            <button type="button" class="image-cut-btn" data-remove-name="remove_main_image" data-remove-id="1" aria-label="Remove main product image">×</button>
-                                        </div>
-
-                                    <?php else: ?>
-
-                                        <div class="text-muted">
-                                            No image available.
-                                        </div>
-
-                                    <?php endif; ?>
-
-                                </div>
-
-                                <div class="col-md-6">
-
-                                    <label class="form-label">
-                                        Replace Image
-                                    </label>
-
-                                    <input
-                                        type="file"
-                                        name="image"
-                                        class="form-control"
-                                        accept=".jpg,.jpeg,.png,.webp">
-
-                                    <small class="text-muted">
-                                        JPG, PNG or WEBP. Maximum 5MB.
-                                    </small>
-
-                                </div>
-                                <div class="col-md-6">
-
-                                    <label class="form-label">
-                                        Product Status
-                                    </label>
-
-                                    <select
-                                        name="status"
-                                        class="form-select">
-
-                                        <option
-                                            value="1"
-                                            <?= ((int) $product['status'] === 1) ? 'selected' : '' ?>>
-                                            Active / Approved
-                                        </option>
-
-                                        <option
-                                            value="0"
-                                            <?= ((int) $product['status'] === 0) ? 'selected' : '' ?>>
-                                            Pending / Inactive
-                                        </option>
-
-                                    </select>
-
-                                </div>
-
-                                <div class="col-md-6">
-
-                                    <label class="form-label">
-                                        Product ID
-                                    </label>
-
-                                    <input
-                                        type="text"
-                                        class="form-control"
-                                        value="<?= (int) $product['id'] ?>"
-                                        readonly>
-
-                                </div>
-                            </div>
-                            <hr class="my-4">
-                            <div class="d-flex justify-content-end gap-2">
-
-                                <a
-                                    href="products.php"
-                                    class="btn btn-light border">
-                                    Cancel
-                                </a>
-
-                                <button
-                                    type="submit"
-                                    class="btn btn-primary">
-                                    <i class="bi bi-check-circle me-1"></i>
-                                    Update Product
-                                </button>
-
-                            </div>
-                        </form>
-                    </div>
-                </div>
-            </div>
-        </div>
+<style>
+    .card { border-radius: 12px; box-shadow: 0 2px 12px rgba(0, 0, 0, 0.05); }
+    .form-label { font-weight: 500; }
+    .current-image {
+        width: 110px;
+        height: 110px;
+        object-fit: cover;
+        border-radius: 10px;
+        border: 1px solid #dee2e6;
+    }
+    .image-tile { position: relative; display: inline-block; margin: 4px 8px 8px 0; }
+    .image-cut-btn {
+        position: absolute;
+        top: -7px;
+        right: -7px;
+        z-index: 2;
+        width: 23px;
+        height: 23px;
+        border: 0;
+        border-radius: 50%;
+        background: #dc3545;
+        color: #fff;
+        font-size: 17px;
+        line-height: 20px;
+        padding: 0;
+        cursor: pointer;
+        box-shadow: 0 1px 4px #999;
+    }
+    .image-cut-btn:hover { background: #bb2d3b; }
+</style>
+
+<div class="page-header">
+    <div>
+        <h2 class="mb-1">Edit Product</h2>
+        <p class="text-muted mb-0">Update product information</p>
     </div>
 
-    <script
-        src="https://cdn.jsdelivr.net/npm/bootstrap@5.3.3/dist/js/bootstrap.bundle.min.js"></script>
+    <a href="products.php" class="btn btn-outline-secondary">
+        <i class="bi bi-arrow-left me-1"></i>
+        Back to Products
+    </a>
+</div>
 
-    <script>
-        document.addEventListener("DOMContentLoaded", function() {
-            document.addEventListener("click", function(event) {
-                const button = event.target.closest(".image-cut-btn");
-                if (!button) return;
+<?php if ($message !== ''): ?>
+    <div class="alert alert-<?= htmlspecialchars($messageType) ?> alert-dismissible fade show" role="alert">
+        <?= htmlspecialchars($message) ?>
+        <button type="button" class="btn-close" data-bs-dismiss="alert"></button>
+    </div>
+<?php endif; ?>
 
-                event.preventDefault();
-                event.stopPropagation();
+<div class="card">
+    <div class="card-body p-4">
 
-                const form = button.closest("form") || document.querySelector('form[enctype="multipart/form-data"]');
-                if (!form) {
-                    alert("Could not find the product form. Please refresh the page and try again.");
-                    return;
-                }
+        <form method="POST" enctype="multipart/form-data" id="productEditForm">
 
-                const fieldName = button.dataset.removeName;
-                const fieldId = button.dataset.removeId;
-                if (!fieldName) return;
+            <div class="row g-4">
 
-                if (fieldName === "remove_main_image") {
-                    let hidden = form.querySelector('input[name="remove_main_image"]');
-                    if (!hidden) {
-                        hidden = document.createElement("input");
-                        hidden.type = "hidden";
-                        hidden.name = "remove_main_image";
-                        form.appendChild(hidden);
-                    }
-                    hidden.value = "1";
-                } else {
-                    if (!fieldId) return;
-                    const alreadyAdded = Array.from(form.querySelectorAll('input[type="hidden"][name="' + fieldName + '"]'))
-                        .some(function(input) {
-                            return input.value === fieldId;
-                        });
-                    if (!alreadyAdded) {
-                        const hidden = document.createElement("input");
-                        hidden.type = "hidden";
-                        hidden.name = fieldName;
-                        hidden.value = fieldId;
-                        form.appendChild(hidden);
-                    }
-                }
+                <div class="col-md-6">
+                    <label class="form-label">SKU <span class="text-danger">*</span></label>
+                    <input type="text" name="sku" class="form-control"
+                        value="<?= htmlspecialchars($product['sku'] ?? '') ?>" required>
+                </div>
 
-                const tile = button.closest(".image-tile");
-                if (tile) tile.remove();
-            });
+                <div class="col-md-6">
+                    <label class="form-label">Product Title <span class="text-danger">*</span></label>
+                    <input type="text" name="title" class="form-control"
+                        value="<?= htmlspecialchars($product['title'] ?? '') ?>" required>
+                </div>
 
-            const container = document.getElementById("variantsContainer");
-            const deletedContainer = document.getElementById("deletedVariantsContainer");
-            const template = document.getElementById("variantTemplate");
-            const addButton = document.getElementById("addVariantBtn");
+                <div class="col-md-6">
+                    <label class="form-label">Category <span class="text-danger">*</span></label>
+                    <select name="category_id" class="form-select" required>
+                        <option value="">Select Category</option>
+                        <?php foreach ($categories as $category): ?>
+                            <option value="<?= (int) $category['id'] ?>"
+                                <?= ((int) $product['category_id'] === (int) $category['id']) ? 'selected' : '' ?>>
+                                <?= htmlspecialchars($category['name']) ?>
+                            </option>
+                        <?php endforeach; ?>
+                    </select>
+                </div>
 
-            let nextIndex = <?= count($variants) ?>;
+                <div class="col-md-6">
+                    <label class="form-label">Brand <span class="text-danger">*</span></label>
+                    <select name="brand_id" class="form-select" required>
+                        <option value="">Select Brand</option>
+                        <?php foreach ($brands as $brand): ?>
+                            <option value="<?= (int) $brand['id'] ?>"
+                                <?= ((int) $product['brand_id'] === (int) $brand['id']) ? 'selected' : '' ?>>
+                                <?= htmlspecialchars($brand['name']) ?>
+                            </option>
+                        <?php endforeach; ?>
+                    </select>
+                </div>
 
-            function bindRemoveButtons() {
-                container.querySelectorAll(".remove-variant").forEach(function(button) {
-                    if (button.dataset.bound === "1") return;
+                <div class="col-md-4">
+                    <label class="form-label">Price <span class="text-danger">*</span></label>
+                    <input type="number" name="price" class="form-control" min="0" step="0.01"
+                        value="<?= htmlspecialchars($product['price'] ?? '') ?>" required>
+                </div>
 
-                    button.dataset.bound = "1";
+                <div class="col-md-4">
+                    <label class="form-label">Original Price</label>
+                    <input type="number" name="original_price" class="form-control" min="0" step="0.01"
+                        value="<?= htmlspecialchars($product['original_price'] ?? '') ?>">
+                    <small class="text-muted">Discount is calculated automatically.</small>
+                </div>
 
-                    button.addEventListener("click", function() {
-                        if (confirm("Remove this variant from the form?")) {
-                            const card = button.closest(".variant-card");
-                            const idInput = card.querySelector('input[name$="[id]"]');
+                <div class="col-md-4">
+                    <label class="form-label">Stock <span class="text-danger">*</span></label>
+                    <input type="number" name="stock" class="form-control" min="0"
+                        value="<?= htmlspecialchars($product['stock'] ?? '') ?>" required>
+                </div>
 
-                            if (idInput && idInput.value) {
-                                const deletedId = document.createElement("input");
-                                deletedId.type = "hidden";
-                                deletedId.name = "deleted_variant_ids[]";
-                                deletedId.value = idInput.value;
+                <div class="col-md-12">
+                    <label class="form-label">Description</label>
+                    <textarea name="description" class="form-control"
+                        rows="5"><?= htmlspecialchars($product['description'] ?? '') ?></textarea>
+                </div>
 
-                                deletedContainer.appendChild(deletedId);
-                            }
+                <hr class="my-4">
 
-                            card.remove();
+                <div class="d-flex justify-content-between align-items-center mb-3">
+                    <div>
+                        <h5 class="mb-1">Product Variants</h5>
+                        <p class="text-muted small mb-0">Edit existing variants or add new options.</p>
+                    </div>
+
+                    <button type="button" class="btn btn-outline-primary" id="addVariantBtn">
+                        <i class="bi bi-plus-circle me-1"></i>
+                        Add Variant
+                    </button>
+                </div>
+
+                <div id="variantsContainer">
+
+                    <?php foreach ($variants as $index => $variant): ?>
+
+                        <div class="variant-card border rounded-3 p-3 mb-3">
+
+                            <div class="d-flex justify-content-between align-items-center mb-3">
+                                <strong class="variant-heading">Variant <?= $index + 1 ?></strong>
+                                <button type="button" class="btn btn-sm btn-outline-danger remove-variant">Remove</button>
+                            </div>
+
+                            <input type="hidden" name="variants[<?= $index ?>][id]"
+                                value="<?= (int) $variant['id'] ?>">
+
+                            <div class="row g-3">
+
+                                <div class="col-md-6">
+                                    <label class="form-label">Variant Title *</label>
+                                    <input type="text" name="variants[<?= $index ?>][title]" class="form-control"
+                                        maxlength="255"
+                                        value="<?= htmlspecialchars($variant['variant_title'] ?? '') ?>" required>
+                                </div>
+
+                                <div class="col-md-6">
+                                    <label class="form-label">Variant SKU *</label>
+                                    <input type="text" name="variants[<?= $index ?>][sku]" class="form-control"
+                                        maxlength="100"
+                                        value="<?= htmlspecialchars($variant['sku'] ?? '') ?>" required>
+                                </div>
+
+                                <div class="col-md-4">
+                                    <label class="form-label">Selling Price *</label>
+                                    <input type="number" name="variants[<?= $index ?>][price]" class="form-control"
+                                        min="0" max="99999999.99" step="0.01"
+                                        value="<?= htmlspecialchars($variant['price'] ?? '') ?>" required>
+                                </div>
+
+                                <div class="col-md-4">
+                                    <label class="form-label">Original Price</label>
+                                    <input type="number" name="variants[<?= $index ?>][original_price]" class="form-control"
+                                        min="0" max="99999999.99" step="0.01"
+                                        value="<?= htmlspecialchars($variant['original_price'] ?? '') ?>">
+                                </div>
+
+                                <div class="col-md-4">
+                                    <label class="form-label">Stock *</label>
+                                    <input type="number" name="variants[<?= $index ?>][stock]" class="form-control"
+                                        min="0" step="1" value="<?= (int) $variant['stock'] ?>" required>
+                                </div>
+
+                                <div class="col-12">
+                                    <label class="form-label">Attributes</label>
+                                    <input type="text" name="variants[<?= $index ?>][attributes]" class="form-control"
+                                        value="<?= htmlspecialchars(
+                                                    implode(', ', array_map(
+                                                        static function ($key, $value) {
+                                                            return $key . ': ' . $value;
+                                                        },
+                                                        array_keys($variant['decoded_attributes']),
+                                                        $variant['decoded_attributes']
+                                                    ))
+                                                ) ?>"
+                                        placeholder="Size: Small, Color: Red">
+                                </div>
+
+                                <div class="col-12">
+                                    <label class="form-label">Existing Variant Images</label>
+
+                                    <?php if (!empty($variant['images'])): ?>
+
+                                        <div class="d-flex flex-wrap gap-3">
+
+                                            <?php foreach ($variant['images'] as $variantImage): ?>
+
+                                                <?php
+                                                $variantImagePath = $variantImage['image_path'];
+
+                                                if (strpos($variantImagePath, 'assets/uploads/') !== 0) {
+                                                    $variantImagePath = 'assets/uploads/' . $variantImagePath;
+                                                }
+                                                ?>
+
+                                                <div class="image-tile text-center">
+                                                    <img src="../<?= htmlspecialchars($variantImagePath) ?>"
+                                                        alt="<?= htmlspecialchars($variantImage['alt_text'] ?? $variant['variant_title']) ?>"
+                                                        style="width:90px;height:90px;object-fit:cover" class="rounded border">
+                                                    <button type="button" class="image-cut-btn"
+                                                        data-remove-name="remove_variant_images[]"
+                                                        data-remove-id="<?= (int) $variantImage['id'] ?>"
+                                                        aria-label="Remove variant image">×</button>
+                                                    <div class="small text-muted mt-1">Image #<?= (int) $variantImage['id'] ?></div>
+                                                </div>
+
+                                            <?php endforeach; ?>
+
+                                        </div>
+
+                                    <?php else: ?>
+
+                                        <p class="text-muted small mb-0">No variant images saved.</p>
+
+                                    <?php endif; ?>
+                                </div>
+
+                            </div>
+
+                            <div class="mb-3">
+                                <label class="form-label">Variant Images</label>
+
+                                <input type="file" class="form-control"
+                                    name="variants[<?= $index ?>][images][]"
+                                    accept="image/jpeg,image/png,image/webp" multiple>
+
+                                <small class="text-muted">
+                                    Select multiple JPG, PNG or WEBP images. Existing images will be preserved.
+                                </small>
+                            </div>
+
+                        </div>
+
+                    <?php endforeach; ?>
+
+                </div>
+
+                <div id="deletedVariantsContainer"></div>
+
+                <template id="variantTemplate">
+                    <div class="variant-card border rounded-3 p-3 mb-3">
+
+                        <div class="d-flex justify-content-between align-items-center mb-3">
+                            <strong class="variant-heading">New Variant</strong>
+                            <button type="button" class="btn btn-sm btn-outline-danger remove-variant">Remove</button>
+                        </div>
+
+                        <div class="row g-3">
+
+                            <div class="col-md-6">
+                                <label class="form-label">Variant Title *</label>
+                                <input type="text" data-field="title" class="form-control" maxlength="255" required>
+                            </div>
+
+                            <div class="col-md-6">
+                                <label class="form-label">Variant SKU *</label>
+                                <input type="text" data-field="sku" class="form-control" maxlength="100" required>
+                            </div>
+
+                            <div class="col-md-4">
+                                <label class="form-label">Selling Price *</label>
+                                <input type="number" data-field="price" class="form-control"
+                                    min="0" max="99999999.99" step="0.01" required>
+                            </div>
+
+                            <div class="col-md-4">
+                                <label class="form-label">Original Price</label>
+                                <input type="number" data-field="original_price" class="form-control"
+                                    min="0" max="99999999.99" step="0.01">
+                            </div>
+
+                            <div class="col-md-4">
+                                <label class="form-label">Stock *</label>
+                                <input type="number" data-field="stock" class="form-control"
+                                    min="0" step="1" required>
+                            </div>
+
+                            <div class="col-12">
+                                <label class="form-label">Attributes</label>
+                                <input type="text" data-field="attributes" class="form-control"
+                                    placeholder="Size: Small, Color: Red">
+                            </div>
+
+                            <div class="mb-3">
+                                <label class="form-label">Variant Images</label>
+                                <input type="file" class="form-control" data-image-upload="1"
+                                    accept="image/jpeg,image/png,image/webp" multiple>
+                                <small class="text-muted">Select multiple JPG, PNG or WEBP images.</small>
+                            </div>
+
+                        </div>
+                    </div>
+                </template>
+
+                <div class="col-12">
+                    <label class="form-label d-block">Existing Additional Product Images</label>
+                    <?php if (!empty($productImages)): ?>
+                        <div class="d-flex flex-wrap gap-2">
+                            <?php foreach ($productImages as $galleryImage): ?>
+                                <?php
+                                $galleryPath = $galleryImage['image_path'];
+                                if (strpos($galleryPath, 'assets/uploads/') !== 0) {
+                                    $galleryPath = 'assets/uploads/' . ltrim($galleryPath, '/');
+                                }
+                                ?>
+                                <div class="image-tile">
+                                    <img src="../<?= htmlspecialchars($galleryPath) ?>"
+                                        alt="<?= htmlspecialchars($galleryImage['alt_text'] ?? ($product['title'] ?? '')) ?>"
+                                        style="width:90px;height:90px;object-fit:cover" class="rounded border">
+                                    <button type="button" class="image-cut-btn"
+                                        data-remove-name="remove_gallery_images[]"
+                                        data-remove-id="<?= (int) $galleryImage['id'] ?>"
+                                        aria-label="Remove gallery image">×</button>
+                                </div>
+                            <?php endforeach; ?>
+                        </div>
+                    <?php else: ?>
+                        <p class="small text-muted">No additional product images saved.</p>
+                    <?php endif; ?>
+                </div>
+
+                <div class="col-md-6">
+                    <label class="form-label d-block">Current Image</label>
+
+                    <?php if (!empty($product['image'])): ?>
+
+                        <?php
+                        $currentImage = $product['image'];
+                        if (strpos($currentImage, 'assets/uploads/') !== 0) {
+                            $currentImage = 'assets/uploads/' . $currentImage;
                         }
+                        ?>
+
+                        <div class="image-tile">
+                            <img src="../<?= htmlspecialchars($currentImage) ?>" alt="Product Image" class="current-image">
+                            <button type="button" class="image-cut-btn"
+                                data-remove-name="remove_main_image" data-remove-id="1"
+                                aria-label="Remove main product image">×</button>
+                        </div>
+
+                    <?php else: ?>
+
+                        <div class="text-muted">No image available.</div>
+
+                    <?php endif; ?>
+                </div>
+
+                <div class="col-md-6">
+                    <label class="form-label">Replace Image</label>
+                    <input type="file" name="image" class="form-control" accept=".jpg,.jpeg,.png,.webp">
+                    <small class="text-muted">JPG, PNG or WEBP. Maximum 5MB.</small>
+                </div>
+
+                <div class="col-md-6">
+                    <label class="form-label">Product Status</label>
+                    <select name="status" class="form-select">
+                        <option value="1" <?= ((int) $product['status'] === 1) ? 'selected' : '' ?>>
+                            Active / Approved
+                        </option>
+                        <option value="0" <?= ((int) $product['status'] === 0) ? 'selected' : '' ?>>
+                            Pending / Inactive
+                        </option>
+                    </select>
+                </div>
+
+                <div class="col-md-6">
+                    <label class="form-label">Product ID</label>
+                    <input type="text" class="form-control" value="<?= (int) $product['id'] ?>" readonly>
+                </div>
+
+            </div>
+
+            <hr class="my-4">
+
+            <div class="d-flex justify-content-end gap-2">
+                <a href="products.php" class="btn btn-light border">Cancel</a>
+
+                <button type="submit" class="btn btn-primary">
+                    <i class="bi bi-check-circle me-1"></i>
+                    Update Product
+                </button>
+            </div>
+
+        </form>
+    </div>
+</div>
+
+<script>
+    Admin.onReady(function() {
+
+        const mainForm = document.getElementById("productEditForm");
+        if (!mainForm) return;
+
+        // Listener is on the form (not on document), so it disappears with the page
+        // and is never added twice after AJAX navigation.
+        mainForm.addEventListener("click", function(event) {
+            const button = event.target.closest(".image-cut-btn");
+            if (!button) return;
+
+            event.preventDefault();
+            event.stopPropagation();
+
+            const form = mainForm;
+
+            const fieldName = button.dataset.removeName;
+            const fieldId = button.dataset.removeId;
+            if (!fieldName) return;
+
+            if (fieldName === "remove_main_image") {
+                let hidden = form.querySelector('input[name="remove_main_image"]');
+                if (!hidden) {
+                    hidden = document.createElement("input");
+                    hidden.type = "hidden";
+                    hidden.name = "remove_main_image";
+                    form.appendChild(hidden);
+                }
+                hidden.value = "1";
+            } else {
+                if (!fieldId) return;
+                const alreadyAdded = Array.from(form.querySelectorAll('input[type="hidden"][name="' + fieldName + '"]'))
+                    .some(function(input) {
+                        return input.value === fieldId;
                     });
-                });
+                if (!alreadyAdded) {
+                    const hidden = document.createElement("input");
+                    hidden.type = "hidden";
+                    hidden.name = fieldName;
+                    hidden.value = fieldId;
+                    form.appendChild(hidden);
+                }
             }
 
-            addButton.addEventListener("click", function() {
-                const fragment = template.content.cloneNode(true);
-                const card = fragment.querySelector(".variant-card");
+            const tile = button.closest(".image-tile");
+            if (tile) tile.remove();
+        });
 
-                card.querySelectorAll("[data-field]").forEach(function(input) {
-                    input.name = `variants[${nextIndex}][${input.dataset.field}]`;
+        const container = document.getElementById("variantsContainer");
+        const deletedContainer = document.getElementById("deletedVariantsContainer");
+        const template = document.getElementById("variantTemplate");
+        const addButton = document.getElementById("addVariantBtn");
+
+        let nextIndex = <?= count($variants) ?>;
+
+        function bindRemoveButtons() {
+            container.querySelectorAll(".remove-variant").forEach(function(button) {
+                if (button.dataset.bound === "1") return;
+
+                button.dataset.bound = "1";
+
+                button.addEventListener("click", function() {
+                    if (confirm("Remove this variant from the form?")) {
+                        const card = button.closest(".variant-card");
+                        const idInput = card.querySelector('input[name$="[id]"]');
+
+                        if (idInput && idInput.value) {
+                            const deletedId = document.createElement("input");
+                            deletedId.type = "hidden";
+                            deletedId.name = "deleted_variant_ids[]";
+                            deletedId.value = idInput.value;
+
+                            deletedContainer.appendChild(deletedId);
+                        }
+
+                        card.remove();
+                    }
                 });
-
-                card.querySelectorAll("[data-image-upload]").forEach(function(input) {
-                    input.name = `variants[${nextIndex}][images][]`;
-                });
-
-                card.querySelector(".variant-heading").textContent =
-                    "New Variant " + (nextIndex + 1);
-
-                container.appendChild(fragment);
-                nextIndex++;
-
-                bindRemoveButtons();
             });
+        }
+
+        addButton.addEventListener("click", function() {
+            const fragment = template.content.cloneNode(true);
+            const card = fragment.querySelector(".variant-card");
+
+            card.querySelectorAll("[data-field]").forEach(function(input) {
+                input.name = `variants[${nextIndex}][${input.dataset.field}]`;
+            });
+
+            card.querySelectorAll("[data-image-upload]").forEach(function(input) {
+                input.name = `variants[${nextIndex}][images][]`;
+            });
+
+            card.querySelector(".variant-heading").textContent =
+                "New Variant " + (nextIndex + 1);
+
+            container.appendChild(fragment);
+            nextIndex++;
 
             bindRemoveButtons();
         });
-    </script>
 
-</body>
-</html>
+        bindRemoveButtons();
+    });
+</script>
+
+<?php adminFooter();
