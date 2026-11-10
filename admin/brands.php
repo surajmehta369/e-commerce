@@ -1,6 +1,6 @@
 
 <?php
-require_once "auth.php";
+require_once __DIR__ . "/includes/layout.php";
 require_once "../connection/dbconnect.php";
 
 $database = new Database();
@@ -8,17 +8,35 @@ $db = $database->connect();
 
 $message = "";
 $messageType = "success";
+
+// Generate brand slug
 function createBrandSlug($name)
 {
     $slug = strtolower(trim($name));
     $slug = preg_replace('/[^a-z0-9]+/', '-', $slug);
     return trim($slug, '-');
 }
+
+// Escape output
+function brandEscape($value)
+{
+    return htmlspecialchars(
+        (string)($value ?? ''),
+        ENT_QUOTES,
+        'UTF-8'
+    );
+}
+
+// Handle POST requests
 if ($_SERVER["REQUEST_METHOD"] === "POST") {
+
     $action = $_POST["action"] ?? "";
 
     try {
+
+        // ADD / EDIT BRAND
         if ($action === "save") {
+
             $id = (int)($_POST["id"] ?? 0);
             $name = trim($_POST["name"] ?? "");
 
@@ -35,10 +53,12 @@ if ($_SERVER["REQUEST_METHOD"] === "POST") {
                     "Please enter a brand name containing letters or numbers."
                 );
             }
+
             $baseSlug = $slug;
             $counter = 1;
 
             while (true) {
+
                 $sql = "SELECT id FROM brands WHERE slug = ?";
                 $params = [$slug];
 
@@ -59,29 +79,37 @@ if ($_SERVER["REQUEST_METHOD"] === "POST") {
             }
 
             if ($id > 0) {
+
                 $stmt = $db->prepare(
                     "UPDATE brands SET name = ?, slug = ? WHERE id = ?"
                 );
+
                 $stmt->execute([$name, $slug, $id]);
 
                 $message = "Brand updated successfully.";
+
             } else {
+
                 $stmt = $db->prepare(
                     "INSERT INTO brands (name, slug, status)
                      VALUES (?, ?, 1)"
                 );
+
                 $stmt->execute([$name, $slug]);
 
                 $message = "Brand added successfully.";
             }
         }
 
+        // ACTIVATE / DEACTIVATE
         elseif ($action === "toggle") {
+
             $id = (int)($_POST["id"] ?? 0);
 
             $stmt = $db->prepare(
                 "SELECT status FROM brands WHERE id = ?"
             );
+
             $stmt->execute([$id]);
             $brand = $stmt->fetch(PDO::FETCH_ASSOC);
 
@@ -90,10 +118,13 @@ if ($_SERVER["REQUEST_METHOD"] === "POST") {
             }
 
             $newStatus = (int)$brand["status"] === 1 ? 0 : 1;
+
             if ($newStatus === 0) {
+
                 $stmt = $db->prepare(
                     "SELECT COUNT(*) FROM products WHERE brand_id = ?"
                 );
+
                 $stmt->execute([$id]);
 
                 if ((int)$stmt->fetchColumn() > 0) {
@@ -106,6 +137,7 @@ if ($_SERVER["REQUEST_METHOD"] === "POST") {
             $stmt = $db->prepare(
                 "UPDATE brands SET status = ? WHERE id = ?"
             );
+
             $stmt->execute([$newStatus, $id]);
 
             $message = $newStatus
@@ -113,12 +145,15 @@ if ($_SERVER["REQUEST_METHOD"] === "POST") {
                 : "Brand deactivated successfully.";
         }
 
+        // DELETE BRAND
         elseif ($action === "delete") {
+
             $id = (int)($_POST["id"] ?? 0);
 
             $stmt = $db->prepare(
                 "SELECT COUNT(*) FROM products WHERE brand_id = ?"
             );
+
             $stmt->execute([$id]);
 
             if ((int)$stmt->fetchColumn() > 0) {
@@ -130,16 +165,16 @@ if ($_SERVER["REQUEST_METHOD"] === "POST") {
             $stmt = $db->prepare(
                 "DELETE FROM brands WHERE id = ?"
             );
+
             $stmt->execute([$id]);
 
             $message = "Brand deleted successfully.";
         }
+
     } catch (Exception $e) {
+
         $message = $e->getMessage();
         $messageType = "danger";
-    }
-    if (session_status() === PHP_SESSION_NONE) {
-        session_start();
     }
 
     $_SESSION["brand_message"] = $message;
@@ -149,17 +184,18 @@ if ($_SERVER["REQUEST_METHOD"] === "POST") {
     exit;
 }
 
-if (session_status() === PHP_SESSION_NONE) {
-    session_start();
-}
-
+// Flash messages
 if (isset($_SESSION["brand_message"])) {
+
     $message = $_SESSION["brand_message"];
+
     $messageType = $_SESSION["brand_message_type"] ?? "success";
 
     unset($_SESSION["brand_message"]);
     unset($_SESSION["brand_message_type"]);
 }
+
+// Search
 $search = trim($_GET["search"] ?? "");
 
 $sql = "
@@ -169,25 +205,33 @@ $sql = "
         b.slug,
         b.status,
         b.created_at,
+
         (
             SELECT COUNT(*)
             FROM products p
             WHERE p.brand_id = b.id
         ) AS product_count
+
     FROM brands b
 ";
 
 $params = [];
 
 if ($search !== "") {
+
     $sql .= " WHERE b.name LIKE ? OR b.slug LIKE ?";
-    $params = ["%" . $search . "%", "%" . $search . "%"];
+
+    $params = [
+        "%" . $search . "%",
+        "%" . $search . "%"
+    ];
 }
 
 $sql .= " ORDER BY b.id DESC";
 
 $stmt = $db->prepare($sql);
 $stmt->execute($params);
+
 $brands = $stmt->fetchAll(PDO::FETCH_ASSOC);
 
 // Dashboard counts
@@ -200,209 +244,214 @@ $activeBrands = (int)$db->query(
 )->fetchColumn();
 
 $inactiveBrands = $totalBrands - $activeBrands;
+
+// Admin layout
+adminHeader('Brands', 'brands');
 ?>
-<!DOCTYPE html>
-<html lang="en">
-<head>
-    <meta charset="UTF-8">
-    <meta name="viewport" content="width=device-width, initial-scale=1.0">
 
-    <title>Brands | Admin Panel</title>
+<style>
+    .page-title {
+        font-weight: 700;
+        font-size: 28px;
+    }
 
-    <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.3/dist/css/bootstrap.min.css"
-          rel="stylesheet">
+    .stat-card,
+    .table-card {
+        background: #fff;
+        border: 0;
+        border-radius: 14px;
+        box-shadow: 0 3px 15px rgba(15,23,42,.05);
+    }
 
-    <style>
-        body {
-            margin: 0;
-            background: #f5f7fb;
-            font-family: Arial, sans-serif;
-            color: #1f2937;
-        }
+    .stat-card {
+        padding: 22px;
+        height: 100%;
+    }
 
-        .sidebar {
-            position: fixed;
-            top: 0;
-            left: 0;
-            width: 240px;
-            height: 100vh;
-            overflow-y: auto;
-            background: #111827;
-            padding: 24px 14px;
-            color: #fff;
-        }
+    .stat-label {
+        color: #6b7280;
+        font-size: 14px;
+        margin-bottom: 10px;
+    }
 
-        .sidebar h4 {
-            font-size: 20px;
-            margin: 0 10px 28px;
-            font-weight: 700;
-        }
+    .stat-number {
+        font-size: 27px;
+        font-weight: 700;
+    }
 
-        .sidebar a {
-            display: block;
-            padding: 12px 14px;
-            margin-bottom: 5px;
-            border-radius: 8px;
-            color: #cbd5e1;
-            text-decoration: none;
-        }
+    .table-card {
+        padding: 22px;
+    }
 
-        .sidebar a:hover,
-        .sidebar a.active {
-            background: #374151;
-            color: #fff;
-        }
+    .table th {
+        color: #64748b;
+        font-size: 12px;
+        text-transform: uppercase;
+        white-space: nowrap;
+        background: #f8fafc;
+    }
 
-        .main {
-            margin-left: 240px;
-            padding: 30px;
-        }
+    .table td {
+        vertical-align: middle;
+        font-size: 14px;
+    }
 
-        .stat-card,
-        .content-card {
-            background: #fff;
-            border: 0;
-            border-radius: 14px;
-            box-shadow: 0 3px 15px rgba(15, 23, 42, .05);
-        }
+    .badge {
+        font-weight: 600;
+        padding: 7px 9px;
+    }
 
-        .stat-card {
-            padding: 22px;
-            height: 100%;
-        }
+    .brand-name {
+        font-weight: 600;
+        color: #111827;
+    }
 
-        .stat-number {
-            font-size: 28px;
-            font-weight: 700;
-            margin-top: 8px;
-        }
+    .small-muted {
+        color: #6b7280;
+        font-size: 12px;
+    }
 
-        .content-card {
-            padding: 24px;
-        }
+    .brand-actions {
+        display: flex;
+        flex-wrap: wrap;
+        gap: 5px;
+    }
 
-        .table th {
-            font-size: 13px;
-            color: #64748b;
-            text-transform: uppercase;
-            white-space: nowrap;
-        }
+    .brand-actions form {
+        margin: 0;
+    }
+</style>
 
-        .table td {
-            vertical-align: middle;
-        }
+<!-- PAGE HEADER -->
 
-        .brand-name {
-            font-weight: 600;
-        }
+<div class="d-flex flex-wrap justify-content-between align-items-center gap-3 mb-4">
 
-        .brand-slug {
-            color: #64748b;
-            font-size: 13px;
-        }
+    <div>
+        <h1 class="page-title mb-1">Brands</h1>
 
-        @media (max-width: 800px) {
-            .sidebar {
-                position: static;
-                width: 100%;
-                height: auto;
-            }
+        <p class="text-secondary mb-0">
+            Manage product brands in your store.
+        </p>
+    </div>
 
-            .main {
-                margin-left: 0;
-                padding: 18px;
-            }
-        }
-    </style>
-</head>
+    <button
+        type="button"
+        class="btn btn-dark"
+        data-bs-toggle="modal"
+        data-bs-target="#brandModal"
+        onclick="prepareAdd()">
 
-<body>
+        + Add Brand
 
-<aside class="sidebar">
-    <h4>E-Commerce Admin</h4>
+    </button>
 
-    <a href="index.php">Dashboard</a>
-    <a href="vendors.php">Vendors</a>
-    <a href="products.php">Products</a>
-    <a href="customers.php">Customers</a>
-    <a href="categories.php">Categories</a>
-    <a href="brands.php" class="active">Brands</a>
-    <a href="orders.php">Orders</a>
-    <a href="reviews.php">Product Reviews</a>
-    <a href="profile.php">Admin Profile</a>
-    <a href="../outh/logout.php">Logout</a>
-</aside>
+</div>
 
-<main class="main">
+<!-- ALERT MESSAGE -->
 
-    <div class="d-flex flex-wrap justify-content-between align-items-center gap-3 mb-4">
-        <div>
-            <h2 class="fw-bold mb-1">Brands</h2>
-            <p class="text-secondary mb-0">
-                Manage product brands in your store.
-            </p>
-        </div>
+<?php if ($message !== ''): ?>
 
-        <button class="btn btn-primary"
-                data-bs-toggle="modal"
-                data-bs-target="#brandModal"
-                onclick="prepareAdd()">
-            + Add Brand
+    <div class="alert alert-<?= brandEscape($messageType) ?> alert-dismissible fade show">
+
+        <?= brandEscape($message) ?>
+
+        <button
+            type="button"
+            class="btn-close"
+            data-bs-dismiss="alert">
         </button>
+
     </div>
 
-    <?php if ($message !== ""): ?>
-        <div class="alert alert-<?= htmlspecialchars($messageType) ?> alert-dismissible fade show">
-            <?= htmlspecialchars($message) ?>
-            <button type="button" class="btn-close"
-                    data-bs-dismiss="alert"></button>
-        </div>
-    <?php endif; ?>
-    <div class="row g-3 mb-4">
+<?php endif; ?>
 
-        <div class="col-md-4">
-            <div class="stat-card">
-                <div class="text-secondary">Total Brands</div>
-                <div class="stat-number"><?= $totalBrands ?></div>
-            </div>
-        </div>
+<!-- STATISTICS -->
 
-        <div class="col-md-4">
-            <div class="stat-card">
-                <div class="text-secondary">Active Brands</div>
-                <div class="stat-number text-success"><?= $activeBrands ?></div>
-            </div>
-        </div>
+<div class="row g-3 mb-4">
 
-        <div class="col-md-4">
-            <div class="stat-card">
-                <div class="text-secondary">Inactive Brands</div>
-                <div class="stat-number text-danger"><?= $inactiveBrands ?></div>
+    <div class="col-6 col-xl-4">
+
+        <div class="stat-card">
+            <div class="stat-label">Total Brands</div>
+
+            <div class="stat-number">
+                <?= $totalBrands ?>
             </div>
         </div>
 
     </div>
-    <section class="content-card">
 
-        <form method="GET" class="row g-2 mb-4">
-            <div class="col-md-5">
-                <input type="text"
-                       name="search"
-                       class="form-control"
-                       placeholder="Search brand name or slug..."
-                       value="<?= htmlspecialchars($search) ?>">
+    <div class="col-6 col-xl-4">
+
+        <div class="stat-card">
+            <div class="stat-label">Active Brands</div>
+
+            <div class="stat-number text-success">
+                <?= $activeBrands ?>
             </div>
+        </div>
 
-            <div class="col-auto">
-                <button type="submit" class="btn btn-dark">Search</button>
-                <a href="brands.php" class="btn btn-outline-secondary">Reset</a>
+    </div>
+
+    <div class="col-6 col-xl-4">
+
+        <div class="stat-card">
+            <div class="stat-label">Inactive Brands</div>
+
+            <div class="stat-number text-danger">
+                <?= $inactiveBrands ?>
             </div>
-        </form>
+        </div>
 
-        <div class="table-responsive">
-            <table class="table table-hover align-middle">
+    </div>
 
-                <thead>
+</div>
+
+<!-- BRAND TABLE -->
+
+<div class="table-card">
+
+    <!-- SEARCH FORM -->
+
+    <form method="GET" class="row g-2 mb-4">
+
+        <div class="col-12 col-lg-8">
+
+            <input
+                type="text"
+                name="search"
+                class="form-control"
+                placeholder="Search brand name or slug..."
+                value="<?= brandEscape($search) ?>">
+
+        </div>
+
+        <div class="col-6 col-md-2 col-lg-2 d-grid">
+
+            <button type="submit" class="btn btn-dark">
+                Search
+            </button>
+
+        </div>
+
+        <div class="col-6 col-md-2 col-lg-2 d-grid">
+
+            <a href="brands.php" class="btn btn-outline-secondary">
+                Reset
+            </a>
+
+        </div>
+
+    </form>
+
+    <!-- BRANDS TABLE -->
+
+    <div class="table-responsive">
+
+        <table class="table table-hover align-middle">
+
+            <thead>
+
                 <tr>
                     <th>S.No.</th>
                     <th>Brand Name</th>
@@ -412,136 +461,227 @@ $inactiveBrands = $totalBrands - $activeBrands;
                     <th>Created Date</th>
                     <th>Actions</th>
                 </tr>
-                </thead>
 
-                <tbody>
+            </thead>
 
-                <?php if (count($brands) > 0): ?>
-                    <?php $serialNumber = 1; ?>
+            <tbody>
 
-                    <?php foreach ($brands as $brand): ?>
+                <?php if ($brands): ?>
+
+                    <?php foreach ($brands as $index => $brand): ?>
+
                         <tr>
-                            <td><?= $serialNumber++ ?></td>
 
                             <td>
-                                <span class="brand-name">
-                                    <?= htmlspecialchars($brand["name"]) ?>
+                                <?= $index + 1 ?>
+                            </td>
+
+                            <td>
+                                <div class="brand-name">
+                                    <?= brandEscape($brand["name"]) ?>
+                                </div>
+                            </td>
+
+                            <td>
+                                <span class="small-muted">
+                                    <?= brandEscape($brand["slug"]) ?>
                                 </span>
                             </td>
 
                             <td>
-                                <span class="brand-slug">
-                                    <?= htmlspecialchars($brand["slug"]) ?>
-                                </span>
+                                <strong>
+                                    <?= (int)$brand["product_count"] ?>
+                                </strong>
                             </td>
 
-                            <td><?= (int)$brand["product_count"] ?></td>
-
                             <td>
+
                                 <?php if ((int)$brand["status"] === 1): ?>
-                                    <span class="badge bg-success">Active</span>
+
+                                    <span class="badge text-bg-success">
+                                        Active
+                                    </span>
+
                                 <?php else: ?>
-                                    <span class="badge bg-secondary">Inactive</span>
+
+                                    <span class="badge text-bg-secondary">
+                                        Inactive
+                                    </span>
+
                                 <?php endif; ?>
+
                             </td>
 
                             <td>
-                                <?= htmlspecialchars(
-                                    date("d M Y", strtotime($brand["created_at"]))
-                                ) ?>
+
+                                <?= !empty($brand["created_at"])
+                                    ? brandEscape(date("d M Y", strtotime($brand["created_at"])))
+                                    : '-' ?>
+
                             </td>
 
                             <td>
-                                <div class="d-flex flex-wrap gap-1">
 
-                                    <button type="button"
-                                            class="btn btn-sm btn-outline-primary"
-                                            data-bs-toggle="modal"
-                                            data-bs-target="#brandModal"
-                                            onclick='prepareEdit(
-                                                <?= (int)$brand["id"] ?>,
-                                                <?= json_encode($brand["name"]) ?>
-                                            )'>
+                                <div class="brand-actions">
+
+                                    <!-- EDIT BUTTON -->
+
+                                    <button
+                                        type="button"
+                                        class="btn btn-sm btn-outline-primary"
+                                        data-bs-toggle="modal"
+                                        data-bs-target="#brandModal"
+                                        onclick='prepareEdit(
+                                            <?= (int)$brand["id"] ?>,
+                                            <?= json_encode(
+                                                $brand["name"],
+                                                JSON_HEX_TAG | JSON_HEX_APOS | JSON_HEX_QUOT | JSON_HEX_AMP
+                                            ) ?>
+                                        )'>
+
                                         Edit
+
                                     </button>
 
-                                    <form method="POST" class="d-inline">
-                                        <input type="hidden" name="action" value="toggle">
-                                        <input type="hidden" name="id"
-                                               value="<?= (int)$brand["id"] ?>">
+                                    <!-- ACTIVATE / DEACTIVATE -->
 
-                                        <button type="submit"
-                                                class="btn btn-sm btn-outline-warning"
-                                                onclick="return confirm('Change this brand status?')">
+                                    <form method="POST">
+
+                                        <input
+                                            type="hidden"
+                                            name="action"
+                                            value="toggle">
+
+                                        <input
+                                            type="hidden"
+                                            name="id"
+                                            value="<?= (int)$brand["id"] ?>">
+
+                                        <button
+                                            type="submit"
+                                            class="btn btn-sm btn-outline-warning"
+                                            onclick="return confirm('Change this brand status?')">
+
                                             <?= (int)$brand["status"] === 1
                                                 ? "Deactivate"
                                                 : "Activate" ?>
+
                                         </button>
+
                                     </form>
 
-                                    <form method="POST" class="d-inline">
-                                        <input type="hidden" name="action" value="delete">
-                                        <input type="hidden" name="id"
-                                               value="<?= (int)$brand["id"] ?>">
+                                    <!-- DELETE BUTTON -->
 
-                                        <button type="submit"
-                                                class="btn btn-sm btn-outline-danger"
-                                                onclick="return confirm('Are you sure you want to delete this brand?')">
+                                    <form method="POST">
+
+                                        <input
+                                            type="hidden"
+                                            name="action"
+                                            value="delete">
+
+                                        <input
+                                            type="hidden"
+                                            name="id"
+                                            value="<?= (int)$brand["id"] ?>">
+
+                                        <button
+                                            type="submit"
+                                            class="btn btn-sm btn-outline-danger"
+                                            onclick="return confirm('Are you sure you want to delete this brand?')">
+
                                             Delete
+
                                         </button>
+
                                     </form>
 
                                 </div>
+
                             </td>
+
                         </tr>
+
                     <?php endforeach; ?>
 
                 <?php else: ?>
+
                     <tr>
+
                         <td colspan="7"
-                            class="text-center text-secondary py-4">
+                            class="text-center text-secondary py-5">
+
                             No brands found.
+
                         </td>
+
                     </tr>
+
                 <?php endif; ?>
 
-                </tbody>
-            </table>
-        </div>
+            </tbody>
 
-    </section>
+        </table>
 
-</main>
-<div class="modal fade" id="brandModal" tabindex="-1" aria-hidden="true">
-    <div class="modal-dialog">
+    </div>
+
+</div>
+
+<!-- ADD / EDIT BRAND MODAL -->
+
+<div
+    class="modal fade"
+    id="brandModal"
+    tabindex="-1"
+    aria-hidden="true">
+
+    <div class="modal-dialog modal-dialog-centered">
+
         <div class="modal-content border-0 rounded-4">
 
             <form method="POST">
 
                 <div class="modal-header">
-                    <h5 class="modal-title" id="modalTitle">Add Brand</h5>
 
-                    <button type="button"
-                            class="btn-close"
-                            data-bs-dismiss="modal"></button>
+                    <h5 class="modal-title" id="modalTitle">
+                        Add Brand
+                    </h5>
+
+                    <button
+                        type="button"
+                        class="btn-close"
+                        data-bs-dismiss="modal">
+                    </button>
+
                 </div>
 
                 <div class="modal-body">
 
-                    <input type="hidden" name="action" value="save">
-                    <input type="hidden" name="id" id="brandId" value="0">
+                    <input
+                        type="hidden"
+                        name="action"
+                        value="save">
+
+                    <input
+                        type="hidden"
+                        name="id"
+                        id="brandId"
+                        value="0">
 
                     <div class="mb-3">
+
                         <label for="brandName" class="form-label">
                             Brand Name
                         </label>
 
-                        <input type="text"
-                               name="name"
-                               id="brandName"
-                               class="form-control"
-                               maxlength="100"
-                               required>
+                        <input
+                            type="text"
+                            name="name"
+                            id="brandName"
+                            class="form-control"
+                            maxlength="100"
+                            placeholder="Enter brand name"
+                            required>
+
                     </div>
 
                     <small class="text-secondary">
@@ -551,38 +691,60 @@ $inactiveBrands = $totalBrands - $activeBrands;
                 </div>
 
                 <div class="modal-footer">
-                    <button type="button"
-                            class="btn btn-light"
-                            data-bs-dismiss="modal">
+
+                    <button
+                        type="button"
+                        class="btn btn-outline-secondary"
+                        data-bs-dismiss="modal">
+
                         Cancel
+
                     </button>
 
-                    <button type="submit" class="btn btn-primary">
+                    <button
+                        type="submit"
+                        class="btn btn-dark">
+
                         Save Brand
+
                     </button>
+
                 </div>
 
             </form>
 
         </div>
+
     </div>
+
 </div>
 
-<script src="https://cdn.jsdelivr.net/npm/bootstrap@5.3.3/dist/js/bootstrap.bundle.min.js"></script>
+<!-- JAVASCRIPT -->
 
 <script>
+
 function prepareAdd() {
+
     document.getElementById("modalTitle").textContent = "Add Brand";
+
     document.getElementById("brandId").value = "0";
+
     document.getElementById("brandName").value = "";
+
 }
 
 function prepareEdit(id, name) {
+
     document.getElementById("modalTitle").textContent = "Edit Brand";
+
     document.getElementById("brandId").value = id;
+
     document.getElementById("brandName").value = name;
+
 }
+
 </script>
 
-</body>
-</html>
+<!-- ADMIN FOOTER -->
+
+<?php adminFooter(); ?>

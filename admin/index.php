@@ -1,6 +1,6 @@
 <?php
 
-require_once "auth.php";
+require_once __DIR__ . "/includes/layout.php";
 require_once "../connection/dbconnect.php";
 require_once "../zoho/zoho_functions.php";
 
@@ -152,210 +152,30 @@ function orderStatusBadge($status)
     }
 }
 
+
+adminHeader('Dashboard', 'dashboard');
 ?>
 
-<!DOCTYPE html>
-<html lang="en">
+<div class="page-header">
+    <div>
+        <h2>Dashboard</h2>
+        <small class="text-muted">
+            Welcome back, <?= htmlspecialchars($_SESSION['user_name'] ?? 'Admin'); ?>
+        </small>
+    </div>
+    <span class="badge bg-dark px-3 py-2">Administrator</span>
+</div>
 
-<head>
-
-    <meta charset="UTF-8">
-
-    <meta
-        name="viewport"
-        content="width=device-width, initial-scale=1.0">
-
-    <title>Admin Dashboard</title>
-
-    <link
-        href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.3/dist/css/bootstrap.min.css"
-        rel="stylesheet">
-
-    <style>
-        body {
-            background: #f5f7fb;
-        }
-
-        .sidebar {
-            min-height: 100vh;
-            background: #111827;
-        }
-
-        .sidebar .brand {
-            font-size: 22px;
-            font-weight: 600;
-            padding: 20px;
-            border-bottom: 1px solid rgba(255, 255, 255, .1);
-        }
-
-        .sidebar .nav-link {
-            color: #adb5bd;
-            padding: 11px 20px;
-            margin: 3px 10px;
-            border-radius: 7px;
-        }
-
-        .sidebar .nav-link:hover,
-        .sidebar .nav-link.active {
-            color: #fff;
-            background: #0d6efd;
-        }
-
-        .dashboard-card {
-            border: 0;
-            border-radius: 12px;
-            box-shadow: 0 2px 12px rgba(0, 0, 0, .06);
-        }
-
-        .stat-number {
-            font-size: 28px;
-            font-weight: 700;
-        }
-
-        .stat-title {
-            color: #6c757d;
-            font-size: 14px;
-        }
-
-        .content-header {
-            background: #fff;
-            border-bottom: 1px solid #e9ecef;
-        }
-
-        .section-card {
-            border: 0;
-            border-radius: 12px;
-            box-shadow: 0 2px 12px rgba(0, 0, 0, .06);
-        }
-
-        .table th {
-            font-size: 13px;
-            color: #6c757d;
-            font-weight: 600;
-            white-space: nowrap;
-        }
-
-        .table td {
-            vertical-align: middle;
-        }
-    </style>
-
-</head>
-
-<body>
-
-    <div class="container-fluid">
-
-        <div class="row">
+<style>
+    .dashboard-card { border: 0; border-radius: 12px; box-shadow: 0 2px 12px rgba(0,0,0,.06); }
+    .stat-number { font-size: 28px; font-weight: 700; }
+    .stat-title { color: #6c757d; font-size: 14px; }
+    .section-card { border: 0; border-radius: 12px; box-shadow: 0 2px 12px rgba(0,0,0,.06); }
+    .table th { font-size: 13px; color: #6c757d; font-weight: 600; white-space: nowrap; }
+    .table td { vertical-align: middle; }
+</style>
 
 
-            <div class="col-md-3 col-lg-2 px-0 sidebar">
-
-                <div class="brand text-white">
-                    E-Commerce Admin
-                </div>
-
-                <div class="py-3">
-
-                    <a
-                        href="index.php"
-                        class="nav-link active">
-                        Dashboard
-                    </a>
-
-                    <a
-                        href="vendors.php"
-                        class="nav-link">
-                        Vendors
-                    </a>
-
-                    <a
-                        href="products.php"
-                        class="nav-link">
-                        Products
-                    </a>
-
-                    <a
-                        href="customers.php"
-                        class="nav-link">
-                        Customers
-                    </a>
-
-                    <a
-                        href="categories.php"
-                        class="nav-link">
-                        Categories
-                    </a>
-
-                    <a
-                        href="brands.php"
-                        class="nav-link">
-                        Brands
-                    </a>
-
-                    <a
-                        href="orders.php"
-                        class="nav-link">
-                        Orders
-                    </a>
-                      <a
-                        href="reviews.php"
-                        class="nav-link">
-                        Product Reviews
-                    </a>
-
-                    <a
-                        href="profile.php"
-                        class="nav-link">
-                        Admin Profile
-                    </a>
-
-                    <div class="border-top border-secondary my-3"></div>
-
-                    <a
-                        href="../outh/logout.php"
-                        class="nav-link text-danger">
-                        Logout
-                    </a>
-
-                </div>
-
-            </div>
-
-            <div class="col-md-9 col-lg-10 px-0">
-
-                <div class="content-header px-4 py-3">
-
-                    <div class="d-flex justify-content-between align-items-center">
-
-                        <div>
-
-                            <h4 class="mb-1">
-                                Dashboard
-                            </h4>
-
-                            <small class="text-muted">
-                                Welcome back,
-                                <?= htmlspecialchars($_SESSION['user_name'] ?? 'Admin'); ?>
-                            </small>
-
-                        </div>
-
-                        <div>
-
-                            <span class="badge bg-dark px-3 py-2">
-                                Administrator
-                            </span>
-
-                        </div>
-
-                    </div>
-
-                </div>
-
-
-
-                <div class="p-4">
                     <div class="row g-4 mb-4">
 
                         <div class="col-sm-6 col-xl-3">
@@ -548,7 +368,7 @@ function orderStatusBadge($status)
                                     </div>
 
                                     <div class="stat-number mt-2">
-                                        $<?= number_format($totalSales, 2); ?>
+                                        ₹<?= number_format($totalSales, 2); ?>
                                     </div>
 
                                 </div>
@@ -721,7 +541,7 @@ function orderStatusBadge($status)
                                                     </td>
 
                                                     <td>
-                                                        $<?= number_format(
+                                                        ₹<?= number_format(
                                                                 (float) $order['total_amount'],
                                                                 2
                                                             ); ?>
@@ -902,14 +722,4 @@ function orderStatusBadge($status)
 
                     </div>
 
-                </div>
-
-            </div>
-
-        </div>
-
-    </div>
-
-</body>
-
-</html>
+<?php adminFooter();

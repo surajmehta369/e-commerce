@@ -1,11 +1,6 @@
-
 <?php
-require_once "auth.php";
+require_once __DIR__ . "/includes/layout.php";
 require_once "../connection/dbconnect.php";
-
-if (session_status() === PHP_SESSION_NONE) {
-    session_start();
-}
 
 $database = new Database();
 $db = $database->connect();
@@ -174,153 +169,23 @@ function orderStatusClass($status) {
             return 'secondary';
     }
 }
+
+adminHeader('Orders', 'orders');
 ?>
-<!DOCTYPE html>
-<html lang="en">
-<head>
-    <meta charset="UTF-8">
-    <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Orders | Admin Dashboard</title>
+<style>
+    .page-title { font-weight: 700; font-size: 28px; }
+    .stat-card, .table-card { background: #fff; border: 0; border-radius: 14px; box-shadow: 0 3px 15px rgba(15,23,42,.05); }
+    .stat-card { padding: 22px; height: 100%; }
+    .stat-label { color: #6b7280; font-size: 14px; margin-bottom: 10px; }
+    .stat-number { font-size: 27px; font-weight: 700; }
+    .table-card { padding: 22px; }
+    .table th { color: #64748b; font-size: 12px; text-transform: uppercase; white-space: nowrap; background: #f8fafc; }
+    .table td { vertical-align: middle; font-size: 14px; }
+    .badge { font-weight: 600; padding: 7px 9px; }
+    .customer-name { font-weight: 600; color: #111827; }
+    .small-muted { color: #6b7280; font-size: 12px; }
+</style>
 
-    <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.3/dist/css/bootstrap.min.css"
-          rel="stylesheet">
-
-    <style>
-        body {
-            background: #f5f7fb;
-            font-family: Arial, sans-serif;
-            color: #1f2937;
-        }
-
-        .sidebar {
-            width: 240px;
-            min-height: 100vh;
-            background: #111827;
-            position: fixed;
-            top: 0;
-            left: 0;
-            padding: 25px 16px;
-            color: white;
-        }
-
-        .sidebar h4 {
-            font-size: 21px;
-            margin: 0 0 30px 10px;
-            font-weight: 700;
-        }
-
-        .sidebar a {
-            display: block;
-            color: #cbd5e1;
-            text-decoration: none;
-            padding: 12px 14px;
-            border-radius: 8px;
-            margin-bottom: 5px;
-        }
-
-        .sidebar a:hover,
-        .sidebar a.active {
-            background: #263449;
-            color: #fff;
-        }
-
-        .main-content {
-            margin-left: 240px;
-            padding: 30px;
-        }
-
-        .page-title {
-            font-weight: 700;
-            font-size: 28px;
-        }
-
-        .stat-card,
-        .table-card {
-            background: #fff;
-            border: 0;
-            border-radius: 14px;
-            box-shadow: 0 3px 15px rgba(15, 23, 42, .05);
-        }
-
-        .stat-card {
-            padding: 22px;
-            height: 100%;
-        }
-
-        .stat-label {
-            color: #6b7280;
-            font-size: 14px;
-            margin-bottom: 10px;
-        }
-
-        .stat-number {
-            font-size: 27px;
-            font-weight: 700;
-        }
-
-        .table-card {
-            padding: 22px;
-        }
-
-        .table th {
-            color: #64748b;
-            font-size: 12px;
-            text-transform: uppercase;
-            white-space: nowrap;
-            background: #f8fafc;
-        }
-
-        .table td {
-            vertical-align: middle;
-            font-size: 14px;
-        }
-
-        .badge {
-            font-weight: 600;
-            padding: 7px 9px;
-        }
-
-        .customer-name {
-            font-weight: 600;
-            color: #111827;
-        }
-
-        .small-muted {
-            color: #6b7280;
-            font-size: 12px;
-        }
-
-        @media (max-width: 900px) {
-            .sidebar {
-                position: static;
-                width: 100%;
-                min-height: auto;
-            }
-
-            .main-content {
-                margin-left: 0;
-                padding: 18px;
-            }
-        }
-    </style>
-</head>
-<body>
-
-<aside class="sidebar">
-    <h4>Admin Panel</h4>
-    <a href="index.php">Dashboard</a>
-    <a href="vendors.php">Vendors</a>
-    <a href="products.php">Products</a>
-    <a href="customers.php">Customers</a>
-    <a href="categories.php">Categories</a>
-    <a href="brands.php">Brands</a>
-    <a href="orders.php" class="active">Orders</a>
-    <a href="reviews.php">Product Reviews</a>
-    <a href="profile.php">Admin Profile</a>
-    <a href="../outh/logout.php">Logout</a>
-</aside>
-
-<main class="main-content">
     <div class="d-flex flex-wrap justify-content-between align-items-center gap-3 mb-4">
         <div>
             <h1 class="page-title mb-1">Orders</h1>
@@ -505,8 +370,5 @@ function orderStatusClass($status) {
             </table>
         </div>
     </div>
-</main>
 
-<script src="https://cdn.jsdelivr.net/npm/bootstrap@5.3.3/dist/js/bootstrap.bundle.min.js"></script>
-</body>
-</html>
+<?php adminFooter();

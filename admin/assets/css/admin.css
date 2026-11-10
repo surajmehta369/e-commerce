@@ -1,0 +1,186 @@
+/* ===== Admin common styles (sidebar, layout, loader) ===== */
+
+:root {
+    --admin-sidebar-w: 250px;
+    --admin-sidebar-bg: #111827;
+    --admin-sidebar-hover: #1f2937;
+    --admin-accent: #0d6efd;
+    --admin-bg: #f5f7fb;
+}
+
+body {
+    background: var(--admin-bg);
+    font-family: system-ui, -apple-system, "Segoe UI", Roboto, Arial, sans-serif;
+    color: #1f2937;
+}
+
+/* ---------- Sidebar ---------- */
+.admin-sidebar {
+    position: fixed;
+    inset: 0 auto 0 0;
+    width: var(--admin-sidebar-w);
+    background: var(--admin-sidebar-bg);
+    color: #fff;
+    display: flex;
+    flex-direction: column;
+    z-index: 1040;
+    overflow-y: auto;
+    transition: transform .25s ease;
+}
+
+.admin-brand {
+    font-size: 19px;
+    font-weight: 700;
+    padding: 22px 20px;
+    border-bottom: 1px solid rgba(255, 255, 255, .08);
+}
+
+.admin-nav {
+    padding: 14px 12px;
+    display: flex;
+    flex-direction: column;
+    gap: 3px;
+    flex: 1;
+}
+
+.nav-item-link {
+    display: flex;
+    align-items: center;
+    gap: 12px;
+    padding: 11px 14px;
+    border-radius: 8px;
+    color: #cbd5e1;
+    text-decoration: none;
+    font-size: 15px;
+    transition: background .15s, color .15s;
+}
+
+.nav-item-link i {
+    font-size: 17px;
+    width: 20px;
+    text-align: center;
+}
+
+.nav-item-link:hover {
+    background: var(--admin-sidebar-hover);
+    color: #fff;
+}
+
+.nav-item-link.active {
+    background: var(--admin-accent);
+    color: #fff;
+}
+
+.nav-item-link.logout {
+    color: #f87171;
+}
+
+.nav-item-link.logout:hover {
+    background: rgba(248, 113, 113, .12);
+    color: #fca5a5;
+}
+
+.admin-nav-divider {
+    border-top: 1px solid rgba(255, 255, 255, .1);
+    margin: 12px 4px;
+}
+
+/* ---------- Main area ---------- */
+.admin-main {
+    margin-left: var(--admin-sidebar-w);
+    min-height: 100vh;
+}
+
+.admin-content {
+    padding: 30px;
+    transition: opacity .15s ease;
+}
+
+.admin-content.is-loading {
+    opacity: .45;
+    pointer-events: none;
+}
+
+.admin-topbar {
+    display: flex;
+    align-items: center;
+    gap: 12px;
+    padding: 12px 18px;
+    background: #fff;
+    border-bottom: 1px solid #e5e7eb;
+    position: sticky;
+    top: 0;
+    z-index: 1030;
+}
+
+/* ---------- Top progress bar ---------- */
+.admin-progress {
+    position: fixed;
+    top: 0;
+    left: 0;
+    height: 3px;
+    width: 0;
+    background: var(--admin-accent);
+    z-index: 2000;
+    opacity: 0;
+    transition: width .35s ease, opacity .25s ease;
+    box-shadow: 0 0 8px rgba(13, 110, 253, .6);
+}
+
+/* ---------- Shared page pieces ---------- */
+.page-header {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    flex-wrap: wrap;
+    gap: 12px;
+    margin-bottom: 24px;
+}
+
+.page-header h2,
+.page-header .page-title {
+    margin: 0;
+    font-weight: 700;
+    font-size: 26px;
+}
+
+.card {
+    border: 0;
+    border-radius: 12px;
+    box-shadow: 0 2px 12px rgba(0, 0, 0, .06);
+}
+
+.table th {
+    white-space: nowrap;
+}
+
+/* ---------- Mobile ---------- */
+.admin-overlay {
+    display: none;
+}
+
+@media (max-width: 991.98px) {
+    .admin-sidebar {
+        transform: translateX(-100%);
+    }
+
+    body.sidebar-open .admin-sidebar {
+        transform: translateX(0);
+    }
+
+    body.sidebar-open .admin-overlay {
+        display: block;
+        position: fixed;
+        inset: 0;
+        background: rgba(0, 0, 0, .45);
+        z-index: 1035;
+    }
+
+    .admin-main {
+        margin-left: 0;
+    }
+
+    .admin-content {
+        padding: 18px;
+    }
+}
