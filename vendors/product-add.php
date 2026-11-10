@@ -1,8 +1,5 @@
 <?php
 
-error_reporting(E_ALL);
-ini_set('display_errors', '1');
-
 session_start();
 
 require_once "../connection/dbconnect.php";
@@ -786,26 +783,6 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
         } catch (Throwable $e) {
             $shopifyMessages[] = 'Shopify sync failed: ' . $e->getMessage();
         }
-        $zohoMessage = '';
-
-        try {
-
-            $zohoResult = syncProductToZoho([
-                'name' => $title,
-                'sku' => $sku,
-                'description' => $description,
-                'rate' => (float) $price,
-                'purchase_rate' => (float) $originalPrice,
-                'stock' => (int) $stock
-            ]);
-
-            if (empty($zohoResult['success'])) {
-                $zohoMessage = 'Zoho sync failed: ' .
-                    ($zohoResult['message'] ?? 'Unknown synchronization error.');
-            }
-        } catch (Throwable $e) {
-            $zohoMessage = 'Zoho sync failed: ' . $e->getMessage();
-        }
 
         $message = 'Product saved successfully and is waiting for admin approval.';
 
@@ -818,14 +795,6 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
         } else {
             $message .= ' Shopify product is saved as Draft.';
         }
-
-        if ($zohoMessage !== '') {
-            $message .= ' ' . $zohoMessage;
-        }
-
-        $messageType = (
-            !empty($shopifyMessages) || $zohoMessage !== ''
-        ) ? 'warning' : 'success';
 
         $_POST = [];
     } catch (Throwable $e) {

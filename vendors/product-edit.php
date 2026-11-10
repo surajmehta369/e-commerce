@@ -713,21 +713,22 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
 
             $db->beginTransaction();
             $updateStmt = $db->prepare("
-                UPDATE products
-                SET
-                    sku = :sku,
-                    title = :title,
-                    description = :description,
-                    image = :image,
-                    price = :price,
-                    original_price = :original_price,
-                    discount = :discount,
-                    stock = :stock,
-                    category_id = :category_id,
-                    brand_id = :brand_id
-                WHERE id = :id
-                  AND vendor_id = :vendor_id
-            ");
+    UPDATE products
+    SET
+        sku = :sku,
+        title = :title,
+        description = :description,
+        image = :image,
+        price = :price,
+        original_price = :original_price,
+        discount = :discount,
+        stock = :stock,
+        category_id = :category_id,
+        brand_id = :brand_id,
+        status = 0
+    WHERE id = :id
+      AND vendor_id = :vendor_id
+");
 
             $updateStmt->execute([
                 ':sku' => $sku,
@@ -743,8 +744,6 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
                 ':id' => $productId,
                 ':vendor_id' => $vendorId
             ]);
-
-            // Delete selected gallery images, but retain their file paths until commit succeeds.
             if ($removeGalleryImageIds) {
                 $findRemovedGallery = $db->prepare("SELECT image_path FROM product_images WHERE id = :id AND product_id = :product_id");
                 $deleteGallery = $db->prepare("DELETE FROM product_images WHERE id = :id AND product_id = :product_id");
@@ -766,8 +765,6 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
                     $deleteVariantImage->execute([':id' => $imageId, ':product_id' => $productId]);
                 }
             }
-
-            // Append newly uploaded additional product gallery images.
             if ($galleryUploadFiles) {
                 $sortStmt = $db->prepare("SELECT COALESCE(MAX(sort_order), -1) FROM product_images WHERE product_id = :product_id");
                 $sortStmt->execute([':product_id' => $productId]);
@@ -929,100 +926,23 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
                 }
             }
 
-
-
-            if (!empty($product['shopify_product_id'])) {
-
-                $shopifyProductId =
-                    $product['shopify_product_id'];
-
-                $shopifyResult =
-                    updateShopifyProduct(
-                        $shopifyProductId,
-                        [
-                            'title' =>
-                            $title,
-
-                            'description' =>
-                            $description,
-
-                            'slug' =>
-                            $product['slug'],
-
-                            'status' =>
-                            $product['status']
-                        ]
-                    );
-
-                if (empty($shopifyResult['success'])) {
-
-                    throw new Exception(
-                        $shopifyResult['message']
-                            ?? 'Unable to update Shopify product.'
-                    );
-                }
-
-
-                $variantResult =
-                    updateShopifyProductVariant(
-                        $shopifyProductId,
-                        $price,
-                        $originalPrice,
-                        $sku
-                    );
-
-                if (empty($variantResult['success'])) {
-
-                    throw new Exception(
-                        $variantResult['message']
-                            ?? 'Unable to update Shopify variant.'
-                    );
-                }
-
-
-                $inventoryResult =
-                    updateShopifyInventory(
-                        $shopifyProductId,
-                        $stock
-                    );
-
-                if (empty($inventoryResult['success'])) {
-
-                    throw new Exception(
-                        $inventoryResult['message']
-                            ?? 'Unable to update Shopify inventory.'
-                    );
-                }
-                $collectionResult =
-                    addShopifyProductToVendorCollection(
-                        $shopifyProductId,
-                        $vendorId
-                    );
-
-                if (empty($collectionResult['success'])) {
-
-                    throw new Exception(
-                        $collectionResult['message']
-                            ?? 'Unable to update vendor Shopify collection.'
-                    );
-                }
-
-
-                $shopifySyncStmt = $db->prepare("
-        UPDATE products
-        SET
-            shopify_synced_at = NOW()
-        WHERE id = :id
-    ");
-
-                $shopifySyncStmt->execute([
-                    ':id' => $productId
-                ]);
-            }
-
             $db->commit();
 
-            // Remove files only after the database transaction commits; restrict deletion to uploads folder.
+            if (!empty($product['shopify_product_id'])) {
+                try {
+                    updateShopifyProduct($product['shopify_product_id'], [
+                        'title' => $title,
+                        'description' => $description,
+                        'slug'  => $product['slug'],
+                        'status' => 0
+                    ]);
+                    $db->prepare("UPDATE products SET shopify_status='DRAFT', shopify_synced_at=NOW() WHERE id=:id")
+                        ->execute([':id' => $productId]);
+                } catch (Throwable $e) {
+                    error_log('Vendor edit Shopify draft: ' . $e->getMessage());
+                }
+            }
+            $success = 'Product updated and sent for admin approval again.';
             foreach ($removedImagePaths as $relativePath) {
                 $normalizedPath = ltrim(str_replace('\\', '/', (string) $relativePath), '/');
                 if (strpos($normalizedPath, 'assets/uploads/') === 0) {
@@ -1113,8 +1033,22 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
 
     <title>Edit Product</title>
     <style>
-        .image-tile { display: inline-block; position: relative; }
-        .image-cut-btn { position: absolute; top: -7px; right: -7px; width: 24px; height: 24px; padding: 0; line-height: 20px; border-radius: 50%; font-weight: 700; }
+        .image-tile {
+            display: inline-block;
+            position: relative;
+        }
+
+        .image-cut-btn {
+            position: absolute;
+            top: -7px;
+            right: -7px;
+            width: 24px;
+            height: 24px;
+            padding: 0;
+            line-height: 20px;
+            border-radius: 50%;
+            font-weight: 700;
+        }
     </style>
 
     <link
@@ -1174,7 +1108,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
                         </a>
 
                     </li>
-                               <li class="nav-item mb-2">
+                    <li class="nav-item mb-2">
 
                         <a
                             href="reviews.php"
