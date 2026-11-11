@@ -962,47 +962,92 @@
     }
 }
 
-    
+
+/* =========================================
+   PROFESSIONAL RESPONSIVE FOOTER
+========================================= */
 
 .site-footer {
     background-color: #232f3e;
     color: #ffffff;
     padding-top: 50px;
+    margin-top: 0;
 }
 
-.footer-column h5 {
+.footer-main {
+    padding-bottom: 20px;
+}
+
+.footer-column {
+    height: 100%;
+}
+
+/* Footer headings */
+
+.footer-heading {
+    width: 100%;
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+
+    padding: 0;
+    margin-bottom: 20px;
+
+    border: none;
+    background: transparent;
+
     color: #ffffff;
     font-size: 18px;
     font-weight: 600;
-    margin-bottom: 20px;
+    text-align: left;
+
+    cursor: default;
 }
 
-.footer-column ul {
+.footer-arrow {
+    display: none;
+    transition: transform 0.3s ease;
+}
+
+/* Footer links */
+
+.footer-content ul {
     list-style: none;
     padding: 0;
     margin: 0;
 }
 
-.footer-column ul li {
+.footer-content ul li {
     margin-bottom: 12px;
 }
 
-.footer-column ul li a {
+.footer-content ul li a {
+    display: inline-block;
     color: #dddddd;
     text-decoration: none;
     font-size: 15px;
-    transition: 0.3s ease;
+    line-height: 1.6;
+    transition: color 0.25s ease,
+                transform 0.25s ease;
 }
 
-.footer-column ul li a:hover {
+.footer-content ul li a:hover {
     color: #ffffff;
-    text-decoration: underline;
+    transform: translateX(4px);
 }
+
+.footer-content ul li a i {
+    margin-right: 7px;
+}
+
+/* Copyright section */
 
 .footer-bottom {
-    margin-top: 30px;
-    padding: 20px;
+    margin-top: 20px;
+    padding: 22px 15px;
+
     text-align: center;
+
     background-color: #131a22;
     border-top: 1px solid #3a4553;
 }
@@ -1011,21 +1056,93 @@
     margin: 0;
     color: #cccccc;
     font-size: 14px;
+    line-height: 1.6;
 }
 
-@media (max-width: 576px) {
+/* =========================================
+   TABLET
+========================================= */
+
+@media (max-width: 991.98px) {
+
     .site-footer {
-        padding-top: 35px;
+        padding-top: 40px;
     }
 
-    .footer-column h5 {
+    .footer-main {
+        padding-bottom: 10px;
+    }
+
+    .footer-heading {
         font-size: 17px;
     }
 
-    .footer-column ul li {
-        margin-bottom: 9px;
-    }
 }
+
+/* =========================================
+   MOBILE ACCORDION
+========================================= */
+
+@media (max-width: 767.98px) {
+
+    .site-footer {
+        padding-top: 25px;
+    }
+
+    .footer-main {
+        padding-bottom: 5px;
+    }
+
+    .footer-column {
+        border-bottom: 1px solid #3a4553;
+        padding-bottom: 14px;
+    }
+
+    .footer-heading {
+        margin-bottom: 0;
+        padding: 8px 0;
+
+        font-size: 16px;
+        cursor: pointer;
+    }
+
+    .footer-arrow {
+        display: inline-block;
+        font-size: 13px;
+    }
+
+    .footer-heading[aria-expanded="true"] .footer-arrow {
+        transform: rotate(180deg);
+    }
+
+    .footer-content {
+        display: none;
+        padding-top: 15px;
+    }
+
+    .footer-content.show {
+        display: block;
+    }
+
+    .footer-content ul li {
+        margin-bottom: 10px;
+    }
+
+    .footer-content ul li a {
+        font-size: 14px;
+    }
+
+    .footer-bottom {
+        margin-top: 10px;
+        padding: 18px 12px;
+    }
+
+    .footer-bottom p {
+        font-size: 13px;
+    }
+
+}
+
 
 .sidebar-overlay {
     position: fixed;

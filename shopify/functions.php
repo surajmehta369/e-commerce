@@ -539,21 +539,37 @@ GRAPHQL;
             'response' => $response
         ];
     }
-    foreach ($locations as $location) {
+$fallback = null;
 
-        if (
-            $location['name'] === 'My Custom Location' &&
-            !empty($location['isActive'])
-        ) {
-            return [
-                'success' => true,
-                'message' => 'Shopify target inventory location found.',
-                'location_id' => $location['id'],
-                'location_name' => $location['name'],
-                'data' => $location
-            ];
-        }
+foreach ($locations as $location) {
+
+    if (empty($location['isActive'])) {
+        continue;
     }
+    if (
+        defined('SHOPIFY_LOCATION_NAME') &&
+        $location['name'] === SHOPIFY_LOCATION_NAME
+    ) {
+        return [
+            'success' => true,
+            'message' => 'Shopify target inventory location found.',
+            'location_id' => $location['id'],
+            'location_name' => $location['name'],
+            'data' => $location
+        ];
+    }
+    $fallback = $fallback ?? $location;
+}
+
+if ($fallback) {
+    return [
+        'success' => true,
+        'message' => 'Using first active Shopify location.',
+        'location_id' => $fallback['id'],
+        'location_name' => $fallback['name'],
+        'data' => $fallback
+    ];
+}
     return [
         'success' => false,
         'message' => 'Shopify locations were returned, but no active inventory location was found.',
@@ -804,26 +820,26 @@ mutation UpdateProductVariant(
 }
 GRAPHQL;
 
-    $variables = [
-        'productId' => $productGid,
-        'variants' => [[
-            'id' => $variantId,
-            'price' => number_format(
-                (float) $price,
-                2,
-                '.',
-                ''
-            ),
-            'compareAtPrice' => $compareAtPrice,
-            'inventoryItem' => [
-                'sku' => $sku
-            ],
-            'optionValues' => [[
-                'optionName' => 'Title',
-                'name' => trim((string) $variantTitle)
-            ]]
-        ]]
-    ];
+$variantInput = [
+    'id' => $variantId,
+    'price' => number_format((float) $price, 2, '.', ''),
+    'compareAtPrice' => $compareAtPrice,
+    'inventoryItem' => ['sku' => $sku]
+];
+
+$optionValueName = trim((string) $variantTitle) !== ''
+    ? trim((string) $variantTitle)
+    : 'Default Title';
+
+$variantInput['optionValues'] = [[
+    'optionName' => 'Title',
+    'name' => $optionValueName
+]];
+
+$variables = [
+    'productId' => $productGid,
+    'variants' => [$variantInput]
+];
 
     $response = shopifyGraphQL(
         $mutation,
@@ -904,18 +920,12 @@ mutation ProductUpdate(
 }
 GRAPHQL;
 
-    $variables = [
-        'product' => [
-            'id' => shopifyGid('Product', $shopifyProductId),
-            'title' => $product['title'] ?? '',
-            'descriptionHtml' =>
-            $product['description'] ?? '',
-            'handle' => $product['slug'] ?? null,
-            'status' => !empty($product['status'])
-                ? 'ACTIVE'
-                : 'DRAFT'
-        ]
-    ];
+    $input = ['id' => shopifyGid('Product', $shopifyProductId)];
+    if (isset($product['title']))                  $input['title'] = $product['title'];
+    if (array_key_exists('description', $product)) $input['descriptionHtml'] = (string) $product['description'];
+    if (!empty($product['slug']))                  $input['handle'] = $product['slug'];
+    if (array_key_exists('status', $product))      $input['status'] = !empty($product['status']) ? 'ACTIVE' : 'DRAFT';
+    $variables = ['product' => $input];
 
     $response = shopifyGraphQL(
         $query,
@@ -1906,6 +1916,14 @@ function syncShopifyProductsToDatabase()
             ':id' => $localProductId
         ]);
         $db->commit();
+        if ($localStatus !== 1) {
+            $result['success'] = true;
+            $result['message'] = 'Synced locally. Zoho skipped (product not active).';
+            $result['product_action'] = $productAction;
+            $result['product_id'] = $localProductId;
+            $result['total_variant_stock'] = $totalLocalVariantStock;
+            return $result;
+        }
         $result['zoho_sync'] = [
             'parent' => null,
             'variants' => []

@@ -1591,7 +1591,7 @@ function syncZohoWebhookToDatabase(array $decodedPayload)
                     variant_title = :title,
                     price = :price,
                     stock = :stock,
-                    status = :status,
+                    status = CASE WHEN vendor_id IS NOT NULL AND status = 0 THEN 0 ELSE :status END,
                     zoho_item_id = :zoho_item_id,
                     zoho_sync_status = 'synced'
                 WHERE id = :variant_id
@@ -1754,18 +1754,18 @@ function syncZohoWebhookToDatabase(array $decodedPayload)
                     $slug = createUniqueSlug($db, $name, $productId);
                 }
 
-                $updateProduct = $db->prepare("
-                    UPDATE products
-                    SET
-                        title = :title,
-                        slug = :slug,
-                        description = :description,
-                        price = :price,
-                        stock = :stock,
-                        status = :status,
-                        zoho_item_id = :zoho_item_id
-                    WHERE id = :product_id
-                ");
+                    $updateProduct = $db->prepare("
+                        UPDATE products
+                        SET
+                            title = :title,
+                            slug = :slug,
+                            description = :description,
+                            price = :price,
+                            stock = :stock,
+                            status = CASE WHEN vendor_id IS NOT NULL AND status = 0 THEN 0 ELSE :status END,
+                            zoho_item_id = :zoho_item_id
+                        WHERE id = :product_id
+                    ");
 
                 $updateProduct->execute([
                     ':title' => $name,
