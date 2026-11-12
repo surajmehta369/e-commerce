@@ -11,6 +11,7 @@ $adminMenu = [
     'orders'     => ['Orders',          'orders.php',     'bi-bag-check'],
     'reviews'    => ['Product Reviews', 'reviews.php',    'bi-star'],
     'profile'    => ['Admin Profile',   'profile.php',    'bi-person-circle'],
+    'notifications' => ['Notifications',   'notifications.php', 'bi-bell'],
 ];
 ?>
 <aside class="admin-sidebar" id="adminSidebar">
