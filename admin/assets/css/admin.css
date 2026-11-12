@@ -184,3 +184,74 @@ body {
         padding: 18px;
     }
 }
+
+/* ---------- Admin topbar actions ---------- */
+
+.admin-topbar {
+    justify-content: space-between;
+    min-height: 65px;
+}
+
+.admin-topbar-title {
+    font-size: 17px;
+    font-weight: 600;
+    color: #1f2937;
+}
+
+.admin-topbar-actions {
+    display: flex;
+    align-items: center;
+    gap: 18px;
+}
+
+.admin-topbar-icon {
+    position: relative;
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    width: 38px;
+    height: 38px;
+    border-radius: 50%;
+    color: #475569;
+    font-size: 21px;
+    text-decoration: none;
+    transition: background .2s, color .2s;
+}
+
+.admin-topbar-icon:hover {
+    background: #f1f5f9;
+    color: var(--admin-accent);
+}
+
+@media (max-width: 575.98px) {
+    .admin-topbar {
+        padding: 12px;
+    }
+
+    .admin-topbar-actions {
+        gap: 8px;
+    }
+
+    .admin-topbar-title {
+        font-size: 15px;
+    }
+}
+
+.notification-count {
+    position: absolute;
+    top: 0;
+    right: 0;
+    min-width: 18px;
+    height: 18px;
+    padding: 0 5px;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    background: #dc3545;
+    color: #fff;
+    font-size: 11px;
+    font-weight: 700;
+    border-radius: 50px;
+    border: 2px solid #fff;
+    line-height: 1;
+}
