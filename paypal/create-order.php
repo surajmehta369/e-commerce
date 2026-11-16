@@ -39,10 +39,6 @@ try {
     $cart =
         $input['cart'] ?? [];
 
-    $shipping =
-        $input['shipping'] ?? [];
-
-
     if (
         !is_array($cart) ||
         count($cart) === 0
@@ -54,53 +50,59 @@ try {
 
     }
 
-    $shippingName =
-        trim($shipping['name'] ?? '');
+$database = new Database();
 
-    $shippingPhone =
-        trim($shipping['phone'] ?? '');
+$db = $database->connect();
+$selectedAddressId = (int) ($input['selected_address_id'] ?? 0);
 
-    $shippingAddress =
-        trim($shipping['address'] ?? '');
+if ($selectedAddressId <= 0) {
+    throw new Exception('Please select a delivery address.');
+}
 
-    $shippingCity =
-        trim($shipping['city'] ?? '');
+$addressStmt = $db->prepare("
+    SELECT
+        full_name,
+        phone,
+        address_line1,
+        address_line2,
+        city,
+        state,
+        pincode
+    FROM user_addresses
+    WHERE id = :address_id
+      AND user_id = :user_id
+    LIMIT 1
+");
 
-    $shippingState =
-        trim($shipping['state'] ?? '');
+$addressStmt->execute([
+    'address_id' => $selectedAddressId,
+    'user_id' => $_SESSION['user_id']
+]);
 
-    $shippingPincode =
-        trim($shipping['pincode'] ?? '');
+$selectedAddress = $addressStmt->fetch(PDO::FETCH_ASSOC);
 
+if (!$selectedAddress) {
+    throw new Exception('Selected delivery address was not found.');
+}
 
-    if (
-        $shippingName === '' ||
-        $shippingPhone === '' ||
-        $shippingAddress === '' ||
-        $shippingCity === '' ||
-        $shippingState === '' ||
-        $shippingPincode === ''
-    ) {
+$shippingName = $selectedAddress['full_name'];
+$shippingPhone = $selectedAddress['phone'];
 
-        throw new Exception(
-            'Please complete all delivery information.'
-        );
+$shippingAddress = trim(
+    $selectedAddress['address_line1'] . ' ' .
+    ($selectedAddress['address_line2'] ?? '')
+);
 
-    }
+$shippingCity = $selectedAddress['city'];
+$shippingState = $selectedAddress['state'];
+$shippingPincode = $selectedAddress['pincode'];
 
-    $database =
-        new Database();
+$db->beginTransaction();
 
-    $db =
-        $database->connect();
+$totalINR = 0;
 
+$orderItems = [];
 
-    $db->beginTransaction();
-
-
-    $totalINR = 0;
-
-    $orderItems = [];
 
 
     foreach ($cart as $cartItem) {

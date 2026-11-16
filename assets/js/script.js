@@ -2295,86 +2295,16 @@ document.addEventListener('DOMContentLoaded', function () {
 
             }
 
-            const shipping = {
-
-                name: document
-                    .getElementById(
-                        'shipping_name'
-                    )
-                    .value
-                    .trim(),
-
-                phone: document
-                    .getElementById(
-                        'shipping_phone'
-                    )
-                    .value
-                    .trim(),
-
-                address: document
-                    .getElementById(
-                        'shipping_address'
-                    )
-                    .value
-                    .trim(),
-
-                city: document
-                    .getElementById(
-                        'shipping_city'
-                    )
-                    .value
-                    .trim(),
-
-                state: document
-                    .getElementById(
-                        'shipping_state'
-                    )
-                    .value
-                    .trim(),
-
-                pincode: document
-                    .getElementById(
-                        'shipping_pincode'
-                    )
-                    .value
-                    .trim()
-
-            };
-
-
-            console.log(
-                'Shipping:',
-                shipping
+            const selectedAddressInput = document.getElementById(
+                'selected_address_id'
             );
 
-            if (
-
-                !shipping.name ||
-
-                !shipping.phone ||
-
-                !shipping.address ||
-
-                !shipping.city ||
-
-                !shipping.state ||
-
-                !shipping.pincode
-
-            ) {
-
-                alert(
-                    'Please fill all delivery information.'
-                );
-
-                throw new Error(
-                    'Shipping information is incomplete.'
-                );
-
+            if (!selectedAddressInput || !selectedAddressInput.value) {
+                alert('Please select a delivery address.');
+                throw new Error('Delivery address not selected.');
             }
 
-            return fetch(
-                'paypal/create-order.php', {
+            return fetch('paypal/create-order.php', {
                 method: 'POST',
 
                 headers: {
@@ -2383,10 +2313,9 @@ document.addEventListener('DOMContentLoaded', function () {
 
                 body: JSON.stringify({
                     cart: cart,
-                    shipping: shipping
+                    selected_address_id: selectedAddressInput.value
                 })
-            }
-            )
+            })
                 .then(function (response) {
 
                     console.log(
@@ -2845,14 +2774,11 @@ document.addEventListener('DOMContentLoaded', function () {
                                 'Content-Type':
                                     'application/json'
                             },
-
                             body: JSON.stringify({
 
-                                cart:
-                                    cart,
+                                cart: cart,
 
-                                shipping:
-                                    shipping
+                                selected_address_id: document.getElementById('selected_address_id').value
 
                             })
 

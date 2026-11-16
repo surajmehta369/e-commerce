@@ -19,7 +19,6 @@ try {
         throw new Exception(
             'User is not logged in.'
         );
-
     }
     $input = json_decode(
         file_get_contents('php://input'),
@@ -32,67 +31,60 @@ try {
         throw new Exception(
             'Invalid request data.'
         );
-
     }
-
 
     $cart =
         $input['cart'] ?? [];
 
-    $shipping =
-        $input['shipping'] ?? [];
+    $selectedAddressId = (int) (
+        $input['selected_address_id'] ?? 0
+    );
 
+    if ($selectedAddressId <= 0) {
+        throw new Exception('Please select a delivery address.');
+    }
+    $database = new Database();
+    $db = $database->connect();
 
-    if (
-        !is_array($cart) ||
-        count($cart) === 0
-    ) {
+    $addressStmt = $db->prepare("
+    SELECT
+        id,
+        full_name,
+        phone,
+        address_line1,
+        address_line2,
+        city,
+        state,
+        pincode
+    FROM user_addresses
+    WHERE id = :address_id
+      AND user_id = :user_id
+    LIMIT 1
+");
 
-        throw new Exception(
-            'Your cart is empty.'
-        );
+    $addressStmt->execute([
+        'address_id' => $selectedAddressId,
+        'user_id' => (int) $_SESSION['user_id']
+    ]);
 
+    $selectedAddress = $addressStmt->fetch(PDO::FETCH_ASSOC);
+
+    if (!$selectedAddress) {
+        throw new Exception('Selected delivery address is invalid.');
     }
 
-    $shippingName =
-        trim($shipping['name'] ?? '');
+    $shippingName = $selectedAddress['full_name'];
+    $shippingPhone = $selectedAddress['phone'];
 
-    $shippingPhone =
-        trim($shipping['phone'] ?? '');
+    $shippingAddress = $selectedAddress['address_line1'];
 
-    $shippingAddress =
-        trim($shipping['address'] ?? '');
-
-    $shippingCity =
-        trim($shipping['city'] ?? '');
-
-    $shippingState =
-        trim($shipping['state'] ?? '');
-
-    $shippingPincode =
-        trim($shipping['pincode'] ?? '');
-
-
-    if (
-        $shippingName === '' ||
-        $shippingPhone === '' ||
-        $shippingAddress === '' ||
-        $shippingCity === '' ||
-        $shippingState === '' ||
-        $shippingPincode === ''
-    ) {
-
-        throw new Exception(
-            'Please complete all delivery information.'
-        );
-
+    if (!empty($selectedAddress['address_line2'])) {
+        $shippingAddress .= ', ' . $selectedAddress['address_line2'];
     }
 
-    $database =
-        new Database();
-
-    $db =
-        $database->connect();
+    $shippingCity = $selectedAddress['city'];
+    $shippingState = $selectedAddress['state'];
+    $shippingPincode = $selectedAddress['pincode'];
 
     $db->beginTransaction();
     $totalINR = 0;
@@ -117,7 +109,6 @@ try {
             throw new Exception(
                 'Invalid cart item.'
             );
-
         }
 
 
@@ -144,7 +135,7 @@ try {
         $productStmt->execute([
 
             'id' =>
-                $productId
+            $productId
 
         ]);
 
@@ -160,7 +151,6 @@ try {
             throw new Exception(
                 'Product not found.'
             );
-
         }
 
         if (
@@ -170,9 +160,8 @@ try {
 
             throw new Exception(
                 'Not enough stock for: '
-                . $product['title']
+                    . $product['title']
             );
-
         }
 
 
@@ -191,25 +180,24 @@ try {
         $orderItems[] = [
 
             'product_id' =>
-                $product['id'],
+            $product['id'],
 
             'product_name' =>
-                $product['title'],
+            $product['title'],
 
             'product_image' =>
-                $product['image'],
+            $product['image'],
 
             'price' =>
-                $price,
+            $price,
 
             'quantity' =>
-                $quantity,
+            $quantity,
 
             'subtotal' =>
-                $subtotal
+            $subtotal
 
         ];
-
     }
 
     $amountInPaise =
@@ -223,7 +211,6 @@ try {
         throw new Exception(
             'Invalid order amount.'
         );
-
     }
 
     $orderSql = "
@@ -272,37 +259,37 @@ try {
     $orderStmt->execute([
 
         'user_id' =>
-            $_SESSION['user_id'],
+        $_SESSION['user_id'],
 
         'total_amount' =>
-            $totalINR,
+        $totalINR,
 
         'payment_method' =>
-            'razorpay',
+        'razorpay',
 
         'payment_status' =>
-            'pending',
+        'pending',
 
         'order_status' =>
-            'pending',
+        'pending',
 
         'shipping_name' =>
-            $shippingName,
+        $shippingName,
 
         'shipping_phone' =>
-            $shippingPhone,
+        $shippingPhone,
 
         'shipping_address' =>
-            $shippingAddress,
+        $shippingAddress,
 
         'shipping_city' =>
-            $shippingCity,
+        $shippingCity,
 
         'shipping_state' =>
-            $shippingState,
+        $shippingState,
 
         'shipping_pincode' =>
-            $shippingPincode
+        $shippingPincode
 
     ]);
 
@@ -344,47 +331,46 @@ try {
         $itemStmt->execute([
 
             'order_id' =>
-                $localOrderId,
+            $localOrderId,
 
             'product_id' =>
-                $item['product_id'],
+            $item['product_id'],
 
             'product_name' =>
-                $item['product_name'],
+            $item['product_name'],
 
             'product_image' =>
-                $item['product_image'],
+            $item['product_image'],
 
             'price' =>
-                $item['price'],
+            $item['price'],
 
             'quantity' =>
-                $item['quantity'],
+            $item['quantity'],
 
             'subtotal' =>
-                $item['subtotal']
+            $item['subtotal']
 
         ]);
-
     }
     $razorpayPayload = [
 
         'amount' =>
-            $amountInPaise,
+        $amountInPaise,
 
         'currency' =>
-            'INR',
+        'INR',
 
         'receipt' =>
-            'ORDER_' . $localOrderId,
+        'ORDER_' . $localOrderId,
 
         'notes' => [
 
             'local_order_id' =>
-                (string) $localOrderId,
+            (string) $localOrderId,
 
             'user_id' =>
-                (string) $_SESSION['user_id']
+            (string) $_SESSION['user_id']
 
         ]
 
@@ -398,18 +384,18 @@ try {
     curl_setopt_array($ch, [
 
         CURLOPT_RETURNTRANSFER =>
-            true,
+        true,
 
         CURLOPT_POST =>
-            true,
+        true,
 
         CURLOPT_POSTFIELDS =>
-            json_encode(
-                $razorpayPayload
-            ),
+        json_encode(
+            $razorpayPayload
+        ),
 
         CURLOPT_USERPWD =>
-            RAZORPAY_KEY_ID
+        RAZORPAY_KEY_ID
             . ':'
             . RAZORPAY_KEY_SECRET,
 
@@ -422,7 +408,7 @@ try {
         ],
 
         CURLOPT_TIMEOUT =>
-            30
+        30
 
     ]);
 
@@ -443,9 +429,8 @@ try {
 
         throw new Exception(
             'Unable to connect to Razorpay: '
-            . $curlError
+                . $curlError
         );
-
     }
     $razorpayOrder =
         json_decode(
@@ -469,9 +454,7 @@ try {
     }
 
     if (
-        empty(
-            $razorpayOrder['id']
-        )
+        empty($razorpayOrder['id'])
     ) {
         throw new Exception(
             'Razorpay Order ID was not returned.'
@@ -497,13 +480,13 @@ try {
     $updateStmt->execute([
 
         'razorpay_order_id' =>
-            $razorpayOrderId,
+        $razorpayOrderId,
 
         'order_id' =>
-            $localOrderId,
+        $localOrderId,
 
         'user_id' =>
-            $_SESSION['user_id']
+        $_SESSION['user_id']
 
     ]);
 
@@ -522,9 +505,8 @@ try {
         'razorpay_order_id' => $razorpayOrderId,
         'key_id' => RAZORPAY_KEY_ID,
         'amount' => $amountInPaise,
-        'currency' =>'INR'
+        'currency' => 'INR'
     ]);
-
 } catch (Exception $e) {
     if (
         $db &&
@@ -535,8 +517,8 @@ try {
     http_response_code(500);
     echo json_encode([
         'success' =>
-            false,
+        false,
         'message' =>
-         $e->getMessage()
+        $e->getMessage()
     ]);
 }
