@@ -182,11 +182,6 @@ try {
 <script src="assets/js/script.js"></script>
 
 <script>
-
-/* =========================================
-   FOOTER ACCORDION - MOBILE
-========================================= */
-
 document.addEventListener('click', function (event) {
 
     const heading = event.target.closest('.footer-heading');
@@ -194,8 +189,6 @@ document.addEventListener('click', function (event) {
     if (!heading) {
         return;
     }
-
-    // Accordion is enabled only on mobile.
     if (window.matchMedia('(min-width: 768px)').matches) {
         return;
     }
@@ -209,8 +202,6 @@ document.addEventListener('click', function (event) {
 
     const isOpen =
         heading.getAttribute('aria-expanded') === 'true';
-
-    // Close all footer sections.
     document.querySelectorAll('.footer-heading').forEach(function (item) {
 
         item.setAttribute('aria-expanded', 'false');
@@ -223,8 +214,6 @@ document.addEventListener('click', function (event) {
         }
 
     });
-
-    // Open clicked section.
     if (!isOpen) {
 
         heading.setAttribute('aria-expanded', 'true');

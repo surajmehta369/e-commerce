@@ -100,7 +100,7 @@
 
                 <a
                   class="nav-link"
-                  href="outh/vendor-register.php">
+                  href="vendor-register.php">
                   Sell
                 </a>
 

@@ -1,6 +1,8 @@
 <?php
+session_start();
+require_once "connection/dbconnect.php";
+require_once "customer-auth.php";
 
-require_once "../connection/dbconnect.php";
 
 $database = new Database();
 $db = $database->connect();
@@ -246,6 +248,10 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
 }
 
 ?>
+<?php include "components/header.php"; ?>
+
+<?php include "components/sidebar.php"; ?>
+
 <!DOCTYPE html>
 <html lang="en">
 
@@ -297,5 +303,5 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
         </div>
     </div>
 </body>
-
+<?php include "components/footer.php"; ?>
 </html>
