@@ -90,6 +90,45 @@ $itemStmt->execute([
 
 $orderItems = $itemStmt->fetchAll(PDO::FETCH_ASSOC);
 
+$shipmentSql = "
+    SELECT *
+    FROM order_shipments
+    WHERE order_id = :order_id
+    ORDER BY id DESC
+    LIMIT 1
+";
+
+$shipmentStmt = $db->prepare($shipmentSql);
+
+$shipmentStmt->execute([
+    'order_id' => $orderId
+]);
+
+$shipment = $shipmentStmt->fetch(PDO::FETCH_ASSOC);
+
+$trackingSql = "
+    SELECT
+        id,
+        shipment_id,
+        event_type,
+        previous_status,
+        new_status,
+        title,
+        description,
+        event_date
+    FROM order_tracking_updates
+    WHERE order_id = :order_id
+      AND visible_to_customer = 1
+    ORDER BY event_date ASC, id ASC
+";
+
+$trackingStmt = $db->prepare($trackingSql);
+
+$trackingStmt->execute([
+    'order_id' => $orderId
+]);
+
+$trackingUpdates = $trackingStmt->fetchAll(PDO::FETCH_ASSOC);
 ?>
 
 
@@ -166,9 +205,6 @@ $orderItems = $itemStmt->fetchAll(PDO::FETCH_ASSOC);
                 class="row
                        align-items-center
                        g-3">
-
-                <!-- ORDER STATUS -->
-
                 <div class="col-md-4">
 
                     <small class="text-muted d-block">
@@ -246,10 +282,6 @@ $orderItems = $itemStmt->fetchAll(PDO::FETCH_ASSOC);
 
                 </div>
 
-
-
-                <!-- PAYMENT STATUS -->
-
                 <div class="col-md-4">
 
                     <small class="text-muted d-block">
@@ -308,11 +340,6 @@ $orderItems = $itemStmt->fetchAll(PDO::FETCH_ASSOC);
                     </span>
 
                 </div>
-
-
-
-                <!-- TOTAL -->
-
                 <div class="col-md-4 text-md-end">
 
                     <small class="text-muted d-block">
@@ -343,6 +370,319 @@ $orderItems = $itemStmt->fetchAll(PDO::FETCH_ASSOC);
 
     </div>
 
+    <?php if ($shipment): ?>
+
+        <div class="card border-0 shadow-sm rounded-4 mb-4">
+
+            <div class="card-body p-4">
+
+                <h4 class="fw-bold mb-4">
+                    <i class="fa-solid fa-truck-fast text-primary me-2"></i>
+                    Shipment Tracking
+                </h4>
+
+                <div class="row g-3 mb-4">
+
+                    <div class="col-md-6">
+                        <small class="text-muted d-block">Courier</small>
+                        <strong>
+                            <?= htmlspecialchars($shipment['courier_name'] ?? 'Not available') ?>
+                        </strong>
+                    </div>
+
+                    <div class="col-md-6">
+                        <small class="text-muted d-block">Tracking Number</small>
+                        <strong>
+                            <?= htmlspecialchars($shipment['tracking_number'] ?? 'Not available') ?>
+                        </strong>
+                    </div>
+
+                    <div class="col-md-6">
+                        <small class="text-muted d-block">Dispatch Date</small>
+                        <strong>
+                            <?= !empty($shipment['shipped_at'])
+                                ? date('d M Y, h:i A', strtotime($shipment['shipped_at']))
+                                : 'Not dispatched yet' ?>
+                        </strong>
+                    </div>
+
+                    <div class="col-md-6">
+                        <small class="text-muted d-block">Estimated Delivery</small>
+                        <strong>
+                            <?= !empty($shipment['estimated_delivery_at'])
+                                ? date('d M Y, h:i A', strtotime($shipment['estimated_delivery_at']))
+                                : 'Not available' ?>
+                        </strong>
+                    </div>
+
+                </div>
+
+                <?php if (!empty($shipment['tracking_url'])): ?>
+
+                    <a
+                        href="<?= htmlspecialchars($shipment['tracking_url']) ?>"
+                        target="_blank"
+                        rel="noopener noreferrer"
+                        class="btn btn-primary rounded-pill px-4">
+
+                        <i class="fa-solid fa-location-crosshairs me-2"></i>
+                        Track Your Package
+
+                    </a>
+
+                <?php endif; ?>
+
+                <hr class="my-4">
+
+                <h5 class="fw-bold mb-4">
+                    Tracking History
+                </h5>
+
+
+                <?php
+
+                $currentOrderStatus = strtolower(
+                    trim($order['order_status'] ?? '')
+                );
+
+                $exceptionalStatuses = [
+                    'cancelled',
+                    'failed',
+                    'returned'
+                ];
+
+                $progressSteps = [
+                    [
+                        'status' => 'processing',
+                        'title' => 'Processing',
+                        'description' => 'Your order is being prepared.'
+                    ],
+                    [
+                        'status' => 'shipped',
+                        'title' => 'Shipped',
+                        'description' => 'Your parcel has been dispatched.'
+                    ],
+                    [
+                        'status' => 'out_for_delivery',
+                        'title' => 'Out for Delivery',
+                        'description' => 'Your parcel is on its way to you.'
+                    ],
+                    [
+                        'status' => 'delivered',
+                        'title' => 'Delivered',
+                        'description' => 'Your order has been delivered successfully.'
+                    ]
+                ];
+
+                if (in_array($currentOrderStatus, ['delivered', 'completed'], true)) {
+                    $currentStep = 3;
+                } elseif ($currentOrderStatus === 'out_for_delivery') {
+                    $currentStep = 2;
+                } elseif ($currentOrderStatus === 'shipped') {
+                    $currentStep = 1;
+                } else {
+                    
+                    $currentStep = 0;
+                }
+
+                ?>
+
+                <h5 class="fw-bold mb-4">
+                    Shipment Progress
+                </h5>
+
+                <?php if (in_array($currentOrderStatus, $exceptionalStatuses, true)): ?>
+
+                    <div class="alert alert-warning mb-0 rounded-3">
+
+                        <h6 class="fw-bold mb-1">
+                            <i class="fa-solid fa-circle-exclamation me-2"></i>
+
+                            <?= htmlspecialchars(ucwords(str_replace('_', ' ', $currentOrderStatus))) ?>
+                        </h6>
+
+                        <p class="mb-0">
+                            Your order is currently <?= htmlspecialchars($currentOrderStatus) ?>.
+                            Please contact customer support if you need assistance.
+                        </p>
+
+                    </div>
+
+                <?php else: ?>
+
+                    <style>
+                        .shipment-progress {
+                            position: relative;
+                            padding-left: 5px;
+                        }
+
+                        .shipment-step {
+                            position: relative;
+                            display: flex;
+                            gap: 18px;
+                            min-height: 85px;
+                        }
+
+                        .shipment-step:last-child {
+                            min-height: auto;
+                        }
+
+                        .shipment-step-marker {
+                            position: relative;
+                            z-index: 2;
+                            width: 30px;
+                            height: 30px;
+                            min-width: 30px;
+                            border-radius: 50%;
+                            display: flex;
+                            align-items: center;
+                            justify-content: center;
+                            background: #e9ecef;
+                            color: #6c757d;
+                            font-size: 13px;
+                        }
+
+                        .shipment-step:not(:last-child)::after {
+                            content: "";
+                            position: absolute;
+                            left: 14px;
+                            top: 30px;
+                            height: 55px;
+                            width: 2px;
+                            background: #dee2e6;
+                        }
+
+                        .shipment-step.completed .shipment-step-marker {
+                            background: #198754;
+                            color: #fff;
+                        }
+
+                        .shipment-step.completed:not(:last-child)::after {
+                            background: #198754;
+                        }
+
+                        .shipment-step.active .shipment-step-marker {
+                            background: #0d6efd;
+                            color: #fff;
+                            box-shadow: 0 0 0 5px rgba(13, 110, 253, 0.12);
+                        }
+
+                        .shipment-step.active .shipment-step-title {
+                            color: #0d6efd;
+                        }
+
+                        .shipment-step.upcoming .shipment-step-title {
+                            color: #6c757d;
+                        }
+
+                        .shipment-step-content {
+                            padding-bottom: 20px;
+                        }
+
+                        .shipment-step-title {
+                            font-weight: 600;
+                            margin-bottom: 4px;
+                        }
+
+                        .shipment-step-description {
+                            font-size: 13px;
+                            color: #6c757d;
+                            margin-bottom: 4px;
+                        }
+
+                        @media (max-width: 576px) {
+                            .shipment-step {
+                                gap: 13px;
+                            }
+                        }
+                    </style>
+
+                    <div class="shipment-progress">
+
+                        <?php foreach ($progressSteps as $index => $step): ?>
+
+                            <?php
+
+                            if (in_array($currentOrderStatus, ['delivered', 'completed'], true)) {
+
+                                $stepClass = 'completed';
+                            } elseif ($index < $currentStep) {
+
+                                $stepClass = 'completed';
+                            } elseif ($index === $currentStep) {
+
+                                $stepClass = 'active';
+                            } else {
+
+                                $stepClass = 'upcoming';
+                            }
+
+                            ?>
+
+                            <div class="shipment-step <?= $stepClass ?>">
+
+                                <div class="shipment-step-marker">
+
+                                    <?php if ($stepClass === 'completed'): ?>
+
+                                        <i class="fa-solid fa-check"></i>
+
+                                    <?php elseif ($stepClass === 'active'): ?>
+
+                                        <i class="fa-solid fa-location-dot"></i>
+
+                                    <?php else: ?>
+
+                                        <i class="fa-regular fa-circle"></i>
+
+                                    <?php endif; ?>
+
+                                </div>
+
+                                <div class="shipment-step-content flex-grow-1">
+
+                                    <div class="d-flex flex-wrap align-items-center gap-2">
+
+                                        <h6 class="shipment-step-title mb-1">
+                                            <?= htmlspecialchars($step['title']) ?>
+                                        </h6>
+
+                                        <?php if ($stepClass === 'completed'): ?>
+
+                                            <span class="badge bg-success">
+                                                Completed
+                                            </span>
+
+                                        <?php elseif ($stepClass === 'active'): ?>
+
+                                            <span class="badge bg-primary">
+                                                Current Stage
+                                            </span>
+
+                                        <?php endif; ?>
+
+                                    </div>
+
+                                    <p class="shipment-step-description">
+                                        <?= htmlspecialchars($step['description']) ?>
+                                    </p>
+
+                                </div>
+
+                            </div>
+
+                        <?php endforeach; ?>
+
+                    </div>
+
+                <?php endif; ?>
+
+
+            </div>
+
+        </div>
+
+    <?php endif; ?>
 
 
     <div class="row g-4">
@@ -379,8 +719,6 @@ $orderItems = $itemStmt->fetchAll(PDO::FETCH_ASSOC);
                                    pb-4
                                    mb-4">
 
-                            <!-- PRODUCT IMAGE -->
-
                             <img
                                 src="<?= htmlspecialchars(
                                             $item['product_image']
@@ -394,9 +732,6 @@ $orderItems = $itemStmt->fetchAll(PDO::FETCH_ASSOC);
                                     object-fit:cover;
                                     border-radius:12px;
                                 ">
-
-
-                            <!-- PRODUCT INFO -->
 
                             <div
                                 class="ms-3
@@ -437,9 +772,6 @@ $orderItems = $itemStmt->fetchAll(PDO::FETCH_ASSOC);
 
                             </div>
 
-
-                            <!-- SUBTOTAL -->
-
                             <div class="text-end">
 
                                 <small
@@ -466,10 +798,6 @@ $orderItems = $itemStmt->fetchAll(PDO::FETCH_ASSOC);
                         </div>
 
                     <?php endforeach; ?>
-
-
-                    <!-- TOTAL -->
-
                     <div
                         class="d-flex
                                justify-content-between
@@ -614,13 +942,15 @@ $orderItems = $itemStmt->fetchAll(PDO::FETCH_ASSOC);
 
                         <strong>
 
-                        <?php if ($order['payment_method'] === 'paypal'): ?>
+                            <?php if ($order['payment_method'] === 'paypal'): ?>
 
-                            PayPal
-
-                              <?php elseif ($order['payment_method'] === 'stripe'): ?>
+                                PayPal
+                            <?php elseif ($order['payment_method'] === 'stripe'): ?>
 
                                 Stripe
+                            <?php elseif ($order['payment_method'] === 'razorpay'): ?>
+
+                                Razorpay
 
                             <?php else: ?>
 

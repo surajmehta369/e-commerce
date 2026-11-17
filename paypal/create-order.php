@@ -1,3 +1,4 @@
+
 <?php
 
 session_start();
@@ -7,228 +8,267 @@ require_once __DIR__ . '/../connection/dbconnect.php';
 
 header('Content-Type: application/json');
 
+$db = null;
 
 try {
 
     if (
-        !isset($_SESSION['user_id']) ||
-        $_SESSION['logged_in'] !== true
-    ) { 
-
-        throw new Exception(
-            'User is not logged in.'
-        );
-
+        empty($_SESSION['user_id']) ||
+        ($_SESSION['logged_in'] ?? false) !== true
+    ) {
+        throw new Exception('User is not logged in.');
     }
 
+    $userId = (int) $_SESSION['user_id'];
     $input = json_decode(
         file_get_contents('php://input'),
         true
     );
 
-
     if (!is_array($input)) {
-
-        throw new Exception(
-            'Invalid request data.'
-        );
-
+        throw new Exception('Invalid request data.');
     }
 
+    $cart = $input['cart'] ?? [];
 
-    $cart =
-        $input['cart'] ?? [];
-
-    if (
-        !is_array($cart) ||
-        count($cart) === 0
-    ) {
-
-        throw new Exception(
-            'Your cart is empty.'
-        );
-
+    if (!is_array($cart) || empty($cart)) {
+        throw new Exception('Your cart is empty.');
     }
 
-$database = new Database();
+    $selectedAddressId = (int) (
+        $input['selected_address_id'] ?? 0
+    );
 
-$db = $database->connect();
-$selectedAddressId = (int) ($input['selected_address_id'] ?? 0);
+    if ($selectedAddressId <= 0) {
+        throw new Exception('Please select a delivery address.');
+    }
+    $database = new Database();
+    $db = $database->connect();
+    $addressStmt = $db->prepare("
+        SELECT
+            full_name,
+            phone,
+            address_line1,
+            address_line2,
+            city,
+            state,
+            pincode
+        FROM user_addresses
+        WHERE id = :address_id
+          AND user_id = :user_id
+        LIMIT 1
+    ");
 
-if ($selectedAddressId <= 0) {
-    throw new Exception('Please select a delivery address.');
-}
+    $addressStmt->execute([
+        'address_id' => $selectedAddressId,
+        'user_id' => $userId
+    ]);
 
-$addressStmt = $db->prepare("
-    SELECT
-        full_name,
-        phone,
-        address_line1,
-        address_line2,
-        city,
-        state,
-        pincode
-    FROM user_addresses
-    WHERE id = :address_id
-      AND user_id = :user_id
-    LIMIT 1
-");
+    $selectedAddress = $addressStmt->fetch(
+        PDO::FETCH_ASSOC
+    );
 
-$addressStmt->execute([
-    'address_id' => $selectedAddressId,
-    'user_id' => $_SESSION['user_id']
-]);
+    if (!$selectedAddress) {
+        throw new Exception(
+            'Selected delivery address was not found.'
+        );
+    }
 
-$selectedAddress = $addressStmt->fetch(PDO::FETCH_ASSOC);
+    $shippingName = $selectedAddress['full_name'];
+    $shippingPhone = $selectedAddress['phone'];
 
-if (!$selectedAddress) {
-    throw new Exception('Selected delivery address was not found.');
-}
+    $shippingAddress = trim(
+        $selectedAddress['address_line1'] . ' ' .
+        ($selectedAddress['address_line2'] ?? '')
+    );
 
-$shippingName = $selectedAddress['full_name'];
-$shippingPhone = $selectedAddress['phone'];
+    $shippingCity = $selectedAddress['city'];
+    $shippingState = $selectedAddress['state'];
+    $shippingPincode = $selectedAddress['pincode'];
+    $db->beginTransaction();
 
-$shippingAddress = trim(
-    $selectedAddress['address_line1'] . ' ' .
-    ($selectedAddress['address_line2'] ?? '')
-);
-
-$shippingCity = $selectedAddress['city'];
-$shippingState = $selectedAddress['state'];
-$shippingPincode = $selectedAddress['pincode'];
-
-$db->beginTransaction();
-
-$totalINR = 0;
-
-$orderItems = [];
-
-
-
+    $totalINR = 0;
+    $orderItems = [];
     foreach ($cart as $cartItem) {
 
-        $productId =
-            (int) ($cartItem['id'] ?? 0);
+        $productId = (int) (
+            $cartItem['id'] ?? 0
+        );
 
-        $quantity =
-            (int) ($cartItem['quantity'] ?? 0);
+        $variantId = (int) (
+            $cartItem['variant_id'] ?? 0
+        );
 
+        $quantity = (int) (
+            $cartItem['quantity'] ?? 0
+        );
 
         if (
             $productId <= 0 ||
             $quantity <= 0
         ) {
-
-            throw new Exception(
-                'Invalid cart item.'
-            );
-
+            throw new Exception('Invalid cart item.');
         }
-
-        $productStmt =
-            $db->prepare("
-
-                SELECT
-
-                    id,
-                    title,
-                    image,
-                    price,
-                    stock
-
-                FROM products
-
-                WHERE id = :id
-
-                  AND status = 1
-
-                LIMIT 1
-
-            ");
-
+       $productStmt = $db->prepare("
+            SELECT
+                id,
+                title,
+                image,
+                price,
+                stock
+            FROM products
+            WHERE id = :id
+              AND status = 1
+            LIMIT 1
+            FOR UPDATE
+        ");
 
         $productStmt->execute([
-
-            'id' =>
-                $productId
-
+            'id' => $productId
         ]);
 
+        $product = $productStmt->fetch(
+            PDO::FETCH_ASSOC
+        );
 
-        $product =
-            $productStmt->fetch(
+        if (!$product) {
+            throw new Exception('Product not found.');
+        }
+        $productImage = $product['image'];
+
+        if ($variantId > 0) {
+
+            $variantStmt = $db->prepare("
+                SELECT
+                    id,
+                    product_id,
+                    variant_title,
+                    price,
+                    stock
+                FROM product_variants
+                WHERE id = :variant_id
+                  AND product_id = :product_id
+                  AND status = 1
+                LIMIT 1
+                FOR UPDATE
+            ");
+
+            $variantStmt->execute([
+                'variant_id' => $variantId,
+                'product_id' => $productId
+            ]);
+
+            $variant = $variantStmt->fetch(
                 PDO::FETCH_ASSOC
             );
 
+            if (!$variant) {
+                throw new Exception(
+                    'Selected variant is unavailable for: ' .
+                    $product['title']
+                );
+            }
+            if ($quantity > (int) $variant['stock']) {
+                throw new Exception(
+                    'Not enough stock for variant: ' .
+                    $variant['variant_title']
+                );
+            }
 
-        if (!$product) {
+            $price = (float) $variant['price'];
+            $variantImageStmt = $db->prepare("
+                SELECT image_path
+                FROM product_variant_images
+                WHERE variant_id = :variant_id
+                  AND status = 1
+                ORDER BY sort_order ASC, id ASC
+                LIMIT 1
+            ");
 
-            throw new Exception(
-                'Product not found.'
-            );
+            $variantImageStmt->execute([
+                'variant_id' => $variantId
+            ]);
 
+            $variantImage = $variantImageStmt->fetchColumn();
+            if (!empty($variantImage)) {
+                $productImage = $variantImage;
+            }
+
+            $savedVariantId = $variantId;
+
+        } else {
+            $variantCountStmt = $db->prepare("
+                SELECT COUNT(*)
+                FROM product_variants
+                WHERE product_id = :product_id
+                  AND status = 1
+            ");
+
+            $variantCountStmt->execute([
+                'product_id' => $productId
+            ]);
+
+            $variantCount = (int) $variantCountStmt->fetchColumn();
+
+            if ($variantCount > 0) {
+                throw new Exception(
+                    'Please select a variant for: ' .
+                    $product['title']
+                );
+            }
+
+            if ($quantity > (int) $product['stock']) {
+                throw new Exception(
+                    'Not enough stock for: ' .
+                    $product['title']
+                );
+            }
+
+            $price = (float) $product['price'];
+
+            $savedVariantId = null;
         }
+        $subtotal = round(
+            $price * $quantity,
+            2
+        );
 
-
-        if (
-            $quantity >
-            (int) $product['stock']
-        ) {
-
-            throw new Exception(
-                'Not enough stock for: '
-                . $product['title']
-            );
-
-        }
-
-        $price =
-            (float) $product['price'];
-
-
-        $subtotal =
-            $price * $quantity;
-
-
-        $totalINR +=
-            $subtotal;
-
-
+        $totalINR += $subtotal;
         $orderItems[] = [
 
-            'product_id' =>
-                $product['id'],
+            'product_id' => (int) $product['id'],
 
-            'product_name' =>
-                $product['title'],
+            'variant_id' => $savedVariantId,
 
-            'product_image' =>
-                $product['image'],
+            'product_name' => $product['title'],
 
-            'price' =>
-                $price,
+            'product_image' => $productImage,
 
-            'quantity' =>
-                $quantity,
+            'price' => $price,
 
-            'subtotal' =>
-                $subtotal
+            'quantity' => $quantity,
+
+            'subtotal' => $subtotal
 
         ];
-
     }
 
-    $usdRate = 84;
-    $totalUSD =
-        $totalINR / $usdRate;
+    $totalINR = round($totalINR, 2);
 
-    $paypalAmount =
-        number_format(
-            $totalUSD,
-            2,
-            '.',
-            ''
-        );
+    $usdRate = 84;
+
+    $totalUSD = $totalINR / $usdRate;
+
+    $paypalAmount = number_format(
+        $totalUSD,
+        2,
+        '.',
+        ''
+    );
+
+    if ((float) $paypalAmount <= 0) {
+        throw new Exception('Invalid PayPal order amount.');
+    }
 
     $orderSql = "
 
@@ -268,130 +308,103 @@ $orderItems = [];
 
     ";
 
-    $orderStmt =
-        $db->prepare($orderSql);
-
+    $orderStmt = $db->prepare($orderSql);
 
     $orderStmt->execute([
 
-        'user_id' =>
-            $_SESSION['user_id'],
+        'user_id' => $userId,
 
-        'total_amount' =>
-            $totalINR,
+        'total_amount' => $totalINR,
 
-        'payment_method' =>
-            'paypal',
+        'payment_method' => 'paypal',
 
-        'payment_status' =>
-            'pending',
+        'payment_status' => 'pending',
 
-        'order_status' =>
-            'pending',
+        'order_status' => 'pending',
 
-        'shipping_name' =>
-            $shippingName,
+        'shipping_name' => $shippingName,
 
-        'shipping_phone' =>
-            $shippingPhone,
+        'shipping_phone' => $shippingPhone,
 
-        'shipping_address' =>
-            $shippingAddress,
+        'shipping_address' => $shippingAddress,
 
-        'shipping_city' =>
-            $shippingCity,
+        'shipping_city' => $shippingCity,
 
-        'shipping_state' =>
-            $shippingState,
+        'shipping_state' => $shippingState,
 
-        'shipping_pincode' =>
-            $shippingPincode
+        'shipping_pincode' => $shippingPincode
 
     ]);
 
+    $localOrderId = $db->lastInsertId();
+    $itemStmt = $db->prepare("
 
-    $localOrderId =
-        $db->lastInsertId();
+        INSERT INTO order_items (
 
-    $itemStmt =
-        $db->prepare("
+            order_id,
+            product_id,
+            variant_id,
+            product_name,
+            product_image,
+            price,
+            quantity,
+            subtotal
 
-            INSERT INTO order_items (
+        )
 
-                order_id,
-                product_id,
-                product_name,
-                product_image,
-                price,
-                quantity,
-                subtotal
+        VALUES (
 
-            )
+            :order_id,
+            :product_id,
+            :variant_id,
+            :product_name,
+            :product_image,
+            :price,
+            :quantity,
+            :subtotal
 
-            VALUES (
+        )
 
-                :order_id,
-                :product_id,
-                :product_name,
-                :product_image,
-                :price,
-                :quantity,
-                :subtotal
-
-            )
-
-        ");
-
+    ");
 
     foreach ($orderItems as $item) {
 
         $itemStmt->execute([
 
-            'order_id' =>
-                $localOrderId,
+            'order_id' => $localOrderId,
 
-            'product_id' =>
-                $item['product_id'],
+            'product_id' => $item['product_id'],
 
-            'product_name' =>
-                $item['product_name'],
+            'variant_id' => $item['variant_id'],
 
-            'product_image' =>
-                $item['product_image'],
+            'product_name' => $item['product_name'],
 
-            'price' =>
-                $item['price'],
+            'product_image' => $item['product_image'],
 
-            'quantity' =>
-                $item['quantity'],
+            'price' => $item['price'],
 
-            'subtotal' =>
-                $item['subtotal']
+            'quantity' => $item['quantity'],
+
+            'subtotal' => $item['subtotal']
 
         ]);
-
     }
-
 
     $paypalData = [
 
-        'intent' =>
-            'CAPTURE',
+        'intent' => 'CAPTURE',
 
         'purchase_units' => [
 
             [
 
-                'reference_id' =>
-                    'ORDER_' . $localOrderId,
+                'reference_id' => 'ORDER_' . $localOrderId,
 
                 'amount' => [
 
-                    'currency_code' =>
-                        'USD',
+                    'currency_code' => 'USD',
 
-                    'value' =>
-                        $paypalAmount
+                    'value' => $paypalAmount
 
                 ]
 
@@ -401,128 +414,98 @@ $orderItems = [];
 
     ];
 
-
-    $paypalOrder =
-        paypalRequest(
-            'POST',
-            '/v2/checkout/orders',
-            $paypalData
-        );
+    $paypalOrder = paypalRequest(
+        'POST',
+        '/v2/checkout/orders',
+        $paypalData
+    );
 
     if (
         !isset($paypalOrder['id']) ||
         empty($paypalOrder['id'])
     ) {
-
         throw new Exception(
             'PayPal Order ID was not returned.'
         );
-
     }
 
+    $paypalOrderId = $paypalOrder['id'];
 
-    $paypalOrderId =
-        $paypalOrder['id'];
+    $updateStmt = $db->prepare("
 
-    $updateStmt =
-        $db->prepare("
+        UPDATE orders
 
-            UPDATE orders
+        SET paypal_order_id = :paypal_order_id
 
-            SET paypal_order_id = :paypal_order_id
+        WHERE id = :order_id
+          AND user_id = :user_id
 
-            WHERE id = :order_id
+        LIMIT 1
 
-              AND user_id = :user_id
-
-            LIMIT 1
-
-        ");
-
+    ");
 
     $updateStmt->execute([
 
-        'paypal_order_id' =>
-            $paypalOrderId,
+        'paypal_order_id' => $paypalOrderId,
 
-        'order_id' =>
-            $localOrderId,
+        'order_id' => $localOrderId,
 
-        'user_id' =>
-            $_SESSION['user_id']
+        'user_id' => $userId
 
     ]);
 
     $db->commit();
 
-    $_SESSION['paypal_order_id'] =
-        $paypalOrderId;
+    $_SESSION['paypal_order_id'] = $paypalOrderId;
 
-    $_SESSION['paypal_order_id_local'] =
-        $localOrderId;
+    $_SESSION['paypal_order_id_local'] = $localOrderId;
 
-    $_SESSION['paypal_total_inr'] =
-        $totalINR;
+    $_SESSION['paypal_total_inr'] = $totalINR;
 
-    $_SESSION['paypal_total_usd'] =
-        $paypalAmount;
+    $_SESSION['paypal_total_usd'] = $paypalAmount;
+
 
     echo json_encode([
 
-        'success' =>
-            true,
+        'success' => true,
 
-        'order' =>
-            $paypalOrder,
+        'order' => $paypalOrder,
 
-        'local_order_id' =>
-            $localOrderId,
+        'local_order_id' => $localOrderId,
 
-        'paypal_order_id' =>
-            $paypalOrderId,
+        'paypal_order_id' => $paypalOrderId,
 
         'amount' => [
 
-            'inr' =>
-                number_format(
-                    $totalINR,
-                    2,
-                    '.',
-                    ''
-                ),
+            'inr' => number_format(
+                $totalINR,
+                2,
+                '.',
+                ''
+            ),
 
-            'usd' =>
-                $paypalAmount
+            'usd' => $paypalAmount
 
         ]
 
     ]);
 
-
 } catch (Exception $e) {
 
-
     if (
-        isset($db) &&
+        $db &&
         $db->inTransaction()
     ) {
-
         $db->rollBack();
-
     }
-
 
     http_response_code(500);
 
-
     echo json_encode([
 
-        'success' =>
-            false,
+        'success' => false,
 
-        'message' =>
-            $e->getMessage()
+        'message' => $e->getMessage()
 
     ]);
-
 }

@@ -1187,11 +1187,7 @@ include "components/header.php";
                 </div>
 
             </div>
-
-
-            <!-- =========================================================
                  ADD ADDRESS
-            ========================================================== -->
 
             <div class="card border-0 shadow-sm rounded-4 mb-4">
 
@@ -1233,10 +1229,6 @@ include "components/header.php";
 
 
                         <div class="row g-3">
-
-
-                            <!-- Address Type -->
-
                             <div class="col-md-4">
 
                                 <label
@@ -1265,10 +1257,6 @@ include "components/header.php";
                                 </select>
 
                             </div>
-
-
-                            <!-- Full Name -->
-
                             <div class="col-md-8">
 
                                 <label
@@ -1286,10 +1274,6 @@ include "components/header.php";
                                     required>
 
                             </div>
-
-
-                            <!-- Phone -->
-
                             <div class="col-md-6">
 
                                 <label
@@ -1308,9 +1292,6 @@ include "components/header.php";
 
                             </div>
 
-
-                            <!-- Pincode -->
-
                             <div class="col-md-6">
 
                                 <label
@@ -1328,10 +1309,6 @@ include "components/header.php";
                                     required>
 
                             </div>
-
-
-                            <!-- Address Line 1 -->
-
                             <div class="col-12">
 
                                 <label
@@ -1350,10 +1327,6 @@ include "components/header.php";
                                     required>
 
                             </div>
-
-
-                            <!-- Address Line 2 -->
-
                             <div class="col-12">
 
                                 <label
@@ -1374,10 +1347,6 @@ include "components/header.php";
                                     placeholder="Landmark, area, etc.">
 
                             </div>
-
-
-                            <!-- City -->
-
                             <div class="col-md-4">
 
                                 <label
@@ -1395,10 +1364,6 @@ include "components/header.php";
                                     required>
 
                             </div>
-
-
-                            <!-- State -->
-
                             <div class="col-md-4">
 
                                 <label
@@ -1415,12 +1380,8 @@ include "components/header.php";
                                     maxlength="100"
                                     required>
 
-                            </div>
-
-
-                            <!-- Default -->
-
-                            <div class="col-md-4 d-flex align-items-end">
+                           </div>
+                           <div class="col-md-4 d-flex align-items-end">
 
                                 <div class="form-check mb-2">
 
@@ -1467,12 +1428,6 @@ include "components/header.php";
                 </div>
 
             </div>
-
-
-            <!-- =========================================================
-                 SAVED ADDRESSES
-            ========================================================== -->
-
             <div class="card border-0 shadow-sm rounded-4 mb-4">
 
                 <div class="card-body p-4">
@@ -1531,8 +1486,6 @@ include "components/header.php";
                                                     : '' ?>">
 
 
-                                        <!-- Default Badge -->
-
                                         <?php if ((int) $address['is_default'] === 1): ?>
 
                                             <span
@@ -1551,9 +1504,6 @@ include "components/header.php";
                                             </span>
 
                                         <?php endif; ?>
-
-
-                                        <!-- Address Type -->
 
                                         <div class="d-flex align-items-center mb-3">
 
@@ -1584,10 +1534,6 @@ include "components/header.php";
                                             </div>
 
                                         </div>
-
-
-                                        <!-- Address Information -->
-
                                         <div class="address-details">
 
                                             <div class="fw-bold mb-1">
@@ -1648,19 +1594,12 @@ include "components/header.php";
                                             </div>
 
                                         </div>
-
-
-                                        <!-- Actions -->
-
                                         <div
                                             class="address-actions
                                                    d-flex
                                                    flex-wrap
                                                    gap-2
                                                    mt-4">
-
-
-                                            <!-- Edit -->
 
                                             <a
                                                 href="account.php?edit_address=<?= (int) $address['id'] ?>"
@@ -1676,10 +1615,7 @@ include "components/header.php";
 
                                                 Edit
 
-                                            </a>
-
-
-                                            <!-- Set Default -->
+                                            </a>                                 
 
                                             <?php if ((int) $address['is_default'] !== 1): ?>
 
@@ -1714,10 +1650,6 @@ include "components/header.php";
                                                 </form>
 
                                             <?php endif; ?>
-
-
-                                            <!-- Delete -->
-
                                             <form
                                                 method="POST"
                                                 onsubmit="return confirm('Are you sure you want to delete this address?');">
