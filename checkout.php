@@ -8,31 +8,158 @@ require_once "customer-auth.php";
 $database = new Database();
 $db = $database->connect();
 
+if (
+    $_SERVER['REQUEST_METHOD'] === 'POST' &&
+    ($_POST['action'] ?? '') === 'add_checkout_address'
+) {
+    $userId = (int) $_SESSION['user_id'];
+
+    $addressType = trim($_POST['address_type'] ?? 'Home');
+    $fullName = trim($_POST['full_name'] ?? '');
+    $phone = trim($_POST['phone'] ?? '');
+    $addressLine1 = trim($_POST['address_line1'] ?? '');
+    $addressLine2 = trim($_POST['address_line2'] ?? '');
+    $city = trim($_POST['city'] ?? '');
+    $state = trim($_POST['state'] ?? '');
+    $pincode = trim($_POST['pincode'] ?? '');
+
+    try {
+        if (
+            $fullName === '' ||
+            $phone === '' ||
+            $addressLine1 === '' ||
+            $city === '' ||
+            $state === '' ||
+            $pincode === ''
+        ) {
+            throw new Exception('Please complete all address fields.');
+        }
+
+        if (!preg_match('/^[0-9A-Za-z\s-]{3,20}$/', $pincode)) {
+            throw new Exception('Please enter a valid pincode.');
+        }
+
+        $db->beginTransaction();
+
+        $countStmt = $db->prepare("
+            SELECT COUNT(*)
+            FROM user_addresses
+            WHERE user_id = :user_id
+        ");
+        $countStmt->execute(['user_id' => $userId]);
+
+        $addressCount = (int) $countStmt->fetchColumn();
+        $isDefault = ($addressCount === 0) ? 1 : 0;
+
+        $insertStmt = $db->prepare("
+            INSERT INTO user_addresses (
+                user_id,
+                address_type,
+                full_name,
+                phone,
+                address_line1,
+                address_line2,
+                city,
+                state,
+                pincode,
+                is_default
+            )
+            VALUES (
+                :user_id,
+                :address_type,
+                :full_name,
+                :phone,
+                :address_line1,
+                :address_line2,
+                :city,
+                :state,
+                :pincode,
+                :is_default
+            )
+        ");
+
+        $insertStmt->execute([
+            'user_id' => $userId,
+            'address_type' => $addressType,
+            'full_name' => $fullName,
+            'phone' => $phone,
+            'address_line1' => $addressLine1,
+            'address_line2' => $addressLine2 !== '' ? $addressLine2 : null,
+            'city' => $city,
+            'state' => $state,
+            'pincode' => $pincode,
+            'is_default' => $isDefault
+        ]);
+
+        $newAddressId = (int) $db->lastInsertId();
+
+        $db->commit();
+        $_SESSION['checkout_selected_address_id'] = $newAddressId;
+        $_SESSION['checkout_address_message'] = 'New delivery address saved successfully.';
+
+        header('Location: checkout.php');
+        exit;
+    } catch (Exception $e) {
+        if ($db->inTransaction()) {
+            $db->rollBack();
+        }
+
+        die("Unable to save address: " . htmlspecialchars($e->getMessage()));
+    }
+}
+
+
+
 if ($_SERVER['REQUEST_METHOD'] === 'POST') {
 
-    $shippingName =
-        trim($_POST['shipping_name'] ?? '');
+    $userId = (int) $_SESSION['user_id'];
+    $selectedAddressId = (int) ($_POST['selected_address_id'] ?? 0);
 
-    $shippingPhone =
-        trim($_POST['shipping_phone'] ?? '');
+    if ($selectedAddressId <= 0) {
+        die("Please select a delivery address.");
+    }
 
-    $shippingAddress =
-        trim($_POST['shipping_address'] ?? '');
+    $addressStmt = $db->prepare("
+        SELECT
+            id,
+            full_name,
+            phone,
+            address_line1,
+            address_line2,
+            city,
+            state,
+            pincode
+        FROM user_addresses
+        WHERE id = :address_id
+          AND user_id = :user_id
+        LIMIT 1
+    ");
 
-    $shippingCity =
-        trim($_POST['shipping_city'] ?? '');
+    $addressStmt->execute([
+        'address_id' => $selectedAddressId,
+        'user_id' => $userId
+    ]);
 
-    $shippingState =
-        trim($_POST['shipping_state'] ?? '');
+    $selectedAddress = $addressStmt->fetch(PDO::FETCH_ASSOC);
 
-    $shippingPincode =
-        trim($_POST['shipping_pincode'] ?? '');
+    if (!$selectedAddress) {
+        die("Selected delivery address was not found.");
+    }
+    $shippingName = $selectedAddress['full_name'];
+    $shippingPhone = $selectedAddress['phone'];
 
-    $paymentMethod =
-        $_POST['payment_method'] ?? '';
+    $shippingAddress = $selectedAddress['address_line1'];
 
-    $cartData =
-        $_POST['cart_data'] ?? '';
+    if (!empty($selectedAddress['address_line2'])) {
+        $shippingAddress .= ', ' . $selectedAddress['address_line2'];
+    }
+
+    $shippingCity = $selectedAddress['city'];
+    $shippingState = $selectedAddress['state'];
+    $shippingPincode = $selectedAddress['pincode'];
+
+    $paymentMethod = $_POST['payment_method'] ?? '';
+    $cartData = $_POST['cart_data'] ?? '';
 
     if (
         $shippingName === '' ||
@@ -295,13 +422,13 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
         }
 
 
-if ($paymentMethod === 'cash_on_delivery') {
-    $updatedVariantProductIds = [];
+        if ($paymentMethod === 'cash_on_delivery') {
+            $updatedVariantProductIds = [];
 
-    foreach ($orderItems as $item) {
+            foreach ($orderItems as $item) {
 
-        if (!empty($item['variant_id'])) {
-            $stockSql = "
+                if (!empty($item['variant_id'])) {
+                    $stockSql = "
                 UPDATE product_variants
                 SET stock = stock - :quantity
                 WHERE id = :variant_id
@@ -310,80 +437,79 @@ if ($paymentMethod === 'cash_on_delivery') {
                   AND stock >= :quantity
             ";
 
-            $stockStmt = $db->prepare($stockSql);
+                    $stockStmt = $db->prepare($stockSql);
 
-            $stockStmt->execute([
-                'quantity'   => $item['quantity'],
-                'variant_id' => $item['variant_id'],
-                'product_id' => $item['product_id']
-            ]);
+                    $stockStmt->execute([
+                        'quantity'   => $item['quantity'],
+                        'variant_id' => $item['variant_id'],
+                        'product_id' => $item['product_id']
+                    ]);
 
-            if ($stockStmt->rowCount() !== 1) {
-                throw new Exception(
-                    "Unable to update stock for: " . $item['product_name']
-                );
-            }
-            $updatedVariantProductIds[] = (int) $item['product_id'];
-
-        } else {
-            $stockSql = "
+                    if ($stockStmt->rowCount() !== 1) {
+                        throw new Exception(
+                            "Unable to update stock for: " . $item['product_name']
+                        );
+                    }
+                    $updatedVariantProductIds[] = (int) $item['product_id'];
+                } else {
+                    $stockSql = "
                 UPDATE products
                 SET stock = stock - :quantity
                 WHERE id = :product_id
                   AND stock >= :quantity
             ";
 
-            $stockStmt = $db->prepare($stockSql);
+                    $stockStmt = $db->prepare($stockSql);
 
-            $stockStmt->execute([
-                'quantity'   => $item['quantity'],
-                'product_id' => $item['product_id']
-            ]);
+                    $stockStmt->execute([
+                        'quantity'   => $item['quantity'],
+                        'product_id' => $item['product_id']
+                    ]);
 
-            if ($stockStmt->rowCount() !== 1) {
-                throw new Exception(
-                    "Unable to update stock for: " . $item['product_name']
-                );
+                    if ($stockStmt->rowCount() !== 1) {
+                        throw new Exception(
+                            "Unable to update stock for: " . $item['product_name']
+                        );
+                    }
+                }
             }
-        }
-    }
-    $updatedVariantProductIds = array_unique(
-        $updatedVariantProductIds
-    );
+            $updatedVariantProductIds = array_unique(
+                $updatedVariantProductIds
+            );
 
-    $sumStockStmt = $db->prepare("
+            $sumStockStmt = $db->prepare("
         SELECT COALESCE(SUM(stock), 0)
         FROM product_variants
         WHERE product_id = :product_id
           AND status = 1
     ");
 
-    $updateProductStockStmt = $db->prepare("
+            $updateProductStockStmt = $db->prepare("
         UPDATE products
         SET stock = :stock
         WHERE id = :product_id
     ");
 
-    foreach ($updatedVariantProductIds as $productId) {
+            foreach ($updatedVariantProductIds as $productId) {
 
-        $sumStockStmt->execute([
-            'product_id' => $productId
-        ]);
+                $sumStockStmt->execute([
+                    'product_id' => $productId
+                ]);
 
-        $totalVariantStock = (int) $sumStockStmt->fetchColumn();
+                $totalVariantStock = (int) $sumStockStmt->fetchColumn();
 
-        $updateProductStockStmt->execute([
-            'stock'      => $totalVariantStock,
-            'product_id' => $productId
-        ]);
-    }
-    $db->commit();
+                $updateProductStockStmt->execute([
+                    'stock'      => $totalVariantStock,
+                    'product_id' => $productId
+                ]);
+            }
+            $db->commit();
 
-    $_SESSION['last_order_id'] = $orderId;
+            $_SESSION['last_order_id'] = $orderId;
 
-    header("Location: order-confirmation.php");
-    exit;
-}
+            header("Location: order-confirmation.php");
+            exit;
+        }
 
 
         if ($paymentMethod === 'stripe') {
@@ -474,6 +600,61 @@ if ($paymentMethod === 'cash_on_delivery') {
             ));
     }
 }
+$userId = (int) $_SESSION['user_id'];
+
+$addressListStmt = $db->prepare("
+    SELECT
+        id,
+        address_type,
+        full_name,
+        phone,
+        address_line1,
+        address_line2,
+        city,
+        state,
+        pincode,
+        is_default
+    FROM user_addresses
+    WHERE user_id = :user_id
+    ORDER BY is_default DESC, id DESC
+");
+
+$addressListStmt->execute([
+    'user_id' => $userId
+]);
+
+$addresses = $addressListStmt->fetchAll(PDO::FETCH_ASSOC);
+$selectedAddressId = (int) (
+    $_SESSION['checkout_selected_address_id'] ?? 0
+);
+
+unset($_SESSION['checkout_selected_address_id']);
+
+$validSelectedAddress = false;
+
+foreach ($addresses as $address) {
+    if ((int) $address['id'] === $selectedAddressId) {
+        $validSelectedAddress = true;
+        break;
+    }
+}
+
+if (!$validSelectedAddress) {
+    $selectedAddressId = 0;
+
+    foreach ($addresses as $address) {
+        if ((int) $address['is_default'] === 1) {
+            $selectedAddressId = (int) $address['id'];
+            break;
+        }
+    }
+}
+
+$checkoutAddressMessage =
+    $_SESSION['checkout_address_message'] ?? '';
+
+unset($_SESSION['checkout_address_message']);
+
 include "components/header.php";
 
 ?>
@@ -514,13 +695,252 @@ include "components/header.php";
 
                     </h2>
 
+                    <div class="mb-4">
+
+                        <div class="d-flex justify-content-between align-items-center mb-3">
+                            <div>
+                                <h5 class="fw-bold mb-1">Select Delivery Address</h5>
+                                <p class="text-muted small mb-0">
+                                    Choose where you want your order delivered.
+                                </p>
+                            </div>
+                        </div>
+
+                        <?php if ($checkoutAddressMessage !== ''): ?>
+                            <div class="alert alert-success rounded-3">
+                                <?= htmlspecialchars($checkoutAddressMessage); ?>
+                            </div>
+                        <?php endif; ?>
+
+                        <?php if (!empty($addresses)): ?>
+
+                            <div class="row g-3">
+
+                                <?php foreach ($addresses as $address): ?>
+
+                                    <?php
+                                    $addressId = (int) $address['id'];
+                                    $isSelected = ($addressId === $selectedAddressId);
+                                    ?>
+
+                                    <div class="col-12">
+
+                                        <label
+                                            class="checkout-address-card d-block border rounded-3 p-3 <?= $isSelected ? 'selected' : ''; ?>"
+                                            for="address_<?= $addressId; ?>"
+
+                                            data-name="<?= htmlspecialchars($address['full_name'], ENT_QUOTES, 'UTF-8'); ?>"
+                                            data-phone="<?= htmlspecialchars($address['phone'], ENT_QUOTES, 'UTF-8'); ?>"
+                                            data-address1="<?= htmlspecialchars($address['address_line1'], ENT_QUOTES, 'UTF-8'); ?>"
+                                            data-address2="<?= htmlspecialchars($address['address_line2'] ?? '', ENT_QUOTES, 'UTF-8'); ?>"
+                                            data-city="<?= htmlspecialchars($address['city'], ENT_QUOTES, 'UTF-8'); ?>"
+                                            data-state="<?= htmlspecialchars($address['state'], ENT_QUOTES, 'UTF-8'); ?>"
+                                            data-pincode="<?= htmlspecialchars($address['pincode'], ENT_QUOTES, 'UTF-8'); ?>"
+
+                                            style="cursor:pointer;">
+
+                                            <div class="d-flex gap-3">
+
+                                                <input
+                                                    type="radio"
+                                                    class="form-check-input checkout-address-radio mt-1"
+                                                    name="checkout_address_choice"
+                                                    id="address_<?= $addressId; ?>"
+                                                    value="<?= $addressId; ?>"
+                                                    <?= $isSelected ? 'checked' : ''; ?>>
+
+                                                <div class="flex-grow-1">
+
+                                                    <div class="d-flex justify-content-between align-items-center mb-2">
+
+                                                        <strong>
+                                                            <?= htmlspecialchars($address['address_type']); ?>
+                                                        </strong>
+
+                                                        <?php if ((int) $address['is_default'] === 1): ?>
+                                                            <span class="badge bg-success-subtle text-success">
+                                                                Default
+                                                            </span>
+                                                        <?php endif; ?>
+
+                                                    </div>
+
+                                                    <div class="fw-semibold">
+                                                        <?= htmlspecialchars($address['full_name']); ?>
+                                                    </div>
+
+                                                    <div class="text-muted small">
+                                                        <?= htmlspecialchars($address['phone']); ?>
+                                                    </div>
+
+                                                    <div class="text-muted small mt-1">
+                                                        <?= htmlspecialchars($address['address_line1']); ?>
+
+                                                        <?php if (!empty($address['address_line2'])): ?>
+                                                            , <?= htmlspecialchars($address['address_line2']); ?>
+                                                        <?php endif; ?>
+                                                    </div>
+
+                                                    <div class="text-muted small">
+                                                        <?= htmlspecialchars($address['city']); ?>,
+                                                        <?= htmlspecialchars($address['state']); ?> -
+                                                        <?= htmlspecialchars($address['pincode']); ?>
+                                                    </div>
+
+                                                    <div class="selected-address-label text-primary small fw-semibold mt-2"
+                                                        <?= !$isSelected ? 'style="display:none;"' : ''; ?>>
+                                                        <i class="fa-solid fa-circle-check me-1"></i>
+                                                        Selected delivery address
+                                                    </div>
+
+                                                </div>
+
+                                            </div>
+
+                                        </label>
+
+                                    </div>
+
+                                <?php endforeach; ?>
+
+                            </div>
+
+                        <?php else: ?>
+
+                            <div class="alert alert-info rounded-3">
+                                You don't have any saved addresses yet. Add your first delivery address below.
+                            </div>
+
+                        <?php endif; ?>
+
+                    </div>
+                    <div
+                        id="newCheckoutAddressForm"
+                        class="card border rounded-3 p-3 mb-4"
+                        style="display:none;">
+
+                        <h5 class="fw-bold mb-3">Add a New Address</h5>
+
+                        <form method="POST" action="checkout.php">
+
+                            <input
+                                type="hidden"
+                                name="action"
+                                value="add_checkout_address">
+
+                            <div class="mb-3">
+                                <label class="form-label">Address Type</label>
+                                <select name="address_type" class="form-select">
+                                    <option value="Home">Home</option>
+                                    <option value="Work">Work</option>
+                                    <option value="Other">Other</option>
+                                </select>
+                            </div>
+
+                            <div class="mb-3">
+                                <label class="form-label">Full Name</label>
+                                <input
+                                    type="text"
+                                    name="full_name"
+                                    class="form-control"
+                                    maxlength="150"
+                                    required>
+                            </div>
+
+                            <div class="mb-3">
+                                <label class="form-label">Phone Number</label>
+                                <input
+                                    type="tel"
+                                    name="phone"
+                                    class="form-control"
+                                    maxlength="30"
+                                    required>
+                            </div>
+
+                            <div class="mb-3">
+                                <label class="form-label">Address Line 1</label>
+                                <input
+                                    type="text"
+                                    name="address_line1"
+                                    class="form-control"
+                                    maxlength="255"
+                                    placeholder="House number, street, area"
+                                    required>
+                            </div>
+
+                            <div class="mb-3">
+                                <label class="form-label">Address Line 2 (Optional)</label>
+                                <input
+                                    type="text"
+                                    name="address_line2"
+                                    class="form-control"
+                                    maxlength="255"
+                                    placeholder="Landmark, apartment, etc.">
+                            </div>
+
+                            <div class="row">
+
+                                <div class="col-md-6 mb-3">
+                                    <label class="form-label">City</label>
+                                    <input
+                                        type="text"
+                                        name="city"
+                                        class="form-control"
+                                        maxlength="100"
+                                        required>
+                                </div>
+
+                                <div class="col-md-6 mb-3">
+                                    <label class="form-label">State</label>
+                                    <input
+                                        type="text"
+                                        name="state"
+                                        class="form-control"
+                                        maxlength="100"
+                                        required>
+                                </div>
+
+                            </div>
+
+                            <div class="mb-3">
+                                <label class="form-label">Pincode</label>
+                                <input
+                                    type="text"
+                                    name="pincode"
+                                    class="form-control"
+                                    maxlength="20"
+                                    required>
+                            </div>
+
+                            <div class="d-flex gap-2">
+
+                                <button type="submit" class="btn btn-primary rounded-pill">
+                                    <i class="fa-solid fa-save me-1"></i>
+                                    Save Address
+                                </button>
+
+                                <button
+                                    type="button"
+                                    class="btn btn-light rounded-pill"
+                                    id="cancelNewAddress">
+                                    Cancel
+                                </button>
+
+                            </div>
+
+                        </form>
+
+                    </div>
 
                     <form id="checkoutForm" method="POST" action="checkout.php">
 
                         <input type="hidden" name="cart_data" id="cart_data">
 
-
-                        <!-- NAME -->
+                        <input
+                            type="hidden"
+                            name="selected_address_id"
+                            id="selected_address_id"
+                            value="<?= (int) $selectedAddressId; ?>">
 
                         <div class="mb-3">
 
@@ -806,6 +1226,98 @@ include "components/header.php";
     <script src="https://checkout.razorpay.com/v1/checkout.js"></script>
 
     <?php include "components/footer.php"; ?>
+
+    <script>
+        document.addEventListener('DOMContentLoaded', function() {
+
+            const addressRadios = document.querySelectorAll(
+                '.checkout-address-radio'
+            );
+
+            const selectedAddressInput = document.getElementById(
+                'selected_address_id'
+            );
+
+            const fields = {
+                name: document.getElementById('shipping_name'),
+                phone: document.getElementById('shipping_phone'),
+                address: document.getElementById('shipping_address'),
+                city: document.getElementById('shipping_city'),
+                state: document.getElementById('shipping_state'),
+                pincode: document.getElementById('shipping_pincode')
+            };
+
+            function selectAddress(radio) {
+
+                const card = radio.closest('.checkout-address-card');
+
+                if (!card) {
+                    console.error('Address card not found.');
+                    return;
+                }
+
+                console.log('Selected address:', radio.value);
+                if (selectedAddressInput) {
+                    selectedAddressInput.value = radio.value;
+                } else {
+                    console.error('selected_address_id input is missing.');
+                }
+                fields.name.value = card.dataset.name || '';
+                fields.phone.value = card.dataset.phone || '';
+
+                fields.address.value = [
+                    card.dataset.address1,
+                    card.dataset.address2
+                ].filter(Boolean).join(', ');
+
+                fields.city.value = card.dataset.city || '';
+                fields.state.value = card.dataset.state || '';
+                fields.pincode.value = card.dataset.pincode || '';
+                Object.values(fields).forEach(function(field) {
+                    field.readOnly = true;
+                });
+                document.querySelectorAll('.checkout-address-card').forEach(
+                    function(item) {
+
+                        item.classList.remove('selected');
+
+                        const selectedLabel = item.querySelector(
+                            '.selected-address-label'
+                        );
+
+                        if (selectedLabel) {
+                            selectedLabel.style.display = 'none';
+                        }
+                    }
+                );
+
+                card.classList.add('selected');
+
+                const selectedLabel = card.querySelector(
+                    '.selected-address-label'
+                );
+
+                if (selectedLabel) {
+                    selectedLabel.style.display = 'block';
+                }
+            }
+            addressRadios.forEach(function(radio) {
+
+                radio.addEventListener('change', function() {
+                    selectAddress(this);
+                });
+
+            });
+            const initiallySelected = document.querySelector(
+                '.checkout-address-radio:checked'
+            );
+
+            if (initiallySelected) {
+                selectAddress(initiallySelected);
+            }
+
+        });
+    </script>
 </body>
 
 </html>

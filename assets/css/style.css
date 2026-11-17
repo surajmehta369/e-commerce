@@ -2807,3 +2807,27 @@ body {
     }
 
 }
+
+
+.checkout-address-card {
+    transition: all 0.2s ease;
+    background: #fff;
+    border: 1px solid #dee2e6 !important;
+}
+
+.checkout-address-card:hover {
+    border-color: #0d6efd !important;
+    background: #f8fbff;
+}
+
+.checkout-address-card.selected {
+    border: 2px solid #0d6efd !important;
+    background: #f3f8ff;
+}
+
+.checkout-address-card .form-check-input {
+    width: 18px;
+    height: 18px;
+    flex-shrink: 0;
+}
+

@@ -198,8 +198,21 @@
             readyQueue = [];
             content.innerHTML = html;
 
-            var title = res.headers.get('X-Page-Title');
-            if (title) { document.title = decodeURIComponent(title); }
+        var title = res.headers.get('X-Page-Title');
+
+if (title) {
+    var decodedTitle = decodeURIComponent(title);
+
+    // Update browser tab title
+    document.title = decodedTitle;
+
+    // Update admin topbar heading
+    var topbarTitle = document.querySelector('.admin-topbar-title');
+
+    if (topbarTitle) {
+        topbarTitle.textContent = decodedTitle.replace(/\s*\|\s*Admin\s*$/, '');
+    }
+}
 
             if (push) {
                 if (finalUrl.href === location.href) { history.replaceState({ admin: 1 }, '', finalUrl.href); }
