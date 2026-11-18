@@ -243,6 +243,30 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
             $variantId = (int) ($cartItem['variant_id'] ?? 0);
             $variant = null;
 
+            $productImage = $product['image'];
+
+            if ($variantId > 0) {
+
+                $variantImageStmt = $db->prepare("
+        SELECT image_path
+        FROM product_variant_images
+        WHERE variant_id = :variant_id
+          AND status = 1
+        ORDER BY sort_order ASC, id ASC
+        LIMIT 1
+    ");
+
+                $variantImageStmt->execute([
+                    'variant_id' => $variantId
+                ]);
+
+                $variantImage = $variantImageStmt->fetchColumn();
+
+                if (!empty($variantImage)) {
+                    $productImage = $variantImage;
+                }
+            }
+
             if ($variantId > 0) {
                 $variantSql = "
         SELECT id, product_id, variant_title, sku, price, stock
@@ -291,7 +315,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
                 'product_id' => (int) $product['id'],
                 'variant_id' => $variant ? (int) $variant['id'] : null,
                 'product_name' => $productName,
-                'product_image' => $product['image'],
+                'product_image' => $productImage,
                 'price' => $price,
                 'quantity' => $quantity,
                 'subtotal' => $subtotal
@@ -515,8 +539,28 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
         if ($paymentMethod === 'stripe') {
 
             require_once __DIR__ . '/config/stripe.php';
+
             $stripeLineItems = [];
+
             foreach ($orderItems as $item) {
+
+                $productData = [
+                    'name' => $item['product_name']
+                ];
+
+                // Show the selected product image on Stripe Checkout.
+                if (!empty($item['product_image'])) {
+
+                    $imagePath = $item['product_image'];
+
+                    // Stripe requires an absolute publicly accessible HTTPS URL.
+                    if (
+                        filter_var($imagePath, FILTER_VALIDATE_URL) &&
+                        strpos($imagePath, 'https://') === 0
+                    ) {
+                        $productData['images'] = [$imagePath];
+                    }
+                }
 
                 $stripeLineItems[] = [
 
@@ -524,67 +568,51 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
 
                         'currency' => 'inr',
 
-                        'product_data' => [
+                        'product_data' => $productData,
 
-                            'name' =>
-                            $item['product_name']
-
-                        ],
-
-                        'unit_amount' =>
-                        (int) round(
+                        'unit_amount' => (int) round(
                             $item['price'] * 100
                         )
 
                     ],
 
-                    'quantity' =>
-                    $item['quantity']
+                    'quantity' => $item['quantity']
 
                 ];
             }
 
-            $checkoutSession =
-                \Stripe\Checkout\Session::create([
+            $checkoutSession = \Stripe\Checkout\Session::create([
 
-                    'mode' =>
-                    'payment',
+                'mode' => 'payment',
 
-                    'line_items' =>
-                    $stripeLineItems,
+                'line_items' => $stripeLineItems,
 
-                    'success_url' =>
-                    'http://localhost/e-commerce/stripe-success.php?session_id={CHECKOUT_SESSION_ID}',
+                'success_url' =>
+                'http://localhost/e-commerce/stripe-success.php?session_id={CHECKOUT_SESSION_ID}',
 
-                    'cancel_url' =>
-                    'http://localhost/e-commerce/stripe-cancel.php?order_id='
-                        . $orderId,
+                'cancel_url' =>
+                'http://localhost/e-commerce/stripe-cancel.php?order_id=' . $orderId,
 
-                    'customer_email' =>
-                    $_SESSION['user_email'] ?? null,
+                'customer_email' =>
+                $_SESSION['user_email'] ?? null,
 
-                    'metadata' => [
+                'metadata' => [
 
-                        'order_id' =>
-                        (string) $orderId,
+                    'order_id' => (string) $orderId,
 
-                        'user_id' =>
-                        (string) $_SESSION['user_id']
+                    'user_id' => (string) $_SESSION['user_id']
 
-                    ]
+                ]
 
-                ]);
-            $_SESSION['stripe_order_id'] =
-                $orderId;
+            ]);
 
-            $_SESSION['stripe_session_id'] =
-                $checkoutSession->id;
+            $_SESSION['stripe_order_id'] = $orderId;
+
+            $_SESSION['stripe_session_id'] = $checkoutSession->id;
 
             $db->commit();
-            header(
-                "Location: "
-                    . $checkoutSession->url
-            );
+
+            header("Location: " . $checkoutSession->url);
 
             exit;
         }
