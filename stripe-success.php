@@ -1,4 +1,3 @@
-
 <?php
 
 session_start();
@@ -23,7 +22,6 @@ if ($sessionId === '') {
 $db = null;
 
 try {
-    // 1. Retrieve and verify the Stripe Checkout Session.
     $checkoutSession = \Stripe\Checkout\Session::retrieve($sessionId);
 
     if (
@@ -44,14 +42,10 @@ try {
     ) {
         throw new Exception("Invalid Stripe order or customer information.");
     }
-
-    // 2. Connect to the database.
     $database = new Database();
     $db = $database->connect();
 
     $db->beginTransaction();
-
-    // Lock the order to prevent duplicate stock deductions.
     $orderSql = "
         SELECT
             id,
@@ -82,16 +76,12 @@ try {
     if ($order['payment_method'] !== 'stripe') {
         throw new Exception("This order was not created for Stripe payment.");
     }
-
-    // Verify that the paid amount matches the order total.
     $expectedAmount = (int) round((float) $order['total_amount'] * 100);
     $paidAmount = (int) ($checkoutSession->amount_total ?? -1);
 
     if ($paidAmount !== $expectedAmount) {
         throw new Exception("Stripe payment amount does not match the order total.");
     }
-
-    // 3. If already paid, do not deduct stock again.
     if ($order['payment_status'] !== 'paid') {
 
         $itemSql = "
@@ -112,8 +102,6 @@ try {
         if (!$items) {
             throw new Exception("No items were found for this order.");
         }
-
-        // 4. Deduct stock from the correct table.
         foreach ($items as $item) {
 
             $productId = (int) $item['product_id'];
@@ -125,8 +113,6 @@ try {
             }
 
             if ($variantId > 0) {
-
-                // Variant order: deduct from product_variants.
                 $stockSql = "
                     UPDATE product_variants
                     SET stock = stock - :quantity
@@ -144,8 +130,6 @@ try {
                 ]);
 
             } else {
-
-                // Regular product order: deduct from products.
                 $stockSql = "
                     UPDATE products
                     SET stock = stock - :quantity
@@ -168,8 +152,6 @@ try {
                 );
             }
         }
-
-        // 5. Mark the order paid in the same transaction.
         $updateSql = "
             UPDATE orders
             SET payment_status = 'paid',
