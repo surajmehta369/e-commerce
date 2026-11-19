@@ -20,6 +20,10 @@ $description = "";
 $price = "";
 $originalPrice = "";
 $stock = "";
+$weight = "";
+$length = "";
+$width = "";
+$height = "";
 $categoryId = 0;
 $brandId = 0;
 $status = 1;
@@ -59,7 +63,10 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && !$csrfFailed) {
     $price = trim($_POST['price'] ?? '');
     $originalPrice = trim($_POST['original_price'] ?? '');
     $stock = trim($_POST['stock'] ?? '');
-
+    $weight = trim($_POST['weight'] ?? '');
+    $length = trim($_POST['length'] ?? '');
+    $width = trim($_POST['width'] ?? '');
+    $height = trim($_POST['height'] ?? '');
     $categoryId = (int) ($_POST['category_id'] ?? 0);
     $brandId = (int) ($_POST['brand_id'] ?? 0);
 
@@ -86,6 +93,33 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && !$csrfFailed) {
                 "Product title is required."
             );
         }
+
+        $shippingFields = [
+            'Weight' => $weight,
+            'Length' => $length,
+            'Width'  => $width,
+            'Height' => $height
+        ];
+
+        foreach ($shippingFields as $fieldName => $fieldValue) {
+
+            if (
+                $fieldValue === '' ||
+                !is_numeric($fieldValue) ||
+                !is_finite((float) $fieldValue) ||
+                (float) $fieldValue <= 0 ||
+                (float) $fieldValue > 99999999.99
+            ) {
+                throw new RuntimeException(
+                    "Please enter a valid {$fieldName}. Value must be greater than zero."
+                );
+            }
+        }
+
+        $weightValue = round((float) $weight, 2);
+        $lengthValue = round((float) $length, 2);
+        $widthValue  = round((float) $width, 2);
+        $heightValue = round((float) $height, 2);
 
         if (
             $price === '' ||
@@ -203,13 +237,21 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && !$csrfFailed) {
             );
             $variantStock = trim($variant['stock'] ?? '');
             $attributeText = trim($variant['attributes'] ?? '');
+            $variantWeight = trim($variant['weight'] ?? '');
+            $variantLength = trim($variant['length'] ?? '');
+            $variantWidth  = trim($variant['width'] ?? '');
+            $variantHeight = trim($variant['height'] ?? '');
             if (
                 $variantTitle === '' &&
                 $variantSku === '' &&
                 $variantPrice === '' &&
                 $variantOriginal === '' &&
                 $variantStock === '' &&
-                $attributeText === ''
+                $attributeText === '' &&
+                $variantWeight === '' &&
+                $variantLength === '' &&
+                $variantWidth === '' &&
+                $variantHeight === ''
             ) {
                 continue;
             }
@@ -313,6 +355,33 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && !$csrfFailed) {
                 }
             }
 
+            $variantShippingFields = [
+                'Weight' => $variantWeight,
+                'Length' => $variantLength,
+                'Width'  => $variantWidth,
+                'Height' => $variantHeight
+            ];
+
+            foreach ($variantShippingFields as $fieldName => $fieldValue) {
+
+                if (
+                    $fieldValue === '' ||
+                    !is_numeric($fieldValue) ||
+                    !is_finite((float) $fieldValue) ||
+                    (float) $fieldValue <= 0 ||
+                    (float) $fieldValue > 99999999.99
+                ) {
+                    throw new RuntimeException(
+                        "Please enter a valid {$fieldName} for variant: {$variantTitle}."
+                    );
+                }
+            }
+
+            $variantWeightValue = round((float) $variantWeight, 2);
+            $variantLengthValue = round((float) $variantLength, 2);
+            $variantWidthValue  = round((float) $variantWidth, 2);
+            $variantHeightValue = round((float) $variantHeight, 2);
+
             $variantsToSave[] = [
                 'form_index' => (string) $formIndex,
                 'title' => $variantTitle,
@@ -322,6 +391,10 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && !$csrfFailed) {
                     ? round((float) $variantOriginal, 2)
                     : null,
                 'stock' => (int) $variantStock,
+                'weight' => $variantWeightValue,
+                'length' => $variantLengthValue,
+                'width' => $variantWidthValue,
+                'height' => $variantHeightValue,
                 'attributes' => $attributes
                     ? json_encode(
                         $attributes,
@@ -543,7 +616,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && !$csrfFailed) {
         $db->beginTransaction();
 
         $insertProduct = $db->prepare("
-            INSERT INTO products (
+         INSERT INTO products (
                 sku,
                 title,
                 slug,
@@ -553,25 +626,33 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && !$csrfFailed) {
                 original_price,
                 discount,
                 stock,
+                weight,
+                length,
+                width,
+                height,
                 category_id,
                 brand_id,
                 status,
                 vendor_id
-            ) VALUES (
-                :sku,
-                :title,
-                :slug,
-                :description,
-                :image,
-                :price,
-                :original_price,
-                :discount,
-                :stock,
-                :category_id,
-                :brand_id,
-                :status,
-                NULL
-            )
+) VALUES (
+    :sku,
+    :title,
+    :slug,
+    :description,
+    :image,
+    :price,
+    :original_price,
+    :discount,
+    :stock,
+    :weight,
+    :length,
+    :width,
+    :height,
+    :category_id,
+    :brand_id,
+    :status,
+    NULL
+)
         ");
 
         $insertProduct->execute([
@@ -584,6 +665,10 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && !$csrfFailed) {
             ':original_price' => $originalPriceValue,
             ':discount' => $discount,
             ':stock' => $stockValue,
+            ':weight' => $weightValue,
+            ':length' => $lengthValue,
+            ':width' => $widthValue,
+            ':height' => $heightValue,
             ':category_id' => $categoryId,
             ':brand_id' => $brandId,
             ':status' => $status
@@ -623,6 +708,10 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && !$csrfFailed) {
                 price,
                 original_price,
                 stock,
+                weight,
+                length,
+                width,
+                height,
                 attributes,
                 status
             ) VALUES (
@@ -632,6 +721,10 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && !$csrfFailed) {
                 :price,
                 :original_price,
                 :stock,
+                :weight,
+                :length,
+                :width,
+                :height,
                 :attributes,
                 1
             )
@@ -672,6 +765,10 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && !$csrfFailed) {
                 ':price' => $variant['price'],
                 ':original_price' => $variant['original_price'],
                 ':stock' => $variant['stock'],
+                ':weight' => $variant['weight'],
+                ':length' => $variant['length'],
+                ':width' => $variant['width'],
+                ':height' => $variant['height'],
                 ':attributes' => $variant['attributes']
             ]);
 
@@ -939,6 +1036,10 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && !$csrfFailed) {
         $price = "";
         $originalPrice = "";
         $stock = "";
+        $weight = "";
+        $length = "";
+        $width = "";
+        $height = "";
         $categoryId = 0;
         $brandId = 0;
         $status = 1;
@@ -981,13 +1082,39 @@ adminHeader('Add Product', 'products');
 ?>
 
 <style>
-    .page-title { font-weight: 700; color: #111827; }
-    .card { border-radius: 14px; box-shadow: 0 4px 20px rgba(0, 0, 0, .05); }
-    .form-label { font-weight: 600; color: #374151; }
-    .form-control, .form-select { min-height: 46px; border-radius: 8px; }
-    textarea.form-control { min-height: 130px; }
-    .required { color: #dc2626; }
-    .image-note { font-size: 13px; color: #6b7280; }
+    .page-title {
+        font-weight: 700;
+        color: #111827;
+    }
+
+    .card {
+        border-radius: 14px;
+        box-shadow: 0 4px 20px rgba(0, 0, 0, .05);
+    }
+
+    .form-label {
+        font-weight: 600;
+        color: #374151;
+    }
+
+    .form-control,
+    .form-select {
+        min-height: 46px;
+        border-radius: 8px;
+    }
+
+    textarea.form-control {
+        min-height: 130px;
+    }
+
+    .required {
+        color: #dc2626;
+    }
+
+    .image-note {
+        font-size: 13px;
+        color: #6b7280;
+    }
 </style>
 
 <div class="page-header">
@@ -1085,6 +1212,43 @@ adminHeader('Add Product', 'products');
                 </div>
 
                 <div class="col-12">
+                    <hr>
+                    <h5 class="mb-1">Shipping Details</h5>
+                    <p class="text-muted small">
+                        Enter the default shipping measurements for this product.
+                        Weight is in grams (g), dimensions are in centimetres (cm).
+                    </p>
+                </div>
+
+                <div class="col-md-3">
+                    <label class="form-label">Weight (g) <span class="required">*</span></label>
+                    <input type="number" name="weight" class="form-control"
+                        min="0.01" max="99999999.99" step="0.01"
+                        value="<?= htmlspecialchars($weight); ?>" required>
+                </div>
+
+                <div class="col-md-3">
+                    <label class="form-label">Length (cm) <span class="required">*</span></label>
+                    <input type="number" name="length" class="form-control"
+                        min="0.01" max="99999999.99" step="0.01"
+                        value="<?= htmlspecialchars($length); ?>" required>
+                </div>
+
+                <div class="col-md-3">
+                    <label class="form-label">Width (cm) <span class="required">*</span></label>
+                    <input type="number" name="width" class="form-control"
+                        min="0.01" max="99999999.99" step="0.01"
+                        value="<?= htmlspecialchars($width); ?>" required>
+                </div>
+
+                <div class="col-md-3">
+                    <label class="form-label">Height (cm) <span class="required">*</span></label>
+                    <input type="number" name="height" class="form-control"
+                        min="0.01" max="99999999.99" step="0.01"
+                        value="<?= htmlspecialchars($height); ?>" required>
+                </div>
+
+                <div class="col-12">
                     <label for="productImages" class="form-label">Select Product Images</label>
                     <input type="file" name="images[]" id="productImages" class="form-control"
                         accept="image/jpeg,image/png,image/webp" multiple>
@@ -1158,6 +1322,42 @@ adminHeader('Add Product', 'products');
                             <label class="form-label">Stock *</label>
                             <input type="number" data-field="stock" class="form-control"
                                 min="0" step="1" placeholder="0">
+                        </div>
+
+                        <div class="col-12">
+                            <hr>
+                            <h6 class="mb-1">Variant Shipping Details</h6>
+                            <small class="text-muted">
+                                Enter the shipping measurements for this specific variant.
+                            </small>
+                        </div>
+
+                        <div class="col-md-3">
+                            <label class="form-label">Weight (g) *</label>
+                            <input type="number" data-field="weight" class="form-control"
+                                min="0.01" max="99999999.99" step="0.01"
+                                placeholder="Weight" required>
+                        </div>
+
+                        <div class="col-md-3">
+                            <label class="form-label">Length (cm) *</label>
+                            <input type="number" data-field="length" class="form-control"
+                                min="0.01" max="99999999.99" step="0.01"
+                                placeholder="Length" required>
+                        </div>
+
+                        <div class="col-md-3">
+                            <label class="form-label">Width (cm) *</label>
+                            <input type="number" data-field="width" class="form-control"
+                                min="0.01" max="99999999.99" step="0.01"
+                                placeholder="Width" required>
+                        </div>
+
+                        <div class="col-md-3">
+                            <label class="form-label">Height (cm) *</label>
+                            <input type="number" data-field="height" class="form-control"
+                                min="0.01" max="99999999.99" step="0.01"
+                                placeholder="Height" required>
                         </div>
 
                         <div class="col-12">

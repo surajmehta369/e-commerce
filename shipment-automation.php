@@ -306,8 +306,6 @@ foreach ($shipments as $shipmentRow) {
     try {
 
         $db->beginTransaction();
-
-        // Lock order first, then shipment.
         $stmt = $db->prepare("
             SELECT
                 id,
