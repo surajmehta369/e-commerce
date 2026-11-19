@@ -128,7 +128,6 @@ try {
                     'variant_id' => $variantId,
                     'product_id' => $productId
                 ]);
-
             } else {
                 $stockSql = "
                     UPDATE products
@@ -148,7 +147,33 @@ try {
             if ($stockStmt->rowCount() !== 1) {
                 throw new Exception(
                     "Insufficient stock or invalid item: " .
-                    $item['product_name']
+                        $item['product_name']
+                );
+            }
+            if ($variantId > 0) {
+
+                $parentStockStmt = $db->prepare("
+        UPDATE products
+
+        SET stock = (
+            SELECT COALESCE(SUM(stock), 0)
+
+            FROM product_variants
+
+            WHERE product_id = :product_id
+        )
+
+        WHERE id = :product_id
+    ");
+
+                $parentStockStmt->execute([
+                    'product_id' => $productId
+                ]);
+            }
+            if ($stockStmt->rowCount() !== 1) {
+                throw new Exception(
+                    "Insufficient stock or invalid item: " .
+                        $item['product_name']
                 );
             }
         }
@@ -183,7 +208,6 @@ try {
 
     header("Location: order-confirmation.php");
     exit;
-
 } catch (Exception $e) {
 
     if ($db instanceof PDO && $db->inTransaction()) {
@@ -193,8 +217,6 @@ try {
     error_log("Stripe success processing error: " . $e->getMessage());
 
     http_response_code(400);
-    die(
-        "Payment verification or order processing failed. " .
-        "Please contact support with your order ID."
-    );
+    die("Payment verification or order processing failed. " .
+        "Please contact support with your order ID.");
 }

@@ -301,6 +301,69 @@ if (
     try {
 
         $db->beginTransaction();
+
+        // Lock and re-read the order first so shipment changes use current order data.
+        // Keep the same lock order as shipment-automation.php: order, then shipment.
+        $lockedOrderStmt = $db->prepare("
+            SELECT
+                id,
+                payment_method,
+                payment_status,
+                order_status
+            FROM orders
+            WHERE id = :order_id
+            FOR UPDATE
+        ");
+
+        $lockedOrderStmt->execute([
+            ':order_id' => $orderId
+        ]);
+
+        $lockedOrder = $lockedOrderStmt->fetch(PDO::FETCH_ASSOC);
+
+        if (!$lockedOrder) {
+            throw new Exception('Order not found while saving shipment.');
+        }
+
+        $lockedOrderStatus = strtolower($lockedOrder['order_status']);
+        $lockedPaymentMethod = strtolower($lockedOrder['payment_method']);
+        $lockedPaymentStatus = strtolower($lockedOrder['payment_status']);
+
+        $blockedOrderStatuses = [
+            'cancelled',
+            'returned',
+            'failed',
+            'completed',
+            'delivered'
+        ];
+
+        $shipmentEligibleStatuses = [
+            'confirmed',
+            'processing',
+            'packed',
+            'shipped',
+            'out_for_delivery'
+        ];
+
+        $orderCanHaveShipment =
+            !in_array($lockedOrderStatus, $blockedOrderStatuses, true) &&
+            in_array($lockedOrderStatus, $shipmentEligibleStatuses, true);
+
+        if ($lockedPaymentMethod === 'cash_on_delivery') {
+            $paymentAllowsShipment = true;
+        } elseif (in_array($lockedPaymentMethod, ['stripe', 'paypal', 'razorpay'], true)) {
+            $paymentAllowsShipment = ($lockedPaymentStatus === 'paid');
+        } else {
+            $paymentAllowsShipment = false;
+        }
+
+        if (!$orderCanHaveShipment || !$paymentAllowsShipment) {
+            $db->rollBack();
+            header("Location: order-details.php?id=" . $orderId . "&shipment_error=not_eligible");
+            exit;
+        }
+
+        // Lock the shipment only after locking the parent order.
         $existingStmt = $db->prepare("
             SELECT *
             FROM order_shipments
@@ -465,9 +528,8 @@ if (
 
         if (isset($mappedOrderStatus[$shipmentStatus])) {
 
-            $currentOrderStatus = strtolower(
-                $order['order_status']
-            );
+            // Use the freshly locked order status, not the page-load snapshot.
+            $currentOrderStatus = $lockedOrderStatus;
 
             $targetOrderStatus = $mappedOrderStatus[$shipmentStatus];
 
@@ -857,6 +919,10 @@ adminHeader('Order #' . $order['id'], 'orders');
         <?php elseif ($shipmentError === 'invalid'): ?>
             <div class="alert alert-warning">
                 Invalid shipment status selected.
+            </div>
+        <?php elseif ($shipmentError === 'not_eligible'): ?>
+            <div class="alert alert-warning">
+                This order is not eligible for shipment updates. Check its order status and payment status.
             </div>
         <?php elseif ($shipmentError === 'save'): ?>
             <div class="alert alert-danger">
