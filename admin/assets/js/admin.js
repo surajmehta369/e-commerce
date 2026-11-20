@@ -182,6 +182,20 @@
                 return false;
             }
 
+            console.log('POST request:', method);
+            console.log('Redirect URL:', finalUrl.href);
+            console.log(
+                'Shipment saved flag:',
+                finalUrl.searchParams.get('shipment_saved')
+            );
+
+            if (
+                method === 'POST' &&
+                finalUrl.searchParams.get('shipment_saved') === '1'
+            ) {
+                console.log('Shipment save detected!');
+                startShipmentAutomation(true);
+            }
             var html = await res.text();
             if (res.headers.get('X-Admin-Fragment') !== '1') {
                 if (method === 'GET') {
@@ -198,21 +212,19 @@
             readyQueue = [];
             content.innerHTML = html;
 
-        var title = res.headers.get('X-Page-Title');
+            var title = res.headers.get('X-Page-Title');
 
-if (title) {
-    var decodedTitle = decodeURIComponent(title);
+            if (title) {
+                var decodedTitle = decodeURIComponent(title);
 
-    // Update browser tab title
-    document.title = decodedTitle;
+                document.title = decodedTitle;
 
-    // Update admin topbar heading
-    var topbarTitle = document.querySelector('.admin-topbar-title');
+                var topbarTitle = document.querySelector('.admin-topbar-title');
 
-    if (topbarTitle) {
-        topbarTitle.textContent = decodedTitle.replace(/\s*\|\s*Admin\s*$/, '');
-    }
-}
+                if (topbarTitle) {
+                    topbarTitle.textContent = decodedTitle.replace(/\s*\|\s*Admin\s*$/, '');
+                }
+            }
 
             if (push) {
                 if (finalUrl.href === location.href) { history.replaceState({ admin: 1 }, '', finalUrl.href); }
@@ -291,12 +303,13 @@ if (title) {
         load(url.href, { method: 'POST', body: data }).then(function (ok) {
             if (!ok && submitter && document.contains(submitter)) { submitter.disabled = false; }
         });
+
     });
     var lastPath = location.pathname + location.search;
 
     window.addEventListener('popstate', function () {
         var now = location.pathname + location.search;
-        if (now === lastPath) { return; } 
+        if (now === lastPath) { return; }
         load(location.href, { push: false });
     });
 
@@ -308,4 +321,59 @@ if (title) {
     history.replaceState({ admin: 1 }, '', location.href);
     initWidgets();
     runReady();
+
+    // Shipment automation trigger
+    function startShipmentAutomation(shipmentSaved = false) {
+        console.log('Shipment automation function started.');
+
+        if (!shipmentSaved) {
+            return;
+        }
+
+        console.log('Shipment successfully saved. Automation scheduled.');
+
+        const csrf = csrfToken();
+
+        if (!csrf) {
+            console.error('Shipment automation: CSRF token missing.');
+            return;
+        }
+
+        let attempts = 0;
+        const maxAttempts = 5;
+
+        function triggerAutomation() {
+
+            attempts++;
+
+            fetch('shipment-automation-trigger.php', {
+                method: 'POST',
+                headers: {
+                    'X-Requested-With': 'XMLHttpRequest',
+                    'X-CSRF-Token': csrf
+                }
+            })
+                .then(response => {
+                    if (!response.ok) {
+                        throw new Error('Automation request failed: ' + response.status);
+                    }
+
+                    return response.text();
+                })
+                .then(result => {
+                    console.log('Shipment automation result:', result);
+
+                    if (attempts < maxAttempts) {
+                        setTimeout(triggerAutomation, 15000);
+                    }
+                })
+                .catch(error => {
+                    console.error('Shipment automation error:', error);
+                });
+        }
+
+        setTimeout(triggerAutomation, 10000);
+    }
+
+    startShipmentAutomation();
 })();

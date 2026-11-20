@@ -302,8 +302,6 @@ if (
 
         $db->beginTransaction();
 
-        // Lock and re-read the order first so shipment changes use current order data.
-        // Keep the same lock order as shipment-automation.php: order, then shipment.
         $lockedOrderStmt = $db->prepare("
             SELECT
                 id,
@@ -616,11 +614,16 @@ $itemSql = "
     SELECT
         id,
         product_id,
+        variant_id,
         product_name,
         product_image,
         price,
         quantity,
-        subtotal
+        subtotal,
+        weight,
+        length,
+        width,
+        height
     FROM order_items
     WHERE order_id = :order_id
     ORDER BY id ASC
@@ -1129,6 +1132,34 @@ adminHeader('Order #' . $order['id'], 'orders');
                             <p class="text-muted mb-0">
                                 Quantity: <?= (int) $item['quantity'] ?>
                             </p>
+                            <div class="mt-2">
+                                <small class="text-muted d-block">
+                                    <i class="bi bi-box me-1"></i>
+                                    Shipping Dimensions
+                                </small>
+
+                                <small class="text-muted">
+                                    Weight:
+                                    <strong>
+                                        <?= number_format((float) $item['weight'], 2) ?> g
+                                    </strong>
+                                    |
+                                    Length:
+                                    <strong>
+                                        <?= number_format((float) $item['length'], 2) ?> cm
+                                    </strong>
+                                    |
+                                    Width:
+                                    <strong>
+                                        <?= number_format((float) $item['width'], 2) ?> cm
+                                    </strong>
+                                    |
+                                    Height:
+                                    <strong>
+                                        <?= number_format((float) $item['height'], 2) ?> cm
+                                    </strong>
+                                </small>
+                            </div>
                         </div>
 
                         <div class="text-end">

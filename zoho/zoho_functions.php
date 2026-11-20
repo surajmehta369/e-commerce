@@ -680,14 +680,23 @@ function createZohoItem(array $product)
         $itemData
     );
 
-    if (empty($response['success'])) {
-        return [
-            'success' => false,
-            'message' => 'Zoho item creation failed.',
-            'item' => null,
-            'response' => $response
-        ];
-    }
+if (empty($response['success'])) {
+
+    error_log(
+        'Zoho item creation API error: ' .
+        json_encode($response, JSON_PRETTY_PRINT)
+    );
+
+    return [
+        'success' => false,
+        'message' =>
+            $response['message']
+            ?? $response['response']['message']
+            ?? 'Zoho item creation failed.',
+        'item' => null,
+        'response' => $response
+    ];
+}
 
     $item =
         $response['response']['item'] ?? null;
