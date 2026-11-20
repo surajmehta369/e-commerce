@@ -225,7 +225,16 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
             }
 
             $productSql = "
-    SELECT id, title, image, price, stock
+    SELECT
+        id,
+        title,
+        image,
+        price,
+        stock,
+        weight,
+        length,
+        width,
+        height
     FROM products
     WHERE id = :id
       AND status = 1
@@ -269,13 +278,23 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
 
             if ($variantId > 0) {
                 $variantSql = "
-        SELECT id, product_id, variant_title, sku, price, stock
-        FROM product_variants
-        WHERE id = :variant_id
-          AND product_id = :product_id
-          AND status = 1
-        LIMIT 1
-    ";
+    SELECT
+        id,
+        product_id,
+        variant_title,
+        sku,
+        price,
+        stock,
+        weight,
+        length,
+        width,
+        height
+    FROM product_variants
+    WHERE id = :variant_id
+      AND product_id = :product_id
+      AND status = 1
+    LIMIT 1
+";
 
                 $variantStmt = $db->prepare($variantSql);
                 $variantStmt->execute([
@@ -318,7 +337,11 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
                 'product_image' => $productImage,
                 'price' => $price,
                 'quantity' => $quantity,
-                'subtotal' => $subtotal
+                'subtotal' => $subtotal,
+                'weight' => (float) ($variant ? $variant['weight'] : $product['weight']),
+                'length' => (float) ($variant ? $variant['length'] : $product['length']),
+                'width'  => (float) ($variant ? $variant['width'] : $product['width']),
+                'height' => (float) ($variant ? $variant['height'] : $product['height'])
             ];
         }
 
@@ -416,7 +439,11 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
         product_image,
         price,
         quantity,
-        subtotal
+        subtotal,
+        weight,
+        length,
+        width,
+        height
     )
     VALUES (
         :order_id,
@@ -426,7 +453,11 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
         :product_image,
         :price,
         :quantity,
-        :subtotal
+        :subtotal,
+        :weight,
+        :length,
+        :width,
+        :height
     )
 ";
 
@@ -441,7 +472,11 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
                 'product_image' => $item['product_image'],
                 'price' => $item['price'],
                 'quantity' => $item['quantity'],
-                'subtotal' => $item['subtotal']
+                'subtotal' => $item['subtotal'],
+                'weight' => $item['weight'],
+                'length' => $item['length'],
+                'width' => $item['width'],
+                'height' => $item['height']
             ]);
         }
 
@@ -547,13 +582,9 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
                 $productData = [
                     'name' => $item['product_name']
                 ];
-
-                // Show the selected product image on Stripe Checkout.
                 if (!empty($item['product_image'])) {
 
                     $imagePath = $item['product_image'];
-
-                    // Stripe requires an absolute publicly accessible HTTPS URL.
                     if (
                         filter_var($imagePath, FILTER_VALIDATE_URL) &&
                         strpos($imagePath, 'https://') === 0

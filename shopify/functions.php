@@ -539,37 +539,37 @@ GRAPHQL;
             'response' => $response
         ];
     }
-$fallback = null;
+    $fallback = null;
 
-foreach ($locations as $location) {
+    foreach ($locations as $location) {
 
-    if (empty($location['isActive'])) {
-        continue;
+        if (empty($location['isActive'])) {
+            continue;
+        }
+        if (
+            defined('SHOPIFY_LOCATION_NAME') &&
+            $location['name'] === SHOPIFY_LOCATION_NAME
+        ) {
+            return [
+                'success' => true,
+                'message' => 'Shopify target inventory location found.',
+                'location_id' => $location['id'],
+                'location_name' => $location['name'],
+                'data' => $location
+            ];
+        }
+        $fallback = $fallback ?? $location;
     }
-    if (
-        defined('SHOPIFY_LOCATION_NAME') &&
-        $location['name'] === SHOPIFY_LOCATION_NAME
-    ) {
+
+    if ($fallback) {
         return [
             'success' => true,
-            'message' => 'Shopify target inventory location found.',
-            'location_id' => $location['id'],
-            'location_name' => $location['name'],
-            'data' => $location
+            'message' => 'Using first active Shopify location.',
+            'location_id' => $fallback['id'],
+            'location_name' => $fallback['name'],
+            'data' => $fallback
         ];
     }
-    $fallback = $fallback ?? $location;
-}
-
-if ($fallback) {
-    return [
-        'success' => true,
-        'message' => 'Using first active Shopify location.',
-        'location_id' => $fallback['id'],
-        'location_name' => $fallback['name'],
-        'data' => $fallback
-    ];
-}
     return [
         'success' => false,
         'message' => 'Shopify locations were returned, but no active inventory location was found.',
@@ -820,26 +820,29 @@ mutation UpdateProductVariant(
 }
 GRAPHQL;
 
-$variantInput = [
-    'id' => $variantId,
-    'price' => number_format((float) $price, 2, '.', ''),
-    'compareAtPrice' => $compareAtPrice,
-    'inventoryItem' => ['sku' => $sku]
-];
+    $variantInput = [
+        'id' => $variantId,
+        'price' => number_format((float) $price, 2, '.', ''),
+        'compareAtPrice' => $compareAtPrice,
+        'inventoryItem' => [
+            'sku' => $sku,
+            'tracked' => true
+        ]
+    ];
 
-$optionValueName = trim((string) $variantTitle) !== ''
-    ? trim((string) $variantTitle)
-    : 'Default Title';
+    $optionValueName = trim((string) $variantTitle) !== ''
+        ? trim((string) $variantTitle)
+        : 'Default Title';
 
-$variantInput['optionValues'] = [[
-    'optionName' => 'Title',
-    'name' => $optionValueName
-]];
+    $variantInput['optionValues'] = [[
+        'optionName' => 'Title',
+        'name' => $optionValueName
+    ]];
 
-$variables = [
-    'productId' => $productGid,
-    'variants' => [$variantInput]
-];
+    $variables = [
+        'productId' => $productGid,
+        'variants' => [$variantInput]
+    ];
 
     $response = shopifyGraphQL(
         $mutation,
@@ -1689,6 +1692,19 @@ function syncShopifyProductsToDatabase()
             $localProductId = (int) $db->lastInsertId();
         }
         $totalLocalVariantStock = 0;
+        $parentOnlyStock = null;
+
+        $options = $product['options'] ?? [];
+        $hasActualOptions = false;
+
+        foreach ($options as $option) {
+            $optionName = strtolower(trim($option['name'] ?? ''));
+
+            if ($optionName !== '' && $optionName !== 'title') {
+                $hasActualOptions = true;
+                break;
+            }
+        }
 
         foreach ($variants as $variant) {
 
@@ -1710,6 +1726,19 @@ function syncShopifyProductsToDatabase()
                 $shopifyInventoryItemGid = $rawInventoryItemId !== ''
                     ? shopifyGid('InventoryItem', $rawInventoryItemId)
                     : null;
+                if ($shopifyInventoryItemGid !== null) {
+
+                    $trackingResult = enableShopifyInventoryTracking(
+                        $shopifyInventoryItemGid
+                    );
+
+                    if (empty($trackingResult['success'])) {
+                        throw new Exception(
+                            $trackingResult['message']
+                                ?? 'Failed to enable Shopify inventory tracking.'
+                        );
+                    }
+                }
 
                 $variantTitle = trim($variant['title'] ?? '');
 
@@ -1729,6 +1758,14 @@ function syncShopifyProductsToDatabase()
                 ) ? (float) $comparePrice : null;
 
                 $variantStock = (int) ($variant['inventory_quantity'] ?? 0);
+                if (
+                    !$hasActualOptions &&
+                    strtolower($variantTitle) === 'default title'
+                ) {
+                    $parentOnlyStock = $variantStock;
+                    continue;
+                }
+
                 $attributes = [];
 
                 $options = $product['options'] ?? [];
@@ -1903,18 +1940,46 @@ function syncShopifyProductsToDatabase()
                 ];
             }
         }
-        $stmt = $db->prepare("
-            UPDATE products
-            SET
-                stock = :stock,
-                shopify_synced_at = NOW()
-            WHERE id = :id
-        ");
+        if ($hasActualOptions) {
+            $stockToSave = $totalLocalVariantStock;
 
-        $stmt->execute([
-            ':stock' => $totalLocalVariantStock,
-            ':id' => $localProductId
-        ]);
+            $stmt = $db->prepare("
+        UPDATE products
+        SET
+            stock = :stock,
+            shopify_synced_at = NOW()
+        WHERE id = :id
+    ");
+
+            $stmt->execute([
+                ':stock' => $stockToSave,
+                ':id' => $localProductId
+            ]);
+        } elseif ($parentOnlyStock !== null) {
+
+            $stmt = $db->prepare("
+        UPDATE products
+        SET
+            stock = :stock,
+            shopify_synced_at = NOW()
+        WHERE id = :id
+    ");
+
+            $stmt->execute([
+                ':stock' => $parentOnlyStock,
+                ':id' => $localProductId
+            ]);
+        } else {
+            $stmt = $db->prepare("
+        UPDATE products
+        SET shopify_synced_at = NOW()
+        WHERE id = :id
+    ");
+
+            $stmt->execute([
+                ':id' => $localProductId
+            ]);
+        }
         $db->commit();
         if ($localStatus !== 1) {
             $result['success'] = true;
@@ -2693,21 +2758,59 @@ GRAPHQL;
                 $productUpdate['errors'] ?? []
             ];
         }
-
         $variantUpdate =
             updateShopifyProductVariant(
                 $shopifyProductId,
                 $price,
                 $originalPrice,
-                $sku,
-                $shopifyVariant['id'] ?? ''
+                $sku
             );
 
+        if (empty($variantUpdate['success'])) {
+            return [
+                'success' => false,
+                'message' => 'Shopify variant update failed.',
+                'action' => 'create',
+                'variant' => $variantUpdate
+            ];
+        }
+        $inventoryItemId =
+            $variantUpdate['data']['inventoryItem']['id'] ?? '';
+
+        if ($inventoryItemId === '') {
+            return [
+                'success' => false,
+                'message' => 'Shopify inventory item ID was not returned.',
+                'action' => 'create',
+                'variant' => $variantUpdate
+            ];
+        }
+        $trackingUpdate = enableShopifyInventoryTracking(
+            $inventoryItemId
+        );
+        
+        if (empty($trackingUpdate['success'])) {
+            return [
+                'success' => false,
+                'message' => 'Unable to enable Shopify inventory tracking.',
+                'action' => 'create',
+                'tracking' => $trackingUpdate
+            ];
+        }
         $inventoryUpdate =
             updateShopifyInventory(
                 $shopifyProductId,
                 $stock
             );
+
+        if (empty($inventoryUpdate['success'])) {
+            return [
+                'success' => false,
+                'message' => 'Inventory tracking enabled, but stock update failed.',
+                'action' => 'create',
+                'inventory' => $inventoryUpdate
+            ];
+        }
 
         if (
             empty($variantUpdate['success']) ||

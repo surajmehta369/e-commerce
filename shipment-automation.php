@@ -1,8 +1,8 @@
 <?php
 
-if (PHP_SAPI !== 'cli') {
+if (!defined('SHIPMENT_AUTOMATION_HTTP')) {
     http_response_code(403);
-    exit('Access denied. Run this script through PHP CLI.');
+    exit('Access denied. Use the authorized automation endpoint.');
 }
 
 set_time_limit(0);
@@ -144,6 +144,35 @@ function addShipmentTrackingEvent(
     ]);
 }
 
+function hasValidOrderItemDimensions(PDO $db, int $orderId): bool
+{
+    $stmt = $db->prepare("
+        SELECT
+            COUNT(*) AS total_items,
+            SUM(
+                CASE
+                    WHEN weight IS NULL OR weight <= 0
+                      OR length IS NULL OR length <= 0
+                      OR width IS NULL OR width <= 0
+                      OR height IS NULL OR height <= 0
+                    THEN 1
+                    ELSE 0
+                END
+            ) AS invalid_items
+        FROM order_items
+        WHERE order_id = :order_id
+    ");
+
+    $stmt->execute([
+        ':order_id' => $orderId
+    ]);
+
+    $result = $stmt->fetch(PDO::FETCH_ASSOC);
+
+    return
+        (int) $result['total_items'] > 0 &&
+        (int) $result['invalid_items'] === 0;
+}
 shipmentLog('Shipment automation started.');
 shipmentLog('Checking orders for shipment creation...');
 
@@ -201,6 +230,13 @@ foreach ($eligibleOrderIds as $orderId) {
 
         if (!isShipmentEligible($order)) {
             $db->rollBack();
+            continue;
+        }
+
+        if (!hasValidOrderItemDimensions($db, (int) $order['id'])) {
+            shipmentLog(
+                "Order {$order['id']} skipped: missing or invalid item dimensions."
+            );
             continue;
         }
         $stmt = $db->prepare("
@@ -345,6 +381,13 @@ foreach ($shipments as $shipmentRow) {
 
         if (!$shipment) {
             $db->rollBack();
+            continue;
+        }
+
+        if (!hasValidOrderItemDimensions($db, (int) $shipment['order_id'])) {
+            shipmentLog(
+                "Shipment {$shipment['id']} skipped: order {$shipment['order_id']} has missing or invalid item dimensions."
+            );
             continue;
         }
 
