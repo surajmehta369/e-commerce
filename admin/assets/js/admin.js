@@ -340,7 +340,7 @@
         }
 
         let attempts = 0;
-        const maxAttempts = 5;
+        const maxAttempts = 22;
 
         function triggerAutomation() {
 

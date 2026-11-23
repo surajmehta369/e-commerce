@@ -36,28 +36,94 @@ $paymentOptions = [
 
 $message = '';
 $messageType = 'success';
-if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['update_order_status'])) {
+if (
+    $_SERVER['REQUEST_METHOD'] === 'POST' &&
+    isset($_POST['update_order_status'])
+) {
     $postedToken = $_POST['csrf_token'] ?? '';
     $orderId = filter_input(INPUT_POST, 'order_id', FILTER_VALIDATE_INT);
     $newStatus = $_POST['order_status'] ?? '';
 
     if (!hash_equals($_SESSION['orders_csrf_token'], $postedToken)) {
+
         $message = 'Invalid request. Please refresh the page and try again.';
         $messageType = 'danger';
+
     } elseif (!$orderId || !array_key_exists($newStatus, $statusOptions)) {
+
         $message = 'Invalid order or status.';
         $messageType = 'danger';
-    } else {
-        $update = $db->prepare(
-            "UPDATE orders SET order_status = :status WHERE id = :id"
-        );
-        $update->execute([
-            ':status' => $newStatus,
-            ':id' => $orderId
-        ]);
 
-        header("Location: orders.php?updated=1");
-        exit;
+    } else {
+
+        try {
+
+            if ($newStatus === 'shipped') {
+
+                // Check whether a shipment already exists.
+                $checkShipment = $db->prepare("
+                    SELECT id
+                    FROM order_shipments
+                    WHERE order_id = :order_id
+                    LIMIT 1
+                ");
+
+                $checkShipment->execute([
+                    ':order_id' => $orderId
+                ]);
+
+                $existingShipment = $checkShipment->fetchColumn();
+
+                if ($existingShipment) {
+
+                    // Reuse the existing shipment.
+                    $update = $db->prepare("
+                        UPDATE orders
+                        SET order_status = 'shipped'
+                        WHERE id = :id
+                    ");
+
+                    $update->execute([
+                        ':id' => $orderId
+                    ]);
+
+                } else {
+
+                    require_once __DIR__ . "/../courier/packing_functions.php";
+
+                    $result = assignCourierAndCreateShipment(
+                        $db,
+                        $orderId,
+                        'shipped'
+                    );
+
+                    if (!$result['success']) {
+                        throw new RuntimeException($result['message']);
+                    }
+                }
+
+            } else {
+
+                $update = $db->prepare("
+                    UPDATE orders
+                    SET order_status = :status
+                    WHERE id = :id
+                ");
+
+                $update->execute([
+                    ':status' => $newStatus,
+                    ':id' => $orderId
+                ]);
+            }
+
+            header("Location: orders.php?updated=1");
+            exit;
+
+        } catch (Throwable $e) {
+
+            $message = 'Order update failed: ' . $e->getMessage();
+            $messageType = 'danger';
+        }
     }
 }
 
