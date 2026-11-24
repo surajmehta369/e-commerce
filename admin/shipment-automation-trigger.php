@@ -28,7 +28,7 @@ try {
 
     define('SHIPMENT_AUTOMATION_HTTP', true);
 
-    require_once __DIR__ . '/../shipment_automation.php';
+    require_once __DIR__ . '/../shipment-automation.php';
 
 } catch (Throwable $e) {
 

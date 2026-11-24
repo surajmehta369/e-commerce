@@ -73,6 +73,7 @@ $allowedOrderStatuses = [
     'failed'
 ];
 
+
 if (
     $_SERVER['REQUEST_METHOD'] === 'POST' &&
     ($_POST['action'] ?? '') === 'update_order_status'
@@ -101,8 +102,13 @@ if (
 
     try {
         $db->beginTransaction();
+
+        // Lock and fetch the order.
         $currentStmt = $db->prepare("
-            SELECT order_status
+            SELECT
+                order_status,
+                payment_method,
+                payment_status
             FROM orders
             WHERE id = :order_id
             FOR UPDATE
@@ -112,13 +118,23 @@ if (
             ':order_id' => $orderId
         ]);
 
-        $currentStatus = $currentStmt->fetchColumn();
+        $orderData = $currentStmt->fetch(PDO::FETCH_ASSOC);
 
-        if ($currentStatus === false) {
+        if (!$orderData) {
             throw new Exception('Order not found.');
         }
 
-        $currentStatus = strtolower($currentStatus);
+        $currentStatus = strtolower(
+            $orderData['order_status']
+        );
+
+        $paymentMethod = strtolower(
+            trim($orderData['payment_method'] ?? '')
+        );
+
+        $paymentStatus = strtolower(
+            trim($orderData['payment_status'] ?? '')
+        );
 
         if ($currentStatus === $newStatus) {
             $db->rollBack();
@@ -126,16 +142,101 @@ if (
             header("Location: order-details.php?id=" . $orderId . "&status_error=same");
             exit;
         }
-        $updateStmt = $db->prepare("
-            UPDATE orders
-            SET order_status = :status
-            WHERE id = :order_id
+
+        // Lock existing shipment, if any.
+        $shipmentStmt = $db->prepare("
+            SELECT id
+            FROM order_shipments
+            WHERE order_id = :order_id
+            ORDER BY id DESC
+            LIMIT 1
+            FOR UPDATE
         ");
 
-        $updateStmt->execute([
-            ':status' => $newStatus,
+        $shipmentStmt->execute([
             ':order_id' => $orderId
         ]);
+
+        $existingShipmentId = $shipmentStmt->fetchColumn();
+
+        $shipmentId = $existingShipmentId !== false
+            ? (int) $existingShipmentId
+            : null;
+
+        /*
+         * Automatic courier assignment when status becomes Shipped.
+         */
+        if ($newStatus === 'shipped') {
+
+            // Check payment eligibility.
+            if (
+                $paymentMethod === 'cash_on_delivery'
+            ) {
+                // COD orders can be shipped before payment collection.
+            } elseif (
+                in_array(
+                    $paymentMethod,
+                    ['stripe', 'paypal', 'razorpay'],
+                    true
+                ) &&
+                $paymentStatus !== 'paid'
+            ) {
+                throw new Exception(
+                    'Prepaid order must be paid before shipment.'
+                );
+            }
+
+            // Create automatic shipment only if one does not exist.
+            if ($shipmentId === null) {
+
+                require_once __DIR__ . '/../courier/packing_functions.php';
+
+                $assignmentResult = assignCourierAndCreateShipment(
+                    $db,
+                    $orderId,
+                    'shipped'
+                );
+
+                if (
+                    empty($assignmentResult['success'])
+                ) {
+                    throw new Exception(
+                        $assignmentResult['message']
+                        ?? 'Automatic courier assignment failed.'
+                    );
+                }
+
+                $shipmentId = (int) $assignmentResult['shipment_id'];
+            } else {
+                // Existing manual shipment: reuse it.
+                $updateStmt = $db->prepare("
+                    UPDATE orders
+                    SET order_status = :status
+                    WHERE id = :order_id
+                ");
+
+                $updateStmt->execute([
+                    ':status' => $newStatus,
+                    ':order_id' => $orderId
+                ]);
+            }
+
+        } else {
+
+            // Normal status update for other statuses.
+            $updateStmt = $db->prepare("
+                UPDATE orders
+                SET order_status = :status
+                WHERE id = :order_id
+            ");
+
+            $updateStmt->execute([
+                ':status' => $newStatus,
+                ':order_id' => $orderId
+            ]);
+        }
+
+        // Save order status history.
         $statusTitle = ucwords(
             str_replace('_', ' ', $newStatus)
         );
@@ -159,7 +260,7 @@ if (
             )
             VALUES (
                 :order_id,
-                NULL,
+                :shipment_id,
                 'order_status',
                 :previous_status,
                 :new_status,
@@ -172,6 +273,7 @@ if (
 
         $historyStmt->execute([
             ':order_id' => $orderId,
+            ':shipment_id' => $shipmentId,
             ':previous_status' => $currentStatus,
             ':new_status' => $newStatus,
             ':title' => $statusTitle,
@@ -182,18 +284,22 @@ if (
 
         header("Location: order-details.php?id=" . $orderId . "&status_updated=1");
         exit;
+
     } catch (Throwable $e) {
 
         if ($db->inTransaction()) {
             $db->rollBack();
         }
 
-        error_log("Order status update error: " . $e->getMessage());
+        error_log(
+            "Order status update error: " . $e->getMessage()
+        );
 
         header("Location: order-details.php?id=" . $orderId . "&status_error=save");
         exit;
     }
 }
+
 $allowedShipmentStatuses = [
     'pending',
     'shipped',
