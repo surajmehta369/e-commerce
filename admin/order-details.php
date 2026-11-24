@@ -189,7 +189,7 @@ if (
             // Create automatic shipment only if one does not exist.
             if ($shipmentId === null) {
 
-                require_once __DIR__ . '/../courier/packing_functions.php';
+                require_once __DIR__ . '/courier/packing_functions.php';
 
                 $assignmentResult = assignCourierAndCreateShipment(
                     $db,
@@ -202,7 +202,7 @@ if (
                 ) {
                     throw new Exception(
                         $assignmentResult['message']
-                        ?? 'Automatic courier assignment failed.'
+                            ?? 'Automatic courier assignment failed.'
                     );
                 }
 
@@ -220,7 +220,6 @@ if (
                     ':order_id' => $orderId
                 ]);
             }
-
         } else {
 
             // Normal status update for other statuses.
@@ -284,7 +283,6 @@ if (
 
         header("Location: order-details.php?id=" . $orderId . "&status_updated=1");
         exit;
-
     } catch (Throwable $e) {
 
         if ($db->inTransaction()) {
@@ -306,6 +304,1352 @@ $allowedShipmentStatuses = [
     'out_for_delivery',
     'delivered'
 ];
+
+
+if (
+    $_SERVER['REQUEST_METHOD'] === 'POST' &&
+    ($_POST['action'] ?? '') === 'confirm_pickup'
+) {
+    $submittedToken = $_POST['csrf_token'] ?? '';
+
+    if (
+        !hash_equals(
+            $_SESSION['orders_csrf_token'],
+            $submittedToken
+        )
+    ) {
+        die('Invalid security token. Please refresh the page.');
+    }
+
+    try {
+        $db->beginTransaction();
+
+        // Lock the order.
+        $orderStmt = $db->prepare("
+            SELECT id, order_status
+            FROM orders
+            WHERE id = :order_id
+            FOR UPDATE
+        ");
+
+        $orderStmt->execute([
+            ':order_id' => $orderId
+        ]);
+
+        $lockedOrder = $orderStmt->fetch(PDO::FETCH_ASSOC);
+
+        if (!$lockedOrder) {
+            throw new Exception('Order not found.');
+        }
+
+        // Lock the latest shipment.
+        $shipmentStmt = $db->prepare("
+            SELECT *
+            FROM order_shipments
+            WHERE order_id = :order_id
+            ORDER BY id DESC
+            LIMIT 1
+            FOR UPDATE
+        ");
+
+        $shipmentStmt->execute([
+            ':order_id' => $orderId
+        ]);
+
+        $pickupShipment = $shipmentStmt->fetch(PDO::FETCH_ASSOC);
+
+        if (!$pickupShipment) {
+            throw new Exception('No shipment exists for this order.');
+        }
+
+        if (!empty($pickupShipment['shipped_at'])) {
+            throw new Exception('Pickup has already been confirmed.');
+        }
+
+        if (
+            in_array(
+                strtolower($pickupShipment['shipment_status']),
+                ['out_for_delivery', 'delivered', 'cancelled'],
+                true
+            )
+        ) {
+            throw new Exception(
+                'Pickup cannot be confirmed for the current shipment status.'
+            );
+        }
+
+        $shipmentId = (int) $pickupShipment['id'];
+
+        // Record the actual pickup confirmation time.
+        $pickupStmt = $db->prepare("
+            UPDATE order_shipments
+            SET
+                shipment_status = 'shipped',
+                shipped_at = NOW()
+            WHERE id = :shipment_id
+              AND order_id = :order_id
+              AND shipped_at IS NULL
+        ");
+
+        $pickupStmt->execute([
+            ':shipment_id' => $shipmentId,
+            ':order_id' => $orderId
+        ]);
+
+        if ($pickupStmt->rowCount() !== 1) {
+            throw new Exception(
+                'Pickup could not be confirmed. Please refresh and check the shipment.'
+            );
+        }
+
+        // Mark every package in this shipment as picked up.
+        $packageStmt = $db->prepare("
+            UPDATE order_packages
+            SET package_status = 'shipped'
+            WHERE shipment_id = :shipment_id
+        ");
+
+        $packageStmt->execute([
+            ':shipment_id' => $shipmentId
+        ]);
+
+        // Update the order status if it has not reached shipped yet.
+        $currentOrderStatus = strtolower(
+            $lockedOrder['order_status']
+        );
+
+        $orderRanks = [
+            'confirmed' => 1,
+            'processing' => 2,
+            'packed' => 3,
+            'shipped' => 4,
+            'out_for_delivery' => 5,
+            'delivered' => 6
+        ];
+
+        if (
+            ($orderRanks[$currentOrderStatus] ?? 0) < 4
+        ) {
+            $orderUpdateStmt = $db->prepare("
+                UPDATE orders
+                SET order_status = 'shipped'
+                WHERE id = :order_id
+            ");
+
+            $orderUpdateStmt->execute([
+                ':order_id' => $orderId
+            ]);
+
+            $orderHistoryStmt = $db->prepare("
+                INSERT INTO order_tracking_updates (
+                    order_id,
+                    shipment_id,
+                    event_type,
+                    previous_status,
+                    new_status,
+                    title,
+                    description,
+                    event_date,
+                    visible_to_customer
+                )
+                VALUES (
+                    :order_id,
+                    :shipment_id,
+                    'order_status',
+                    :previous_status,
+                    'shipped',
+                    'Shipped',
+                    'Your order has been picked up by the courier.',
+                    NOW(),
+                    1
+                )
+            ");
+
+            $orderHistoryStmt->execute([
+                ':order_id' => $orderId,
+                ':shipment_id' => $shipmentId,
+                ':previous_status' => $currentOrderStatus
+            ]);
+        }
+
+        // Add the customer-visible pickup event.
+        $trackingStmt = $db->prepare("
+            INSERT INTO order_tracking_updates (
+                order_id,
+                shipment_id,
+                event_type,
+                previous_status,
+                new_status,
+                title,
+                description,
+                event_date,
+                visible_to_customer
+            )
+            VALUES (
+                :order_id,
+                :shipment_id,
+                'shipment_update',
+                :previous_status,
+                'shipped',
+                'Picked Up',
+                'Your package has been picked up by the courier.',
+                NOW(),
+                1
+            )
+        ");
+
+        $trackingStmt->execute([
+            ':order_id' => $orderId,
+            ':shipment_id' => $shipmentId,
+            ':previous_status' => $pickupShipment['shipment_status']
+        ]);
+
+        $db->commit();
+
+        header(
+            "Location: order-details.php?id="
+                . $orderId
+                . "&pickup_confirmed=1"
+        );
+        exit;
+    } catch (Throwable $e) {
+
+        if ($db->inTransaction()) {
+            $db->rollBack();
+        }
+
+        error_log(
+            "Pickup confirmation error: " . $e->getMessage()
+        );
+
+        header(
+            "Location: order-details.php?id="
+                . $orderId
+                . "&pickup_error=1"
+        );
+        exit;
+    }
+}
+
+
+if (
+    $_SERVER['REQUEST_METHOD'] === 'POST' &&
+    ($_POST['action'] ?? '') === 'confirm_out_for_delivery'
+) {
+    $submittedToken = $_POST['csrf_token'] ?? '';
+
+    if (
+        !isset($_SESSION['orders_csrf_token']) ||
+        !hash_equals($_SESSION['orders_csrf_token'], $submittedToken)
+    ) {
+        die('Invalid security token. Please refresh the page.');
+    }
+
+    try {
+        $db->beginTransaction();
+
+        // Lock order.
+        $orderStmt = $db->prepare("
+            SELECT
+            id,
+            order_status,
+            payment_method,
+            payment_status,
+            total_amount
+        FROM orders
+            WHERE id = :order_id
+            FOR UPDATE
+        ");
+        $orderStmt->execute([':order_id' => $orderId]);
+        $lockedOrder = $orderStmt->fetch(PDO::FETCH_ASSOC);
+
+        if (!$lockedOrder) {
+            throw new Exception('Order not found.');
+        }
+
+        // Lock shipment.
+        $shipmentStmt = $db->prepare("
+            SELECT *
+            FROM order_shipments
+            WHERE order_id = :order_id
+            ORDER BY id DESC
+            LIMIT 1
+            FOR UPDATE
+        ");
+        $shipmentStmt->execute([':order_id' => $orderId]);
+        $shipment = $shipmentStmt->fetch(PDO::FETCH_ASSOC);
+
+        if (!$shipment) {
+            throw new Exception('Shipment not found.');
+        }
+
+        if (
+            strtolower($shipment['shipment_status']) !== 'shipped' ||
+            empty($shipment['shipped_at'])
+        ) {
+            throw new Exception(
+                'Confirm actual courier pickup before marking Out for Delivery.'
+            );
+        }
+
+        if (strtolower($lockedOrder['order_status']) !== 'shipped') {
+            throw new Exception(
+                'The order must have Shipped status before Out for Delivery.'
+            );
+        }
+
+        $shipmentId = (int) $shipment['id'];
+
+        // Ensure this shipment has packages.
+        $packageCheck = $db->prepare("
+            SELECT COUNT(*)
+            FROM order_packages
+            WHERE shipment_id = :shipment_id
+        ");
+        $packageCheck->execute([':shipment_id' => $shipmentId]);
+
+        if ((int) $packageCheck->fetchColumn() < 1) {
+            throw new Exception('No packages are linked to this shipment.');
+        }
+
+        // Update shipment.
+        $updateShipment = $db->prepare("
+            UPDATE order_shipments
+            SET shipment_status = 'out_for_delivery'
+            WHERE id = :shipment_id
+              AND shipment_status = 'shipped'
+              AND shipped_at IS NOT NULL
+        ");
+        $updateShipment->execute([
+            ':shipment_id' => $shipmentId
+        ]);
+
+        if ($updateShipment->rowCount() !== 1) {
+            throw new Exception(
+                'Shipment status could not be updated. Please refresh.'
+            );
+        }
+
+        // Update all packages in this shipment.
+        $updatePackages = $db->prepare("
+            UPDATE order_packages
+            SET package_status = 'out_for_delivery'
+            WHERE shipment_id = :shipment_id
+        ");
+        $updatePackages->execute([
+            ':shipment_id' => $shipmentId
+        ]);
+
+        // Update order status.
+        $updateOrder = $db->prepare("
+            UPDATE orders
+            SET order_status = 'out_for_delivery'
+            WHERE id = :order_id
+              AND order_status = 'shipped'
+        ");
+        $updateOrder->execute([
+            ':order_id' => $orderId
+        ]);
+
+        if ($updateOrder->rowCount() !== 1) {
+            throw new Exception('Order status could not be updated.');
+        }
+
+        // Customer-visible shipment event.
+        $trackingStmt = $db->prepare("
+            INSERT INTO order_tracking_updates (
+                order_id,
+                shipment_id,
+                event_type,
+                previous_status,
+                new_status,
+                title,
+                description,
+                event_date,
+                visible_to_customer
+            )
+            VALUES (
+                :order_id,
+                :shipment_id,
+                'shipment_update',
+                'shipped',
+                'out_for_delivery',
+                'Out for Delivery',
+                'Your order is out for delivery and will arrive soon.',
+                NOW(),
+                1
+            )
+        ");
+        $trackingStmt->execute([
+            ':order_id' => $orderId,
+            ':shipment_id' => $shipmentId
+        ]);
+
+        // Order status history.
+        $orderHistoryStmt = $db->prepare("
+            INSERT INTO order_tracking_updates (
+                order_id,
+                shipment_id,
+                event_type,
+                previous_status,
+                new_status,
+                title,
+                description,
+                event_date,
+                visible_to_customer
+            )
+            VALUES (
+                :order_id,
+                :shipment_id,
+                'order_status',
+                'shipped',
+                'out_for_delivery',
+                'Out for Delivery',
+                'Your order is now out for delivery.',
+                NOW(),
+                1
+            )
+        ");
+        $orderHistoryStmt->execute([
+            ':order_id' => $orderId,
+            ':shipment_id' => $shipmentId
+        ]);
+
+        // Create the COD collection record when applicable.
+        if (
+            strtolower($lockedOrder['payment_method']) === 'cash_on_delivery'
+        ) {
+            $expectedCodAmount = round(
+                (float) $lockedOrder['total_amount'],
+                2
+            );
+
+            if ($expectedCodAmount <= 0) {
+                throw new Exception('Invalid expected COD amount.');
+            }
+
+            $codStmt = $db->prepare("
+        INSERT INTO cod_collections (
+            order_id,
+            expected_amount,
+            collection_status
+        )
+        VALUES (
+            :order_id,
+            :expected_amount,
+            'pending'
+        )
+        ON DUPLICATE KEY UPDATE
+            expected_amount = IF(
+                collection_status = 'collected',
+                expected_amount,
+                VALUES(expected_amount)
+            )
+    ");
+
+            $codStmt->execute([
+                ':order_id' => $orderId,
+                ':expected_amount' => $expectedCodAmount
+            ]);
+        }
+
+        $db->commit();
+
+        header(
+            "Location: order-details.php?id=" .
+                $orderId .
+                "&out_for_delivery_confirmed=1"
+        );
+        exit;
+    } catch (Throwable $e) {
+        if ($db->inTransaction()) {
+            $db->rollBack();
+        }
+
+        error_log(
+            "Out for delivery confirmation error: " . $e->getMessage()
+        );
+
+        header(
+            "Location: order-details.php?id=" .
+                $orderId .
+                "&out_for_delivery_error=1"
+        );
+        exit;
+    }
+}
+
+
+
+if (
+    $_SERVER['REQUEST_METHOD'] === 'POST' &&
+    ($_POST['action'] ?? '') === 'confirm_cod_collection'
+) {
+    $submittedToken = $_POST['csrf_token'] ?? '';
+
+    if (
+        !isset($_SESSION['orders_csrf_token']) ||
+        !hash_equals($_SESSION['orders_csrf_token'], $submittedToken)
+    ) {
+        die('Invalid security token. Please refresh the page.');
+    }
+
+    $receivedAmountInput = trim($_POST['received_amount'] ?? '');
+    $codNotes = trim($_POST['cod_notes'] ?? '');
+
+    if (
+        $receivedAmountInput === '' ||
+        !is_numeric($receivedAmountInput) ||
+        (float) $receivedAmountInput < 0
+    ) {
+        header("Location: order-details.php?id={$orderId}&cod_error=amount");
+        exit;
+    }
+
+    try {
+        $db->beginTransaction();
+
+        $orderStmt = $db->prepare("
+            SELECT id, payment_method, payment_status, order_status
+            FROM orders
+            WHERE id = :order_id
+            FOR UPDATE
+        ");
+        $orderStmt->execute([':order_id' => $orderId]);
+        $order = $orderStmt->fetch(PDO::FETCH_ASSOC);
+
+        if (!$order) {
+            throw new Exception('Order not found.');
+        }
+
+        if (strtolower($order['payment_method']) !== 'cash_on_delivery') {
+            throw new Exception('This is not a COD order.');
+        }
+
+        if (strtolower($order['order_status']) !== 'out_for_delivery') {
+            throw new Exception('Order must be Out for Delivery.');
+        }
+
+        $shipmentStmt = $db->prepare("
+            SELECT id, shipment_status
+            FROM order_shipments
+            WHERE order_id = :order_id
+            ORDER BY id DESC
+            LIMIT 1
+            FOR UPDATE
+        ");
+        $shipmentStmt->execute([':order_id' => $orderId]);
+        $shipment = $shipmentStmt->fetch(PDO::FETCH_ASSOC);
+
+        if (
+            !$shipment ||
+            strtolower($shipment['shipment_status']) !== 'out_for_delivery'
+        ) {
+            throw new Exception('Shipment is not Out for Delivery.');
+        }
+
+        $codStmt = $db->prepare("
+            SELECT *
+            FROM cod_collections
+            WHERE order_id = :order_id
+            FOR UPDATE
+        ");
+        $codStmt->execute([':order_id' => $orderId]);
+        $cod = $codStmt->fetch(PDO::FETCH_ASSOC);
+
+        if (!$cod) {
+            throw new Exception('COD collection record not found.');
+        }
+
+        if ($cod['collection_status'] === 'collected') {
+            throw new Exception('COD collection is already confirmed.');
+        }
+
+        $receivedCents = (int) round((float) $receivedAmountInput * 100);
+        $expectedCents = (int) round((float) $cod['expected_amount'] * 100);
+
+        if ($receivedCents !== $expectedCents) {
+            throw new Exception(
+                'Received amount does not match the expected COD amount.'
+            );
+        }
+
+        $updateCod = $db->prepare("
+            UPDATE cod_collections
+            SET
+                received_amount = :received_amount,
+                collection_status = 'collected',
+                confirmed_at = NOW(),
+                notes = :notes
+            WHERE order_id = :order_id
+              AND collection_status <> 'collected'
+        ");
+        $updateCod->execute([
+            ':received_amount' => $receivedCents / 100,
+            ':notes' => $codNotes ?: null,
+            ':order_id' => $orderId
+        ]);
+
+        if ($updateCod->rowCount() !== 1) {
+            throw new Exception('COD collection could not be confirmed.');
+        }
+
+        $paymentStmt = $db->prepare("
+            UPDATE orders
+            SET payment_status = 'paid'
+            WHERE id = :order_id
+              AND payment_method = 'cash_on_delivery'
+        ");
+        $paymentStmt->execute([':order_id' => $orderId]);
+
+        $db->commit();
+
+        header(
+            "Location: order-details.php?id={$orderId}&cod_collected=1"
+        );
+        exit;
+    } catch (Throwable $e) {
+        if ($db->inTransaction()) {
+            $db->rollBack();
+        }
+
+        error_log('COD collection error: ' . $e->getMessage());
+
+        $errorCode = str_contains($e->getMessage(), 'does not match')
+            ? 'amount'
+            : 'save';
+
+        header(
+            "Location: order-details.php?id={$orderId}&cod_error={$errorCode}"
+        );
+        exit;
+    }
+}
+
+
+if (
+    $_SERVER['REQUEST_METHOD'] === 'POST' &&
+    ($_POST['action'] ?? '') === 'confirm_delivered'
+) {
+    $submittedToken = $_POST['csrf_token'] ?? '';
+
+    if (
+        !isset($_SESSION['orders_csrf_token']) ||
+        !hash_equals($_SESSION['orders_csrf_token'], $submittedToken)
+    ) {
+        die('Invalid security token. Please refresh the page.');
+    }
+
+    try {
+        $db->beginTransaction();
+
+        // Lock order.
+        $orderStmt = $db->prepare("
+            SELECT id, order_status, payment_method, payment_status
+            FROM orders
+            WHERE id = :order_id
+            FOR UPDATE
+        ");
+        $orderStmt->execute([':order_id' => $orderId]);
+        $lockedOrder = $orderStmt->fetch(PDO::FETCH_ASSOC);
+
+        if (!$lockedOrder) {
+            throw new Exception('Order not found.');
+        }
+
+        if (strtolower($lockedOrder['order_status']) !== 'out_for_delivery') {
+            throw new Exception('Order must be Out for Delivery.');
+        }
+
+        // Lock shipment.
+        $shipmentStmt = $db->prepare("
+            SELECT *
+            FROM order_shipments
+            WHERE order_id = :order_id
+            ORDER BY id DESC
+            LIMIT 1
+            FOR UPDATE
+        ");
+        $shipmentStmt->execute([':order_id' => $orderId]);
+        $shipment = $shipmentStmt->fetch(PDO::FETCH_ASSOC);
+
+        if (
+            !$shipment ||
+            strtolower($shipment['shipment_status']) !== 'out_for_delivery' ||
+            empty($shipment['shipped_at'])
+        ) {
+            throw new Exception(
+                'Shipment must be picked up and Out for Delivery first.'
+            );
+        }
+
+        $shipmentId = (int) $shipment['id'];
+
+        // Every package must be Out for Delivery.
+        $packageStmt = $db->prepare("
+            SELECT
+                COUNT(*) AS total_packages,
+                SUM(
+                    CASE
+                        WHEN package_status = 'out_for_delivery'
+                        THEN 0
+                        ELSE 1
+                    END
+                ) AS invalid_packages
+            FROM order_packages
+            WHERE shipment_id = :shipment_id
+        ");
+        $packageStmt->execute([':shipment_id' => $shipmentId]);
+        $packageCheck = $packageStmt->fetch(PDO::FETCH_ASSOC);
+
+        if (
+            (int) $packageCheck['total_packages'] < 1 ||
+            (int) $packageCheck['invalid_packages'] > 0
+        ) {
+            throw new Exception(
+                'All packages must be Out for Delivery before delivery confirmation.'
+            );
+        }
+
+        // Payment validation.
+        $paymentMethod = strtolower($lockedOrder['payment_method']);
+        $paymentStatus = strtolower($lockedOrder['payment_status']);
+
+        if ($paymentMethod === 'cash_on_delivery') {
+            $codStmt = $db->prepare("
+                SELECT collection_status, expected_amount, received_amount
+                FROM cod_collections
+                WHERE order_id = :order_id
+                FOR UPDATE
+            ");
+            $codStmt->execute([':order_id' => $orderId]);
+            $cod = $codStmt->fetch(PDO::FETCH_ASSOC);
+
+            if (
+                !$cod ||
+                $cod['collection_status'] !== 'collected' ||
+                $cod['received_amount'] === null ||
+                (int) round((float) $cod['received_amount'] * 100) !==
+                (int) round((float) $cod['expected_amount'] * 100) ||
+                $paymentStatus !== 'paid'
+            ) {
+                throw new Exception(
+                    'COD collection must be confirmed and payment marked paid before delivery.'
+                );
+            }
+        } elseif ($paymentStatus !== 'paid') {
+            throw new Exception(
+                'Payment must be completed before confirming delivery.'
+            );
+        }
+
+        // Update shipment delivery time and status.
+        $updateShipment = $db->prepare("
+            UPDATE order_shipments
+            SET
+                shipment_status = 'delivered',
+                delivered_at = NOW()
+            WHERE id = :shipment_id
+              AND shipment_status = 'out_for_delivery'
+        ");
+        $updateShipment->execute([
+            ':shipment_id' => $shipmentId
+        ]);
+
+        if ($updateShipment->rowCount() !== 1) {
+            throw new Exception('Shipment delivery update failed.');
+        }
+
+        // Update all packages.
+        $updatePackages = $db->prepare("
+            UPDATE order_packages
+            SET package_status = 'delivered'
+            WHERE shipment_id = :shipment_id
+              AND package_status = 'out_for_delivery'
+        ");
+        $updatePackages->execute([
+            ':shipment_id' => $shipmentId
+        ]);
+
+        // Update order.
+        $updateOrder = $db->prepare("
+            UPDATE orders
+            SET order_status = 'delivered'
+            WHERE id = :order_id
+              AND order_status = 'out_for_delivery'
+        ");
+        $updateOrder->execute([
+            ':order_id' => $orderId
+        ]);
+
+        if ($updateOrder->rowCount() !== 1) {
+            throw new Exception('Order delivery update failed.');
+        }
+
+        // Shipment tracking event.
+        $trackingStmt = $db->prepare("
+            INSERT INTO order_tracking_updates (
+                order_id,
+                shipment_id,
+                event_type,
+                previous_status,
+                new_status,
+                title,
+                description,
+                event_date,
+                visible_to_customer
+            )
+            VALUES (
+                :order_id,
+                :shipment_id,
+                'shipment_update',
+                'out_for_delivery',
+                'delivered',
+                'Order Delivered',
+                'Your order has been delivered successfully.',
+                NOW(),
+                1
+            )
+        ");
+        $trackingStmt->execute([
+            ':order_id' => $orderId,
+            ':shipment_id' => $shipmentId
+        ]);
+
+        // Order status history.
+        $orderHistoryStmt = $db->prepare("
+            INSERT INTO order_tracking_updates (
+                order_id,
+                shipment_id,
+                event_type,
+                previous_status,
+                new_status,
+                title,
+                description,
+                event_date,
+                visible_to_customer
+            )
+            VALUES (
+                :order_id,
+                :shipment_id,
+                'order_status',
+                'out_for_delivery',
+                'delivered',
+                'Delivered',
+                'Your order has been delivered successfully.',
+                NOW(),
+                1
+            )
+        ");
+        $orderHistoryStmt->execute([
+            ':order_id' => $orderId,
+            ':shipment_id' => $shipmentId
+        ]);
+
+        $db->commit();
+
+        header(
+            "Location: order-details.php?id=" .
+                $orderId .
+                "&delivered_confirmed=1"
+        );
+        exit;
+    } catch (Throwable $e) {
+        if ($db->inTransaction()) {
+            $db->rollBack();
+        }
+
+        error_log('Delivery confirmation error: ' . $e->getMessage());
+
+        header(
+            "Location: order-details.php?id=" .
+                $orderId .
+                "&delivered_error=1"
+        );
+        exit;
+    }
+}
+
+
+if (
+    $_SERVER['REQUEST_METHOD'] === 'POST' &&
+    ($_POST['action'] ?? '') === 'confirm_delivery_failed'
+) {
+    $submittedToken = $_POST['csrf_token'] ?? '';
+    $failureReason = trim($_POST['failure_reason'] ?? '');
+
+    if (
+        !isset($_SESSION['orders_csrf_token']) ||
+        !hash_equals($_SESSION['orders_csrf_token'], $submittedToken)
+    ) {
+        die('Invalid security token. Please refresh the page.');
+    }
+
+    if ($failureReason === '' || mb_strlen($failureReason) > 500) {
+        header("Location: order-details.php?id=" . $orderId . "&delivery_failed_error=1");
+        exit;
+    }
+
+    try {
+        $db->beginTransaction();
+
+        // Lock order.
+        $orderStmt = $db->prepare("
+            SELECT id, order_status
+            FROM orders
+            WHERE id = :order_id
+            FOR UPDATE
+        ");
+        $orderStmt->execute([':order_id' => $orderId]);
+        $lockedOrder = $orderStmt->fetch(PDO::FETCH_ASSOC);
+
+        if (
+            !$lockedOrder ||
+            strtolower($lockedOrder['order_status']) !== 'out_for_delivery'
+        ) {
+            throw new Exception('Order must be Out for Delivery.');
+        }
+
+        // Lock shipment.
+        $shipmentStmt = $db->prepare("
+            SELECT *
+            FROM order_shipments
+            WHERE order_id = :order_id
+            ORDER BY id DESC
+            LIMIT 1
+            FOR UPDATE
+        ");
+        $shipmentStmt->execute([':order_id' => $orderId]);
+        $shipment = $shipmentStmt->fetch(PDO::FETCH_ASSOC);
+
+        if (
+            !$shipment ||
+            strtolower($shipment['shipment_status']) !== 'out_for_delivery'
+        ) {
+            throw new Exception('Shipment must be Out for Delivery.');
+        }
+
+        $shipmentId = (int) $shipment['id'];
+
+        // Verify every package is Out for Delivery.
+        $packageStmt = $db->prepare("
+            SELECT COUNT(*) AS total_packages,
+                   SUM(CASE WHEN package_status = 'out_for_delivery'
+                       THEN 0 ELSE 1 END) AS invalid_packages
+            FROM order_packages
+            WHERE shipment_id = :shipment_id
+        ");
+        $packageStmt->execute([':shipment_id' => $shipmentId]);
+        $packageCheck = $packageStmt->fetch(PDO::FETCH_ASSOC);
+
+        if (
+            (int) $packageCheck['total_packages'] < 1 ||
+            (int) $packageCheck['invalid_packages'] > 0
+        ) {
+            throw new Exception('All packages must be Out for Delivery.');
+        }
+
+        // Update shipment.
+        $updateShipment = $db->prepare("
+            UPDATE order_shipments
+            SET shipment_status = 'delivery_failed'
+            WHERE id = :shipment_id
+              AND shipment_status = 'out_for_delivery'
+        ");
+        $updateShipment->execute([':shipment_id' => $shipmentId]);
+
+        if ($updateShipment->rowCount() !== 1) {
+            throw new Exception('Shipment update failed.');
+        }
+
+        // Update packages.
+        $updatePackages = $db->prepare("
+            UPDATE order_packages
+            SET package_status = 'delivery_failed'
+            WHERE shipment_id = :shipment_id
+              AND package_status = 'out_for_delivery'
+        ");
+        $updatePackages->execute([':shipment_id' => $shipmentId]);
+
+        if ($updatePackages->rowCount() !== (int) $packageCheck['total_packages']) {
+            throw new Exception('Package status update failed.');
+        }
+
+        // Update order.
+        $updateOrder = $db->prepare("
+            UPDATE orders
+            SET order_status = 'failed'
+            WHERE id = :order_id
+              AND order_status = 'out_for_delivery'
+        ");
+        $updateOrder->execute([':order_id' => $orderId]);
+
+        if ($updateOrder->rowCount() !== 1) {
+            throw new Exception('Order status update failed.');
+        }
+
+        // Customer-visible shipment history.
+        $trackingStmt = $db->prepare("
+            INSERT INTO order_tracking_updates (
+                order_id, shipment_id, event_type,
+                previous_status, new_status,
+                title, description, event_date, visible_to_customer
+            )
+            VALUES (
+                :order_id, :shipment_id, 'shipment_update',
+                'out_for_delivery', 'delivery_failed',
+                'Delivery Attempt Failed', :description, NOW(), 1
+            )
+        ");
+        $trackingStmt->execute([
+            ':order_id' => $orderId,
+            ':shipment_id' => $shipmentId,
+            ':description' => 'Delivery could not be completed. Reason: ' . $failureReason
+        ]);
+
+        // Order status history.
+        $orderHistoryStmt = $db->prepare("
+            INSERT INTO order_tracking_updates (
+                order_id, shipment_id, event_type,
+                previous_status, new_status,
+                title, description, event_date, visible_to_customer
+            )
+            VALUES (
+                :order_id, :shipment_id, 'order_status',
+                'out_for_delivery', 'failed',
+                'Delivery Failed', :description, NOW(), 1
+            )
+        ");
+        $orderHistoryStmt->execute([
+            ':order_id' => $orderId,
+            ':shipment_id' => $shipmentId,
+            ':description' => 'Delivery attempt failed. Reason: ' . $failureReason
+        ]);
+
+        $db->commit();
+
+        header("Location: order-details.php?id=" . $orderId . "&delivery_failed_confirmed=1");
+        exit;
+    } catch (Throwable $e) {
+        if ($db->inTransaction()) {
+            $db->rollBack();
+        }
+
+        error_log('Delivery failure confirmation error: ' . $e->getMessage());
+
+        header("Location: order-details.php?id=" . $orderId . "&delivery_failed_error=1");
+        exit;
+    }
+}
+
+
+if (
+    $_SERVER['REQUEST_METHOD'] === 'POST' &&
+    ($_POST['action'] ?? '') === 'confirm_rto_initiated'
+) {
+    $submittedToken = $_POST['csrf_token'] ?? '';
+
+    if (
+        !isset($_SESSION['orders_csrf_token']) ||
+        !hash_equals($_SESSION['orders_csrf_token'], $submittedToken)
+    ) {
+        die('Invalid security token. Please refresh the page.');
+    }
+
+    try {
+        $db->beginTransaction();
+
+        $orderStmt = $db->prepare("
+            SELECT id, order_status
+            FROM orders
+            WHERE id = :order_id
+            FOR UPDATE
+        ");
+        $orderStmt->execute([':order_id' => $orderId]);
+        $lockedOrder = $orderStmt->fetch(PDO::FETCH_ASSOC);
+
+        if (
+            !$lockedOrder ||
+            strtolower($lockedOrder['order_status']) !== 'failed'
+        ) {
+            throw new Exception('Order must have a failed delivery attempt.');
+        }
+
+        $shipmentStmt = $db->prepare("
+            SELECT *
+            FROM order_shipments
+            WHERE order_id = :order_id
+            ORDER BY id DESC
+            LIMIT 1
+            FOR UPDATE
+        ");
+        $shipmentStmt->execute([':order_id' => $orderId]);
+        $shipment = $shipmentStmt->fetch(PDO::FETCH_ASSOC);
+
+        if (
+            !$shipment ||
+            strtolower($shipment['shipment_status']) !== 'delivery_failed'
+        ) {
+            throw new Exception('Shipment must be marked Delivery Failed.');
+        }
+
+        $shipmentId = (int) $shipment['id'];
+
+        $packageStmt = $db->prepare("
+            SELECT COUNT(*) AS total_packages,
+                   SUM(CASE WHEN package_status = 'delivery_failed'
+                       THEN 0 ELSE 1 END) AS invalid_packages
+            FROM order_packages
+            WHERE shipment_id = :shipment_id
+        ");
+        $packageStmt->execute([':shipment_id' => $shipmentId]);
+        $packageCheck = $packageStmt->fetch(PDO::FETCH_ASSOC);
+
+        if (
+            (int) $packageCheck['total_packages'] < 1 ||
+            (int) $packageCheck['invalid_packages'] > 0
+        ) {
+            throw new Exception('All packages must be marked Delivery Failed.');
+        }
+
+        $updateShipment = $db->prepare("
+            UPDATE order_shipments
+            SET shipment_status = 'rto_initiated'
+            WHERE id = :shipment_id
+              AND shipment_status = 'delivery_failed'
+        ");
+        $updateShipment->execute([':shipment_id' => $shipmentId]);
+
+        if ($updateShipment->rowCount() !== 1) {
+            throw new Exception('RTO shipment update failed.');
+        }
+
+        $updatePackages = $db->prepare("
+            UPDATE order_packages
+            SET package_status = 'rto_initiated'
+            WHERE shipment_id = :shipment_id
+              AND package_status = 'delivery_failed'
+        ");
+        $updatePackages->execute([':shipment_id' => $shipmentId]);
+
+        if ($updatePackages->rowCount() !== (int) $packageCheck['total_packages']) {
+            throw new Exception('RTO package update failed.');
+        }
+
+        $updateOrder = $db->prepare("
+            UPDATE orders
+            SET order_status = 'returned'
+            WHERE id = :order_id
+              AND order_status = 'failed'
+        ");
+        $updateOrder->execute([':order_id' => $orderId]);
+
+        if ($updateOrder->rowCount() !== 1) {
+            throw new Exception('Order RTO status update failed.');
+        }
+
+        $trackingStmt = $db->prepare("
+            INSERT INTO order_tracking_updates (
+                order_id, shipment_id, event_type,
+                previous_status, new_status,
+                title, description, event_date, visible_to_customer
+            )
+            VALUES (
+                :order_id, :shipment_id, 'shipment_update',
+                'delivery_failed', 'rto_initiated',
+                'Return to Seller Initiated',
+                'Your shipment is being returned to the seller.',
+                NOW(), 1
+            )
+        ");
+        $trackingStmt->execute([
+            ':order_id' => $orderId,
+            ':shipment_id' => $shipmentId
+        ]);
+
+        $orderHistoryStmt = $db->prepare("
+            INSERT INTO order_tracking_updates (
+                order_id, shipment_id, event_type,
+                previous_status, new_status,
+                title, description, event_date, visible_to_customer
+            )
+            VALUES (
+                :order_id, :shipment_id, 'order_status',
+                'failed', 'returned',
+                'Return Initiated',
+                'Your order is being returned to the seller.',
+                NOW(), 1
+            )
+        ");
+        $orderHistoryStmt->execute([
+            ':order_id' => $orderId,
+            ':shipment_id' => $shipmentId
+        ]);
+
+        $db->commit();
+
+        header("Location: order-details.php?id=" . $orderId . "&rto_initiated_confirmed=1");
+        exit;
+    } catch (Throwable $e) {
+        if ($db->inTransaction()) {
+            $db->rollBack();
+        }
+
+        error_log('RTO initiation error: ' . $e->getMessage());
+
+        header("Location: order-details.php?id=" . $orderId . "&rto_initiated_error=1");
+        exit;
+    }
+}
+
+
+if (
+    $_SERVER['REQUEST_METHOD'] === 'POST' &&
+    ($_POST['action'] ?? '') === 'confirm_rto_received'
+) {
+    $submittedToken = $_POST['csrf_token'] ?? '';
+
+    if (
+        !isset($_SESSION['orders_csrf_token']) ||
+        !hash_equals($_SESSION['orders_csrf_token'], $submittedToken)
+    ) {
+        die('Invalid security token. Please refresh the page.');
+    }
+
+    try {
+        $db->beginTransaction();
+
+        $orderStmt = $db->prepare("
+            SELECT id, order_status
+            FROM orders
+            WHERE id = :order_id
+            FOR UPDATE
+        ");
+        $orderStmt->execute([':order_id' => $orderId]);
+        $lockedOrder = $orderStmt->fetch(PDO::FETCH_ASSOC);
+
+        if (
+            !$lockedOrder ||
+            strtolower($lockedOrder['order_status']) !== 'returned'
+        ) {
+            throw new Exception('Order must be marked Returned.');
+        }
+
+        $shipmentStmt = $db->prepare("
+            SELECT *
+            FROM order_shipments
+            WHERE order_id = :order_id
+            ORDER BY id DESC
+            LIMIT 1
+            FOR UPDATE
+        ");
+        $shipmentStmt->execute([':order_id' => $orderId]);
+        $shipment = $shipmentStmt->fetch(PDO::FETCH_ASSOC);
+
+        if (
+            !$shipment ||
+            strtolower($shipment['shipment_status']) !== 'rto_initiated'
+        ) {
+            throw new Exception('RTO must be initiated before receipt confirmation.');
+        }
+
+        $shipmentId = (int) $shipment['id'];
+
+        $packageStmt = $db->prepare("
+            SELECT COUNT(*) AS total_packages,
+                   SUM(CASE WHEN package_status = 'rto_initiated'
+                       THEN 0 ELSE 1 END) AS invalid_packages
+            FROM order_packages
+            WHERE shipment_id = :shipment_id
+        ");
+        $packageStmt->execute([':shipment_id' => $shipmentId]);
+        $packageCheck = $packageStmt->fetch(PDO::FETCH_ASSOC);
+
+        if (
+            (int) $packageCheck['total_packages'] < 1 ||
+            (int) $packageCheck['invalid_packages'] > 0
+        ) {
+            throw new Exception('All packages must be RTO Initiated.');
+        }
+
+        $updateShipment = $db->prepare("
+            UPDATE order_shipments
+            SET shipment_status = 'rto_received'
+            WHERE id = :shipment_id
+              AND shipment_status = 'rto_initiated'
+        ");
+        $updateShipment->execute([':shipment_id' => $shipmentId]);
+
+        if ($updateShipment->rowCount() !== 1) {
+            throw new Exception('RTO receipt update failed.');
+        }
+
+        $updatePackages = $db->prepare("
+            UPDATE order_packages
+            SET package_status = 'rto_received'
+            WHERE shipment_id = :shipment_id
+              AND package_status = 'rto_initiated'
+        ");
+        $updatePackages->execute([':shipment_id' => $shipmentId]);
+
+        if ($updatePackages->rowCount() !== (int) $packageCheck['total_packages']) {
+            throw new Exception('RTO package receipt update failed.');
+        }
+
+        $trackingStmt = $db->prepare("
+            INSERT INTO order_tracking_updates (
+                order_id, shipment_id, event_type,
+                previous_status, new_status,
+                title, description, event_date, visible_to_customer
+            )
+            VALUES (
+                :order_id, :shipment_id, 'shipment_update',
+                'rto_initiated', 'rto_received',
+                'Return Received by Seller',
+                'Your returned shipment has reached the seller.',
+                NOW(), 1
+            )
+        ");
+        $trackingStmt->execute([
+            ':order_id' => $orderId,
+            ':shipment_id' => $shipmentId
+        ]);
+
+        $orderHistoryStmt = $db->prepare("
+            INSERT INTO order_tracking_updates (
+                order_id, shipment_id, event_type,
+                previous_status, new_status,
+                title, description, event_date, visible_to_customer
+            )
+            VALUES (
+                :order_id, :shipment_id, 'order_status',
+                'returned', 'returned',
+                'Return Received',
+                'The returned shipment has been received by the seller.',
+                NOW(), 1
+            )
+        ");
+        $orderHistoryStmt->execute([
+            ':order_id' => $orderId,
+            ':shipment_id' => $shipmentId
+        ]);
+
+        $db->commit();
+
+        header("Location: order-details.php?id=" . $orderId . "&rto_received_confirmed=1");
+        exit;
+    } catch (Throwable $e) {
+        if ($db->inTransaction()) {
+            $db->rollBack();
+        }
+
+        error_log('RTO receipt confirmation error: ' . $e->getMessage());
+
+        header("Location: order-details.php?id=" . $orderId . "&rto_received_error=1");
+        exit;
+    }
+}
+
 
 if (
     $_SERVER['REQUEST_METHOD'] === 'POST' &&
@@ -330,7 +1674,7 @@ if (
         trim($_POST['shipment_status'] ?? 'pending')
     );
 
-    $shippedAtInput = trim($_POST['shipped_at'] ?? '');
+
     $estimatedDeliveryInput = trim(
         $_POST['estimated_delivery_at'] ?? ''
     );
@@ -348,11 +1692,8 @@ if (
         exit;
     }
 
-    if (
-        $shipmentStatus !== 'pending' &&
-        ($courierName === '' || $trackingNumber === '')
-    ) {
-        header("Location: order-details.php?id=" . $orderId . "&shipment_error=required");
+    if ($shipmentStatus !== 'pending') {
+        header("Location: order-details.php?id=" . $orderId . "&shipment_error=invalid");
         exit;
     }
 
@@ -363,6 +1704,7 @@ if (
         header("Location: order-details.php?id=" . $orderId . "&shipment_error=url");
         exit;
     }
+
     $convertShipmentDate = function ($value) {
 
         if ($value === '') {
@@ -381,26 +1723,12 @@ if (
         return $date->format('Y-m-d H:i:s');
     };
 
-    $shippedAt = $convertShipmentDate($shippedAtInput);
-
     $estimatedDeliveryAt = $convertShipmentDate(
         $estimatedDeliveryInput
     );
 
-    if (
-        $shippedAt === false ||
-        $estimatedDeliveryAt === false
-    ) {
+    if ($estimatedDeliveryAt === false) {
         header("Location: order-details.php?id=" . $orderId . "&shipment_error=date");
-        exit;
-    }
-
-    if (
-        $shippedAt &&
-        $estimatedDeliveryAt &&
-        strtotime($estimatedDeliveryAt) < strtotime($shippedAt)
-    ) {
-        header("Location: order-details.php?id=" . $orderId . "&shipment_error=date_order");
         exit;
     }
 
@@ -466,8 +1794,6 @@ if (
             header("Location: order-details.php?id=" . $orderId . "&shipment_error=not_eligible");
             exit;
         }
-
-        // Lock the shipment only after locking the parent order.
         $existingStmt = $db->prepare("
             SELECT *
             FROM order_shipments
@@ -489,17 +1815,17 @@ if (
             ? $existingShipment['shipment_status']
             : null;
 
+        $effectiveShippedAt = null;
+
+        if (!empty($existingShipment['shipped_at'])) {
+            $effectiveShippedAt = $existingShipment['shipped_at'];
+        }
+
         $shipmentChanged =
             !$existingShipment ||
             strtolower($oldShipmentStatus) !== $shipmentStatus;
 
-        $deliveredAt = null;
-
-        if ($shipmentStatus === 'delivered') {
-            $deliveredAt = $existingShipment['delivered_at']
-                ?? date('Y-m-d H:i:s');
-        }
-
+        $deliveredAt = $existingShipment['delivered_at'] ?? null;
         if ($existingShipment) {
             $shipmentStmt = $db->prepare("
                 UPDATE order_shipments
@@ -514,12 +1840,19 @@ if (
                 WHERE id = :shipment_id
                   AND order_id = :order_id
             ");
-
+            if (
+                $existingShipment &&
+                !empty($existingShipment['shipped_at'])
+            ) {
+                throw new Exception(
+                    'Courier pickup is already confirmed. Shipment details cannot be changed through this form.'
+                );
+            }
             $shipmentStmt->execute([
                 ':courier_name' => $courierName ?: null,
                 ':tracking_number' => $trackingNumber ?: null,
                 ':tracking_url' => $trackingUrl ?: null,
-                ':shipped_at' => $shippedAt,
+                ':shipped_at' => $effectiveShippedAt,
                 ':estimated_delivery_at' => $estimatedDeliveryAt,
                 ':delivered_at' => $deliveredAt,
                 ':shipment_status' => $shipmentStatus,
@@ -557,7 +1890,7 @@ if (
                 ':courier_name' => $courierName ?: null,
                 ':tracking_number' => $trackingNumber ?: null,
                 ':tracking_url' => $trackingUrl ?: null,
-                ':shipped_at' => $shippedAt,
+                ':shipped_at' => $effectiveShippedAt,
                 ':estimated_delivery_at' => $estimatedDeliveryAt,
                 ':delivered_at' => $deliveredAt,
                 ':shipment_status' => $shipmentStatus
@@ -615,87 +1948,6 @@ if (
                 ':description' => $shipmentNote
             ]);
         }
-        $orderStatusRanks = [
-            'confirmed' => 1,
-            'processing' => 2,
-            'packed' => 3,
-            'shipped' => 4,
-            'out_for_delivery' => 5,
-            'delivered' => 6
-        ];
-
-        $mappedOrderStatus = [
-            'shipped' => 'shipped',
-            'out_for_delivery' => 'out_for_delivery',
-            'delivered' => 'delivered'
-        ];
-
-        if (isset($mappedOrderStatus[$shipmentStatus])) {
-
-            // Use the freshly locked order status, not the page-load snapshot.
-            $currentOrderStatus = $lockedOrderStatus;
-
-            $targetOrderStatus = $mappedOrderStatus[$shipmentStatus];
-
-            $currentRank = $orderStatusRanks[$currentOrderStatus] ?? 0;
-
-            $targetRank = $orderStatusRanks[$targetOrderStatus] ?? 0;
-
-            if (
-                $currentRank > 0 &&
-                $targetRank > $currentRank
-            ) {
-
-                $orderUpdateStmt = $db->prepare("
-                    UPDATE orders
-                    SET order_status = :status
-                    WHERE id = :order_id
-                ");
-
-                $orderUpdateStmt->execute([
-                    ':status' => $targetOrderStatus,
-                    ':order_id' => $orderId
-                ]);
-                $orderHistoryStmt = $db->prepare("
-                    INSERT INTO order_tracking_updates (
-                        order_id,
-                        shipment_id,
-                        event_type,
-                        previous_status,
-                        new_status,
-                        title,
-                        description,
-                        event_date,
-                        visible_to_customer
-                    )
-                    VALUES (
-                        :order_id,
-                        :shipment_id,
-                        'order_status',
-                        :previous_status,
-                        :new_status,
-                        :title,
-                        :description,
-                        NOW(),
-                        1
-                    )
-                ");
-
-                $orderHistoryStmt->execute([
-                    ':order_id' => $orderId,
-                    ':shipment_id' => $shipmentId,
-                    ':previous_status' => $currentOrderStatus,
-                    ':new_status' => $targetOrderStatus,
-                    ':title' => ucwords(
-                        str_replace('_', ' ', $targetOrderStatus)
-                    ),
-                    ':description' => 'Your order status has been updated to '
-                        . ucwords(str_replace('_', ' ', $targetOrderStatus))
-                        . '.'
-                ]);
-            }
-        }
-
         $db->commit();
 
         header("Location: order-details.php?id=" . $orderId . "&shipment_saved=1");
@@ -1039,6 +2291,399 @@ adminHeader('Order #' . $order['id'], 'orders');
             </div>
         <?php endif; ?>
 
+
+        <?php if (isset($_GET['pickup_confirmed'])): ?>
+            <div class="alert alert-success">
+                Courier pickup confirmed successfully. Dispatch date has been recorded.
+            </div>
+        <?php elseif (isset($_GET['pickup_error'])): ?>
+            <div class="alert alert-danger">
+                Unable to confirm pickup. Please check the shipment and server error log.
+            </div>
+        <?php endif; ?>
+
+        <?php
+        $canConfirmPickup =
+            !empty($shipment) &&
+            empty($shipment['shipped_at']) &&
+            !in_array(
+                strtolower($shipment['shipment_status'] ?? ''),
+                ['out_for_delivery', 'delivered', 'cancelled'],
+                true
+            );
+        ?>
+
+        <?php if ($canConfirmPickup): ?>
+            <div class="border rounded p-3 mb-4">
+                <h6 class="fw-bold mb-2">Courier Pickup Confirmation</h6>
+
+                <p class="text-muted mb-3">
+                    Confirm only after the courier has physically collected the packages.
+                </p>
+
+                <form method="POST"
+                    onsubmit="return confirm('Confirm that the courier has physically picked up this shipment?');">
+
+                    <input type="hidden" name="action" value="confirm_pickup">
+
+                    <input
+                        type="hidden"
+                        name="csrf_token"
+                        value="<?= e($_SESSION['orders_csrf_token']) ?>">
+
+                    <button type="submit" class="btn btn-success rounded-pill px-4">
+                        <i class="bi bi-box-seam me-2"></i>
+                        Confirm Pickup
+                    </button>
+                </form>
+            </div>
+        <?php endif; ?>
+
+        <?php if (isset($_GET['out_for_delivery_confirmed'])): ?>
+            <div class="alert alert-success">
+                Shipment successfully marked Out for Delivery.
+            </div>
+        <?php elseif (isset($_GET['out_for_delivery_error'])): ?>
+            <div class="alert alert-danger">
+                Unable to update shipment. Check the server error log.
+            </div>
+        <?php endif; ?>
+
+        <?php
+        $canConfirmOutForDelivery =
+            !empty($shipment) &&
+            strtolower($shipment['shipment_status'] ?? '') === 'shipped' &&
+            !empty($shipment['shipped_at']);
+        ?>
+
+        <?php if ($canConfirmOutForDelivery): ?>
+            <div class="border rounded p-3 mb-4">
+                <h6 class="fw-bold mb-2">
+                    <i class="bi bi-truck me-2"></i>
+                    Out for Delivery Confirmation
+                </h6>
+
+                <p class="text-muted mb-3">
+                    Confirm when the shipment has actually gone out for delivery.
+                </p>
+
+                <form method="POST"
+                    onsubmit="return confirm('Confirm that this shipment is out for delivery?');">
+
+                    <input type="hidden"
+                        name="action"
+                        value="confirm_out_for_delivery">
+
+                    <input type="hidden"
+                        name="csrf_token"
+                        value="<?= e($_SESSION['orders_csrf_token']) ?>">
+
+                    <button type="submit" class="btn btn-primary rounded-pill px-4">
+                        <i class="bi bi-truck me-2"></i>
+                        Confirm Out for Delivery
+                    </button>
+                </form>
+            </div>
+        <?php endif; ?>
+
+
+        <?php
+        $isCodOrder =
+            strtolower($order['payment_method'] ?? '') === 'cash_on_delivery';
+
+        $codCollectionStmt = $db->prepare("
+    SELECT *
+    FROM cod_collections
+    WHERE order_id = :order_id
+    LIMIT 1
+");
+        $codCollectionStmt->execute([':order_id' => $orderId]);
+        $codCollection = $codCollectionStmt->fetch(PDO::FETCH_ASSOC);
+
+        $canConfirmCod =
+            $isCodOrder &&
+            strtolower($order['order_status'] ?? '') === 'out_for_delivery' &&
+            $codCollection &&
+            $codCollection['collection_status'] !== 'collected';
+        ?>
+
+        <?php if (isset($_GET['cod_collected'])): ?>
+            <div class="alert alert-success">
+                COD payment collection confirmed successfully.
+            </div>
+        <?php elseif (($_GET['cod_error'] ?? '') === 'amount'): ?>
+            <div class="alert alert-warning">
+                Received amount does not match the expected COD amount. Payment remains pending.
+            </div>
+        <?php elseif (($_GET['cod_error'] ?? '') === 'save'): ?>
+            <div class="alert alert-danger">
+                Unable to confirm COD collection. Check the server error log.
+            </div>
+        <?php endif; ?>
+
+        <?php if ($isCodOrder && $codCollection): ?>
+            <div class="border rounded p-3 mb-4">
+                <h6 class="fw-bold">Cash on Delivery Collection</h6>
+
+                <p class="mb-1">
+                    Expected amount:
+                    <strong>₹<?= number_format((float)$codCollection['expected_amount'], 2) ?></strong>
+                </p>
+
+                <p>
+                    Collection status:
+                    <strong>
+                        <?= e(ucfirst($codCollection['collection_status'])) ?>
+                    </strong>
+                </p>
+
+                <?php if ($canConfirmCod): ?>
+                    <form method="POST">
+                        <input type="hidden" name="action" value="confirm_cod_collection">
+                        <input type="hidden" name="csrf_token"
+                            value="<?= e($_SESSION['orders_csrf_token']) ?>">
+
+                        <div class="mb-3">
+                            <label class="form-label fw-semibold">
+                                Actual Cash Received (₹)
+                            </label>
+
+                            <input
+                                type="number"
+                                name="received_amount"
+                                class="form-control"
+                                min="0"
+                                step="0.01"
+                                required
+                                placeholder="Enter actual amount received">
+                        </div>
+
+                        <div class="mb-3">
+                            <label class="form-label fw-semibold">
+                                Collection Notes (Optional)
+                            </label>
+
+                            <textarea name="cod_notes"
+                                class="form-control"
+                                rows="2"></textarea>
+                        </div>
+
+                        <button type="submit"
+                            class="btn btn-success rounded-pill"
+                            onclick="return confirm('Confirm that you have received the exact COD amount?');">
+                            Confirm COD Collection
+                        </button>
+                    </form>
+                <?php elseif ($codCollection['collection_status'] === 'collected'): ?>
+                    <p class="text-success mb-0">
+                        Received: ₹<?= number_format((float)$codCollection['received_amount'], 2) ?>
+                    </p>
+                <?php endif; ?>
+            </div>
+        <?php endif; ?>
+
+
+        <?php if (isset($_GET['delivered_confirmed'])): ?>
+            <div class="alert alert-success">
+                Order successfully marked as Delivered.
+            </div>
+        <?php elseif (isset($_GET['delivered_error'])): ?>
+            <div class="alert alert-danger">
+                Unable to confirm delivery. Check the server error log and payment collection status.
+            </div>
+        <?php endif; ?>
+
+        <?php
+        $canConfirmDelivered =
+            !empty($shipment) &&
+            strtolower($shipment['shipment_status'] ?? '') === 'out_for_delivery' &&
+            !empty($shipment['shipped_at']);
+        ?>
+
+        <?php if ($canConfirmDelivered): ?>
+            <div class="border rounded p-3 mb-4">
+                <h6 class="fw-bold mb-2">
+                    <i class="bi bi-check-circle me-2"></i>
+                    Delivery Confirmation
+                </h6>
+
+                <p class="text-muted mb-3">
+                    Confirm only after the customer has actually received the order.
+                    COD orders also require confirmed cash collection.
+                </p>
+
+                <form method="POST"
+                    onsubmit="return confirm('Has the customer actually received the complete order?');">
+
+                    <input type="hidden"
+                        name="action"
+                        value="confirm_delivered">
+
+                    <input type="hidden"
+                        name="csrf_token"
+                        value="<?= e($_SESSION['orders_csrf_token']) ?>">
+
+                    <button type="submit"
+                        class="btn btn-success rounded-pill px-4">
+                        <i class="bi bi-check-circle me-2"></i>
+                        Confirm Delivered
+                    </button>
+                </form>
+            </div>
+        <?php endif; ?>
+
+
+        <?php if (isset($_GET['delivery_failed_confirmed'])): ?>
+            <div class="alert alert-success">
+                Delivery failure successfully recorded.
+            </div>
+        <?php elseif (isset($_GET['delivery_failed_error'])): ?>
+            <div class="alert alert-danger">
+                Unable to record delivery failure. Check the server error log.
+            </div>
+        <?php endif; ?>
+
+        <?php
+        $canConfirmDeliveryFailed =
+            !empty($shipment) &&
+            strtolower($shipment['shipment_status'] ?? '') === 'out_for_delivery' &&
+            !empty($shipment['shipped_at']);
+        ?>
+
+        <?php if ($canConfirmDeliveryFailed): ?>
+            <div class="border rounded p-3 mb-4">
+                <h6 class="fw-bold mb-2">
+                    <i class="bi bi-exclamation-triangle me-2"></i>
+                    Delivery Failure
+                </h6>
+
+                <p class="text-muted">
+                    Confirm only after an actual unsuccessful delivery attempt.
+                </p>
+
+                <form method="POST"
+                    onsubmit="return confirm('Confirm that this delivery attempt failed?');">
+
+                    <input type="hidden" name="action"
+                        value="confirm_delivery_failed">
+
+                    <input type="hidden" name="csrf_token"
+                        value="<?= e($_SESSION['orders_csrf_token']) ?>">
+
+                    <div class="mb-3">
+                        <label class="form-label fw-semibold">
+                            Reason for delivery failure
+                        </label>
+
+                        <textarea name="failure_reason"
+                            class="form-control"
+                            rows="3"
+                            maxlength="500"
+                            required
+                            placeholder="Example: Customer unavailable at delivery address."></textarea>
+                    </div>
+
+                    <button type="submit"
+                        class="btn btn-danger rounded-pill px-4">
+                        <i class="bi bi-exclamation-circle me-2"></i>
+                        Confirm Delivery Failed
+                    </button>
+                </form>
+            </div>
+        <?php endif; ?>
+
+
+        <?php if (isset($_GET['rto_initiated_confirmed'])): ?>
+            <div class="alert alert-success">
+                Return to seller successfully initiated.
+            </div>
+        <?php elseif (isset($_GET['rto_initiated_error'])): ?>
+            <div class="alert alert-danger">
+                Unable to initiate RTO. Check the server error log.
+            </div>
+        <?php endif; ?>
+
+        <?php
+        $canInitiateRto =
+            !empty($shipment) &&
+            strtolower($shipment['shipment_status'] ?? '') === 'delivery_failed';
+        ?>
+
+        <?php if ($canInitiateRto): ?>
+            <div class="border rounded p-3 mb-4">
+                <h6 class="fw-bold mb-2">
+                    <i class="bi bi-arrow-return-left me-2"></i>
+                    Return to Seller
+                </h6>
+
+                <p class="text-muted">
+                    Confirm only after the return shipment has actually been initiated.
+                </p>
+
+                <form method="POST"
+                    onsubmit="return confirm('Has the shipment actually started its return journey?');">
+
+                    <input type="hidden" name="action"
+                        value="confirm_rto_initiated">
+
+                    <input type="hidden" name="csrf_token"
+                        value="<?= e($_SESSION['orders_csrf_token']) ?>">
+
+                    <button type="submit"
+                        class="btn btn-warning rounded-pill px-4">
+                        <i class="bi bi-arrow-return-left me-2"></i>
+                        Confirm RTO Initiated
+                    </button>
+                </form>
+            </div>
+        <?php endif; ?>
+
+
+<?php if (isset($_GET['rto_received_confirmed'])): ?>
+    <div class="alert alert-success">
+        Returned shipment successfully received.
+    </div>
+<?php elseif (isset($_GET['rto_received_error'])): ?>
+    <div class="alert alert-danger">
+        Unable to confirm RTO receipt. Check the server error log.
+    </div>
+<?php endif; ?>
+
+<?php
+$canConfirmRtoReceived =
+    !empty($shipment) &&
+    strtolower($shipment['shipment_status'] ?? '') === 'rto_initiated';
+?>
+
+<?php if ($canConfirmRtoReceived): ?>
+    <div class="border rounded p-3 mb-4">
+        <h6 class="fw-bold mb-2">
+            <i class="bi bi-box-seam me-2"></i>
+            Returned Shipment Receipt
+        </h6>
+
+        <p class="text-muted">
+            Confirm only after all returned packages have physically arrived.
+        </p>
+
+        <form method="POST"
+            onsubmit="return confirm('Have all returned packages physically reached your business?');">
+
+            <input type="hidden" name="action"
+                value="confirm_rto_received">
+
+            <input type="hidden" name="csrf_token"
+                value="<?= e($_SESSION['orders_csrf_token']) ?>">
+
+            <button type="submit"
+                class="btn btn-success rounded-pill px-4">
+                <i class="bi bi-box-seam me-2"></i>
+                Confirm RTO Received
+            </button>
+        </form>
+    </div>
+<?php endif; ?>
+
         <form method="POST">
 
             <input
@@ -1101,11 +2746,19 @@ adminHeader('Order #' . $order['id'], 'orders');
                         Dispatch Date
                     </label>
 
+
                     <input
                         type="datetime-local"
-                        name="shipped_at"
                         class="form-control"
-                        value="<?= !empty($shipment['shipped_at']) ? e(date('Y-m-d\TH:i', strtotime($shipment['shipped_at']))) : '' ?>">
+                        value="<?= !empty($shipment['shipped_at'])
+                                    ? e(date('Y-m-d\TH:i', strtotime($shipment['shipped_at'])))
+                                    : '' ?>"
+                        readonly>
+
+                    <small class="text-muted">
+                        Recorded automatically when actual courier pickup is confirmed.
+                    </small>
+
 
                 </div>
 

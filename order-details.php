@@ -106,6 +106,9 @@ $shipmentStmt->execute([
 
 $shipment = $shipmentStmt->fetch(PDO::FETCH_ASSOC);
 
+$shipmentStatus = strtolower(
+    trim($shipment['shipment_status'] ?? 'pending')
+);
 $trackingSql = "
     SELECT
         id,
@@ -129,6 +132,54 @@ $trackingStmt->execute([
 ]);
 
 $trackingUpdates = $trackingStmt->fetchAll(PDO::FETCH_ASSOC);
+
+
+// Fetch all packages belonging to this shipment.
+$packages = [];
+
+if (!empty($shipment['id'])) {
+    $packageStmt = $db->prepare("
+        SELECT
+            id,
+            package_number,
+            length,
+            width,
+            height,
+            total_weight,
+            package_status
+        FROM order_packages
+        WHERE shipment_id = :shipment_id
+        ORDER BY package_number ASC
+    ");
+
+    $packageStmt->execute([
+        ':shipment_id' => $shipment['id']
+    ]);
+
+    $packages = $packageStmt->fetchAll(PDO::FETCH_ASSOC);
+}
+
+$codCollection = null;
+
+if (strtolower($order['payment_method']) === 'cash_on_delivery') {
+    $codStmt = $db->prepare("
+        SELECT
+            expected_amount,
+            received_amount,
+            collection_status,
+            confirmed_at
+        FROM cod_collections
+        WHERE order_id = :order_id
+        LIMIT 1
+    ");
+
+    $codStmt->execute([
+        ':order_id' => $orderId
+    ]);
+
+    $codCollection = $codStmt->fetch(PDO::FETCH_ASSOC);
+}
+
 ?>
 
 
@@ -216,50 +267,43 @@ $trackingUpdates = $trackingStmt->fetchAll(PDO::FETCH_ASSOC);
 
                     <?php
 
-                    $orderStatus =
-                        strtolower(
-                            $order['order_status']
-                        );
 
-                    $orderStatusClass =
-                        'bg-secondary';
+                    $orderStatus = strtolower(
+                        trim($order['order_status'] ?? '')
+                    );
+
+                    // Show the actual shipment stage to the customer.
+                    $displayOrderStatus = $orderStatus;
 
                     if (
-                        $orderStatus === 'confirmed'
+                        $orderStatus === 'shipped' &&
+                        $shipmentStatus === 'pending'
                     ) {
+                        $displayOrderStatus = 'awaiting_pickup';
+                    }
 
-                        $orderStatusClass =
-                            'bg-success';
+                    $orderStatusClass = 'bg-secondary';
+
+                    if ($displayOrderStatus === 'confirmed') {
+                        $orderStatusClass = 'bg-success';
+                    } elseif ($displayOrderStatus === 'pending') {
+                        $orderStatusClass = 'bg-warning text-dark';
+                    } elseif ($displayOrderStatus === 'processing') {
+                        $orderStatusClass = 'bg-info text-dark';
+                    } elseif ($displayOrderStatus === 'awaiting_pickup') {
+                        $orderStatusClass = 'bg-info text-dark';
+                    } elseif ($displayOrderStatus === 'shipped') {
+                        $orderStatusClass = 'bg-primary';
                     } elseif (
-                        $orderStatus === 'pending'
+                        in_array($displayOrderStatus, ['delivered', 'completed'], true)
                     ) {
-
-                        $orderStatusClass =
-                            'bg-warning text-dark';
+                        $orderStatusClass = 'bg-success';
                     } elseif (
-                        $orderStatus === 'processing'
+                        in_array($displayOrderStatus, ['cancelled', 'failed'], true)
                     ) {
-
-                        $orderStatusClass =
-                            'bg-info text-dark';
-                    } elseif (
-                        $orderStatus === 'shipped'
-                    ) {
-
-                        $orderStatusClass =
-                            'bg-primary';
-                    } elseif (
-                        $orderStatus === 'delivered'
-                    ) {
-
-                        $orderStatusClass =
-                            'bg-success';
-                    } elseif (
-                        $orderStatus === 'cancelled'
-                    ) {
-
-                        $orderStatusClass =
-                            'bg-danger';
+                        $orderStatusClass = 'bg-danger';
+                    } elseif ($displayOrderStatus === 'returned') {
+                        $orderStatusClass = 'bg-warning text-dark';
                     }
 
                     ?>
@@ -271,11 +315,8 @@ $trackingUpdates = $trackingStmt->fetchAll(PDO::FETCH_ASSOC);
                                px-3
                                py-2
                                mt-2">
-
                         <?= htmlspecialchars(
-                            ucfirst(
-                                $order['order_status']
-                            )
+                            ucwords(str_replace('_', ' ', $displayOrderStatus))
                         ) ?>
 
                     </span>
@@ -397,6 +438,56 @@ $trackingUpdates = $trackingStmt->fetchAll(PDO::FETCH_ASSOC);
                         </strong>
                     </div>
 
+                    <?php if (!empty($packages)): ?>
+                        <hr class="my-4">
+
+                        <h6 class="fw-bold mb-3">
+                            Package Details (<?= count($packages) ?>)
+                        </h6>
+
+                        <?php foreach ($packages as $package): ?>
+                            <?php
+                            $packageStatus = ucwords(
+                                str_replace(
+                                    '_',
+                                    ' ',
+                                    $package['package_status']
+                                )
+                            );
+                            ?>
+
+                            <div class="border rounded p-3 mb-3">
+                                <div class="d-flex justify-content-between align-items-center mb-2">
+                                    <strong>
+                                        Package #<?= (int) $package['package_number'] ?>
+                                    </strong>
+
+                                    <span class="badge bg-info text-dark">
+                                        <?= htmlspecialchars($packageStatus) ?>
+                                    </span>
+                                </div>
+
+                                <div class="row g-2">
+                                    <div class="col-md-6">
+                                        <small class="text-muted">Dimensions</small>
+                                        <div>
+                                            <?= htmlspecialchars($package['length']) ?> ×
+                                            <?= htmlspecialchars($package['width']) ?> ×
+                                            <?= htmlspecialchars($package['height']) ?> cm
+                                        </div>
+                                    </div>
+
+                                    <div class="col-md-6">
+                                        <small class="text-muted">Total Weight</small>
+                                        <div>
+                                            <?= number_format((float) $package['total_weight']) ?> g
+                                        </div>
+                                    </div>
+                                </div>
+                            </div>
+                        <?php endforeach; ?>
+                    <?php endif; ?>
+
                     <div class="col-md-6">
                         <small class="text-muted d-block">Dispatch Date</small>
                         <strong>
@@ -441,8 +532,13 @@ $trackingUpdates = $trackingStmt->fetchAll(PDO::FETCH_ASSOC);
 
                 <?php
 
+
                 $currentOrderStatus = strtolower(
                     trim($order['order_status'] ?? '')
+                );
+
+                $currentShipmentStatus = strtolower(
+                    trim($shipment['shipment_status'] ?? 'pending')
                 );
 
                 $exceptionalStatuses = [
@@ -458,9 +554,14 @@ $trackingUpdates = $trackingStmt->fetchAll(PDO::FETCH_ASSOC);
                         'description' => 'Your order is being prepared.'
                     ],
                     [
+                        'status' => 'pending',
+                        'title' => 'Awaiting Pickup',
+                        'description' => 'Your shipment has been created. The courier is yet to collect your package.'
+                    ],
+                    [
                         'status' => 'shipped',
                         'title' => 'Shipped',
-                        'description' => 'Your parcel has been dispatched.'
+                        'description' => 'Your package has been collected by the courier.'
                     ],
                     [
                         'status' => 'out_for_delivery',
@@ -474,16 +575,15 @@ $trackingUpdates = $trackingStmt->fetchAll(PDO::FETCH_ASSOC);
                     ]
                 ];
 
-                if (in_array($currentOrderStatus, ['delivered', 'completed'], true)) {
-                    $currentStep = 3;
-                } elseif ($currentOrderStatus === 'out_for_delivery') {
-                    $currentStep = 2;
-                } elseif ($currentOrderStatus === 'shipped') {
-                    $currentStep = 1;
-                } else {
-                    
-                    $currentStep = 0;
-                }
+                $shipmentStepMap = [
+                    'pending' => 1,
+                    'shipped' => 2,
+                    'out_for_delivery' => 3,
+                    'delivered' => 4
+                ];
+
+                $currentStep = $shipmentStepMap[$currentShipmentStatus] ?? 1;
+
 
                 ?>
 
@@ -672,6 +772,76 @@ $trackingUpdates = $trackingStmt->fetchAll(PDO::FETCH_ASSOC);
                             </div>
 
                         <?php endforeach; ?>
+
+
+                        <hr class="my-4">
+
+                        <h5 class="fw-bold mb-4">
+                            <i class="fa-solid fa-clock-rotate-left text-primary me-2"></i>
+                            Complete Tracking History
+                        </h5>
+
+                        <?php if (!empty($trackingUpdates)): ?>
+
+                            <div class="list-group list-group-flush">
+
+                                <?php foreach ($trackingUpdates as $update): ?>
+
+                                    <div class="list-group-item px-0 py-3 border-bottom">
+
+                                        <div class="d-flex gap-3">
+
+                                            <div class="text-primary pt-1">
+                                                <i class="fa-solid fa-circle-check"></i>
+                                            </div>
+
+                                            <div class="flex-grow-1">
+
+                                                <div class="d-flex flex-wrap justify-content-between gap-2">
+
+                                                    <strong>
+                                                        <?= htmlspecialchars(
+                                                            $update['title'] ?: 'Shipment Update'
+                                                        ) ?>
+                                                    </strong>
+
+                                                    <small class="text-muted">
+                                                        <?= date(
+                                                            'd M Y, h:i A',
+                                                            strtotime($update['event_date'])
+                                                        ) ?>
+                                                    </small>
+
+                                                </div>
+
+                                                <?php if (!empty($update['description'])): ?>
+
+                                                    <p class="text-muted mb-1 mt-2">
+                                                        <?= nl2br(htmlspecialchars(
+                                                            $update['description']
+                                                        )) ?>
+                                                    </p>
+
+                                                <?php endif; ?>
+
+                                            </div>
+
+                                        </div>
+
+                                    </div>
+
+                                <?php endforeach; ?>
+
+                            </div>
+
+                        <?php else: ?>
+
+                            <p class="text-muted mb-0">
+                                No tracking updates are available yet.
+                            </p>
+
+                        <?php endif; ?>
+
 
                     </div>
 
@@ -962,7 +1132,69 @@ $trackingUpdates = $trackingStmt->fetchAll(PDO::FETCH_ASSOC);
 
                     </div>
 
+                    <?php if (
+                        strtolower($order['payment_method']) === 'cash_on_delivery' &&
+                        !empty($codCollection)
+                    ): ?>
 
+                        <hr>
+
+                        <h6 class="fw-bold mb-3">Cash on Delivery Details</h6>
+
+                        <div class="mb-2">
+                            <small class="text-muted">Expected COD Amount</small>
+                            <div class="fw-semibold">
+                                ₹<?= number_format(
+                                        (float) $codCollection['expected_amount'],
+                                        2
+                                    ) ?>
+                            </div>
+                        </div>
+
+                        <div class="mb-2">
+                            <small class="text-muted">Collection Status</small>
+                            <div>
+                                <?php
+                                $codStatus = $codCollection['collection_status'];
+
+                                $codBadgeClass = match ($codStatus) {
+                                    'collected' => 'bg-success',
+                                    'failed' => 'bg-danger',
+                                    default => 'bg-warning text-dark'
+                                };
+                                ?>
+
+                                <span class="badge <?= $codBadgeClass ?>">
+                                    <?= htmlspecialchars(ucwords($codStatus)) ?>
+                                </span>
+                            </div>
+                        </div>
+
+                        <?php if ($codStatus === 'collected'): ?>
+                            <div class="mb-2">
+                                <small class="text-muted">Amount Received</small>
+                                <div class="fw-semibold">
+                                    ₹<?= number_format(
+                                            (float) $codCollection['received_amount'],
+                                            2
+                                        ) ?>
+                                </div>
+                            </div>
+
+                            <?php if (!empty($codCollection['confirmed_at'])): ?>
+                                <div>
+                                    <small class="text-muted">Collection Confirmed</small>
+                                    <div>
+                                        <?= date(
+                                            'd M Y, h:i A',
+                                            strtotime($codCollection['confirmed_at'])
+                                        ) ?>
+                                    </div>
+                                </div>
+                            <?php endif; ?>
+                        <?php endif; ?>
+
+                    <?php endif; ?>
                     <div
                         class="d-flex
                                justify-content-between">
