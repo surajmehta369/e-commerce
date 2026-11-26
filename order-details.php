@@ -773,80 +773,78 @@ if (strtolower($order['payment_method']) === 'cash_on_delivery') {
 
                         <?php endforeach; ?>
 
-
-                        <hr class="my-4">
-
-                        <h5 class="fw-bold mb-4">
-                            <i class="fa-solid fa-clock-rotate-left text-primary me-2"></i>
-                            Complete Tracking History
-                        </h5>
-
-                        <?php if (!empty($trackingUpdates)): ?>
-
-                            <div class="list-group list-group-flush">
-
-                                <?php foreach ($trackingUpdates as $update): ?>
-
-                                    <div class="list-group-item px-0 py-3 border-bottom">
-
-                                        <div class="d-flex gap-3">
-
-                                            <div class="text-primary pt-1">
-                                                <i class="fa-solid fa-circle-check"></i>
-                                            </div>
-
-                                            <div class="flex-grow-1">
-
-                                                <div class="d-flex flex-wrap justify-content-between gap-2">
-
-                                                    <strong>
-                                                        <?= htmlspecialchars(
-                                                            $update['title'] ?: 'Shipment Update'
-                                                        ) ?>
-                                                    </strong>
-
-                                                    <small class="text-muted">
-                                                        <?= date(
-                                                            'd M Y, h:i A',
-                                                            strtotime($update['event_date'])
-                                                        ) ?>
-                                                    </small>
-
-                                                </div>
-
-                                                <?php if (!empty($update['description'])): ?>
-
-                                                    <p class="text-muted mb-1 mt-2">
-                                                        <?= nl2br(htmlspecialchars(
-                                                            $update['description']
-                                                        )) ?>
-                                                    </p>
-
-                                                <?php endif; ?>
-
-                                            </div>
-
-                                        </div>
-
-                                    </div>
-
-                                <?php endforeach; ?>
-
-                            </div>
-
-                        <?php else: ?>
-
-                            <p class="text-muted mb-0">
-                                No tracking updates are available yet.
-                            </p>
-
-                        <?php endif; ?>
-
-
                     </div>
 
                 <?php endif; ?>
 
+
+                <hr class="my-4">
+
+                <h5 class="fw-bold mb-4">
+                    <i class="fa-solid fa-clock-rotate-left text-primary me-2"></i>
+                    Complete Tracking History
+                </h5>
+
+                <?php if (!empty($trackingUpdates)): ?>
+
+                    <div class="list-group list-group-flush">
+
+                        <?php foreach ($trackingUpdates as $update): ?>
+
+                            <div class="list-group-item px-0 py-3 border-bottom">
+
+                                <div class="d-flex gap-3">
+
+                                    <div class="text-primary pt-1">
+                                        <i class="fa-solid fa-circle-check"></i>
+                                    </div>
+
+                                    <div class="flex-grow-1">
+
+                                        <div class="d-flex flex-wrap justify-content-between gap-2">
+
+                                            <strong>
+                                                <?= htmlspecialchars(
+                                                    $update['title'] ?: 'Shipment Update'
+                                                ) ?>
+                                            </strong>
+
+                                            <small class="text-muted">
+                                                <?= date(
+                                                    'd M Y, h:i A',
+                                                    strtotime($update['event_date'])
+                                                ) ?>
+                                            </small>
+
+                                        </div>
+
+                                        <?php if (!empty($update['description'])): ?>
+
+                                            <p class="text-muted mb-1 mt-2">
+                                                <?= nl2br(htmlspecialchars(
+                                                    $update['description']
+                                                )) ?>
+                                            </p>
+
+                                        <?php endif; ?>
+
+                                    </div>
+
+                                </div>
+
+                            </div>
+
+                        <?php endforeach; ?>
+
+                    </div>
+
+                <?php else: ?>
+
+                    <p class="text-muted mb-0">
+                        No tracking updates are available yet.
+                    </p>
+
+                <?php endif; ?>
 
             </div>
 
