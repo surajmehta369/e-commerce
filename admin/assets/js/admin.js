@@ -375,5 +375,6 @@
         setTimeout(triggerAutomation, 10000);
     }
 
-    startShipmentAutomation();
+// Temporarily disabled while updating shipment automation.
+// startShipmentAutomation();
 })();
