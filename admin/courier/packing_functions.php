@@ -929,6 +929,46 @@ function getEligibleCourierServices(
     if ($deliveryPincode === '') {
         throw new Exception("Customer delivery pincode is missing.");
     }
+    if (!preg_match('/^[0-9]{6}$/', $pickupPincode)) {
+        throw new Exception("Business pickup pincode is invalid.");
+    }
+
+    if (!preg_match('/^[0-9]{6}$/', $deliveryPincode)) {
+        throw new Exception("Customer delivery pincode must be a valid 6-digit pincode.");
+    }
+
+    // Automatically register new delivery pincode
+    $insertPincodeStmt = $db->prepare("
+    INSERT INTO courier_service_pincodes (
+        courier_service_id,
+        pincode,
+        can_pickup,
+        can_deliver,
+        status
+    )
+    SELECT
+        cs.id,
+        :delivery_pincode,
+        0,
+        1,
+        1
+    FROM courier_services cs
+    INNER JOIN courier_companies cc
+        ON cc.id = cs.courier_company_id
+    WHERE cs.status = 1
+      AND cc.status = 1
+      AND NOT EXISTS (
+          SELECT 1
+          FROM courier_service_pincodes csp
+          WHERE csp.courier_service_id = cs.id
+            AND csp.pincode = :check_pincode
+      )
+");
+
+    $insertPincodeStmt->execute([
+        ':delivery_pincode' => $deliveryPincode,
+        ':check_pincode' => $deliveryPincode
+    ]);
 
     $packages = $packingPlan['packages'] ?? [];
 
