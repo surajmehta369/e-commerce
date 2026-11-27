@@ -8,16 +8,13 @@ require_once "../zoho/zoho_functions.php";
 $database = new Database();
 $db = $database->connect();
 
-// Runs on a full page load or when ?sync=1 is used ("Sync Shopify" button).
-// It no longer runs on every AJAX page change, which keeps navigation fast.
-if (!isAjaxRequest() || isset($_GET['sync'])) {
+if (isset($_GET['sync']) && $_GET['sync'] === '1') {
     syncShopifyProductsToDatabase();
 }
 // syncZohoWebhookItemToShopify();
 $message = "";
 $messageType = "success";
 
-// CSRF protection for every POST on this page
 if ($_SERVER['REQUEST_METHOD'] === 'POST' && !adminVerifyCsrf()) {
     http_response_code(419);
     $_POST = [];

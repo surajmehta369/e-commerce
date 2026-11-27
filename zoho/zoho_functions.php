@@ -491,6 +491,65 @@ function findZohoItemBySKU(string $sku)
     ];
 }
 
+function findZohoItemByName(string $name)
+{
+    $name = trim($name);
+
+    if ($name === '') {
+        return [
+            'success' => false,
+            'found' => false,
+            'message' => 'Product name is required.',
+            'item' => null
+        ];
+    }
+
+    $response = zohoInventoryApi(
+        'GET',
+        'items',
+        [
+            'organization_id' => ZOHO_ORGANIZATION_ID,
+            'search_text' => $name
+        ]
+    );
+
+    if (empty($response['success'])) {
+        return [
+            'success' => false,
+            'found' => false,
+            'message' => 'Zoho item name lookup failed.',
+            'item' => null,
+            'response' => $response
+        ];
+    }
+
+    $items = $response['response']['items'] ?? [];
+
+    foreach ($items as $item) {
+        $itemName = trim($item['name'] ?? '');
+
+        if (
+            $itemName !== '' &&
+            strcasecmp($itemName, $name) === 0
+        ) {
+            return [
+                'success' => true,
+                'found' => true,
+                'message' => 'Zoho item found by name.',
+                'item' => $item
+            ];
+        }
+    }
+
+    return [
+        'success' => true,
+        'found' => false,
+        'message' => 'No Zoho item found with this name.',
+        'item' => null
+    ];
+}
+
+
 function getZohoItemDetailsById(string $itemId): array
 {
     $itemId = trim($itemId);
@@ -680,23 +739,23 @@ function createZohoItem(array $product)
         $itemData
     );
 
-if (empty($response['success'])) {
+    if (empty($response['success'])) {
 
-    error_log(
-        'Zoho item creation API error: ' .
-        json_encode($response, JSON_PRETTY_PRINT)
-    );
+        error_log(
+            'Zoho item creation API error: ' .
+                json_encode($response, JSON_PRETTY_PRINT)
+        );
 
-    return [
-        'success' => false,
-        'message' =>
+        return [
+            'success' => false,
+            'message' =>
             $response['message']
-            ?? $response['response']['message']
-            ?? 'Zoho item creation failed.',
-        'item' => null,
-        'response' => $response
-    ];
-}
+                ?? $response['response']['message']
+                ?? 'Zoho item creation failed.',
+            'item' => null,
+            'response' => $response
+        ];
+    }
 
     $item =
         $response['response']['item'] ?? null;
@@ -1617,8 +1676,7 @@ function syncZohoWebhookToDatabase(array $decodedPayload)
 
             $action = 'variant_updated';
             $variantId = (int)$variant['id'];
-        }
- elseif ($itemType === 'variant' || $itemType === 'group_variant') {
+        } elseif ($itemType === 'variant' || $itemType === 'group_variant') {
 
             $parentStmt = $db->prepare("
                 SELECT id, zoho_group_id
@@ -1695,9 +1753,7 @@ function syncZohoWebhookToDatabase(array $decodedPayload)
 
             $variantId = (int)$db->lastInsertId();
             $action = 'variant_created';
-        }
-
-     else {
+        } else {
 
             $productStmt = $db->prepare("
                 SELECT id, sku, slug, zoho_item_id
@@ -1763,7 +1819,7 @@ function syncZohoWebhookToDatabase(array $decodedPayload)
                     $slug = createUniqueSlug($db, $name, $productId);
                 }
 
-                    $updateProduct = $db->prepare("
+                $updateProduct = $db->prepare("
                         UPDATE products
                         SET
                             title = :title,
@@ -1863,10 +1919,10 @@ function syncZohoWebhookToDatabase(array $decodedPayload)
         ];
     } catch (Throwable $e) {
 
-         error_log(
+        error_log(
             'Zoho webhook database sync error: ' . $e->getMessage()
         );
-      if ($db->inTransaction()) {
+        if ($db->inTransaction()) {
             $db->rollBack();
         }
         return [
