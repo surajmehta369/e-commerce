@@ -765,26 +765,72 @@ function updateShopifyProductVariant(
     $shopifyVariantId = trim((string) $shopifyVariantId);
 
     if ($shopifyVariantId !== '') {
+
         $variantId = shopifyGid(
             'ProductVariant',
             $shopifyVariantId
         );
+
     } else {
+
+        // First try finding the variant using its SKU.
         $lookup = findShopifyVariantBySKU(
             $productGid,
             $sku
         );
 
-        if (empty($lookup['success']) || empty($lookup['variant']['id'])) {
-            return [
-                'success' => false,
-                'message' => $lookup['message']
-                    ?? 'Shopify variant lookup failed.',
-                'errors' => $lookup['errors'] ?? []
-            ];
-        }
+        if (
+            !empty($lookup['success']) &&
+            !empty($lookup['variant']['id'])
+        ) {
 
-        $variantId = $lookup['variant']['id'];
+            $variantId = $lookup['variant']['id'];
+
+        } else {
+
+            // SKU may not exist yet on a newly created Shopify product.
+            // Safely use its single default variant in that situation.
+
+            $defaultVariantQuery = <<<'GRAPHQL'
+query GetDefaultProductVariant($id: ID!) {
+    product(id: $id) {
+        variants(first: 2) {
+            nodes {
+                id
+                title
+                sku
+            }
+        }
+    }
+}
+GRAPHQL;
+
+            $defaultResponse = shopifyGraphQL(
+                $defaultVariantQuery,
+                ['id' => $productGid]
+            );
+
+            $variants =
+                $defaultResponse['data']['data']['product']['variants']['nodes']
+                ?? [];
+
+            if (
+                count($variants) === 1 &&
+                $variants[0]['title'] === 'Default Title'
+            ) {
+
+                $variantId = $variants[0]['id'];
+
+            } else {
+
+                return [
+                    'success' => false,
+                    'message' => 'Shopify variant lookup failed. No matching SKU or single default variant was found.',
+                    'errors' => $lookup['errors'] ?? [],
+                    'fallback_response' => $defaultResponse
+                ];
+            }
+        }
     }
     $compareAtPrice = (
         is_numeric($originalPrice) &&

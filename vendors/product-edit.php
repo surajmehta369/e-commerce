@@ -1,9 +1,10 @@
 <?php
 
-require_once "auth.php";
-require_once "../connection/dbconnect.php";
-require_once "../shopify/functions.php";
-require_once "../zoho/zoho_functions.php";
+require_once __DIR__ . '/includes/layout.php';
+require_once __DIR__ . '/../shopify/functions.php';
+require_once __DIR__ . '/../zoho/zoho_functions.php';
+
+$vendorId = (int) $_SESSION['user_id'];
 
 $database = new Database();
 $db = $database->connect();
@@ -162,6 +163,10 @@ $productStmt = $db->prepare("
         original_price,
         discount,
         stock,
+        weight,
+        length,
+        width,
+        height,
         category_id,
         brand_id,
         status,
@@ -209,6 +214,10 @@ $variantStmt = $db->prepare("
         price,
         original_price,
         stock,
+        weight,
+        length,
+        width,
+        height,
         attributes,
         status
     FROM product_variants
@@ -266,11 +275,15 @@ $brandStmt = $db->query("
 ");
 
 $brands = $brandStmt->fetchAll(PDO::FETCH_ASSOC);
-
 $errors = [];
 $success = '';
 
-if ($_SERVER['REQUEST_METHOD'] === 'POST') {
+if (
+    $_SERVER['REQUEST_METHOD'] === 'POST' &&
+    !vendorVerifyCsrf()
+) {
+    $errors[] = 'Invalid or expired security token. Please refresh the page and try again.';
+} elseif ($_SERVER['REQUEST_METHOD'] === 'POST') {
 
     $sku = trim($_POST['sku'] ?? '');
     $title = trim($_POST['title'] ?? '');
@@ -280,6 +293,32 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
     $originalPrice = (float) ($_POST['original_price'] ?? 0);
 
     $stock = (int) ($_POST['stock'] ?? 0);
+
+    $weight = trim($_POST['weight'] ?? '');
+    $length = trim($_POST['length'] ?? '');
+    $width  = trim($_POST['width'] ?? '');
+    $height = trim($_POST['height'] ?? '');
+
+    $validateMeasurement = static function (
+        string $value,
+        string $label
+    ) use (&$errors) {
+        if ($value === '') {
+            return null;
+        }
+
+        if (!is_numeric($value) || (float) $value <= 0) {
+            $errors[] = $label . ' must be a number greater than zero.';
+            return null;
+        }
+
+        return (float) $value;
+    };
+
+    $weight = $validateMeasurement($weight, 'Weight');
+    $length = $validateMeasurement($length, 'Length');
+    $width  = $validateMeasurement($width, 'Width');
+    $height = $validateMeasurement($height, 'Height');
 
     $submittedVariants = $_POST['variants'] ?? [];
 
@@ -470,7 +509,41 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
                 $variant['stock'] ?? null,
                 FILTER_VALIDATE_INT
             );
+            $variantWeight = trim(
+                (string) ($variant['weight'] ?? '')
+            );
 
+            $variantLength = trim(
+                (string) ($variant['length'] ?? '')
+            );
+
+            $variantWidth = trim(
+                (string) ($variant['width'] ?? '')
+            );
+
+            $variantHeight = trim(
+                (string) ($variant['height'] ?? '')
+            );
+
+            $variantWeight = $validateMeasurement(
+                $variantWeight,
+                'Variant ' . ($index + 1) . ' weight'
+            );
+
+            $variantLength = $validateMeasurement(
+                $variantLength,
+                'Variant ' . ($index + 1) . ' length'
+            );
+
+            $variantWidth = $validateMeasurement(
+                $variantWidth,
+                'Variant ' . ($index + 1) . ' width'
+            );
+
+            $variantHeight = $validateMeasurement(
+                $variantHeight,
+                'Variant ' . ($index + 1) . ' height'
+            );
             $variantStatus = isset($variant['status'])
                 ? (int) $variant['status']
                 : 1;
@@ -573,6 +646,10 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
                     'price' => (float) $variantPrice,
                     'original_price' => (float) $variantOriginalPrice,
                     'stock' => (int) $variantStock,
+                    'weight' => $variantWeight,
+                    'length' => $variantLength,
+                    'width' => $variantWidth,
+                    'height' => $variantHeight,
                     'attributes' => $attributes,
                     'status' => $variantStatus,
                     'form_index' => $index
@@ -723,6 +800,10 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
         original_price = :original_price,
         discount = :discount,
         stock = :stock,
+        weight = :weight,
+        length = :length,
+        width = :width,
+        height = :height,
         category_id = :category_id,
         brand_id = :brand_id,
         status = 0
@@ -739,6 +820,10 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
                 ':original_price' => $originalPrice,
                 ':discount' => $discount,
                 ':stock' => $stock,
+                ':weight' => $weight,
+                ':length' => $length,
+                ':width' => $width,
+                ':height' => $height,
                 ':category_id' => $categoryId,
                 ':brand_id' => $brandId,
                 ':id' => $productId,
@@ -796,6 +881,10 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
             price,
             original_price,
             stock,
+            weight,
+            length,
+            width,
+            height,
             attributes,
             status
         )
@@ -807,24 +896,32 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
             :price,
             :original_price,
             :stock,
+            :weight,
+            :length,
+            :width,
+            :height,
             :attributes,
             :status
         )
     ");
 
                 $updateVariantStmt = $db->prepare("
-        UPDATE product_variants
-        SET
-            variant_title = :variant_title,
-            sku = :sku,
-            price = :price,
-            original_price = :original_price,
-            stock = :stock,
-            attributes = :attributes,
-            status = :status
-        WHERE id = :variant_id
-          AND product_id = :product_id
-    ");
+    UPDATE product_variants
+    SET
+        variant_title = :variant_title,
+        sku = :sku,
+        price = :price,
+        original_price = :original_price,
+        stock = :stock,
+        weight = :weight,
+        length = :length,
+        width = :width,
+        height = :height,
+        attributes = :attributes,
+        status = :status
+    WHERE id = :variant_id
+      AND product_id = :product_id
+");
 
                 $insertVariantImageStmt = $db->prepare("
         INSERT INTO product_variant_images
@@ -852,6 +949,10 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
                         ':price' => $variant['price'],
                         ':original_price' => $variant['original_price'],
                         ':stock' => $variant['stock'],
+                        ':weight' => $variant['weight'],
+                        ':length' => $variant['length'],
+                        ':width' => $variant['width'],
+                        ':height' => $variant['height'],
                         ':attributes' => $variant['attributes'],
                         ':status' => $variant['status']
                     ];
@@ -1020,510 +1121,483 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
 }
 
 ?>
-<!DOCTYPE html>
-<html lang="en">
 
-<head>
+<?php vendorHeader('Edit Product', 'products'); ?>
 
-    <meta charset="UTF-8">
-
-    <meta
-        name="viewport"
-        content="width=device-width, initial-scale=1.0">
-
-    <title>Edit Product</title>
-    <style>
-        .image-tile {
-            display: inline-block;
-            position: relative;
-        }
-
-        .image-cut-btn {
-            position: absolute;
-            top: -7px;
-            right: -7px;
-            width: 24px;
-            height: 24px;
-            padding: 0;
-            line-height: 20px;
-            border-radius: 50%;
-            font-weight: 700;
-        }
-    </style>
-
-    <link
-        href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.3/dist/css/bootstrap.min.css"
-        rel="stylesheet">
-
-</head>
-
-<body>
+<div class="container-fluid py-4">
 
     <div class="container-fluid">
 
         <div class="row">
 
             <!-- Sidebar -->
-
-            <div class="col-md-2 bg-dark text-white min-vh-100 p-3">
-
-                <h4 class="mb-4">
-                    Vendor Panel
-                </h4>
-
-                <ul class="nav flex-column">
-
-                    <li class="nav-item mb-2">
-
-                        <a
-                            href="index.php"
-                            class="nav-link text-white">
-
-                            Dashboard
-
-                        </a>
-
-                    </li>
-
-                    <li class="nav-item mb-2">
-
-                        <a
-                            href="products.php"
-                            class="nav-link text-white">
-
-                            Products
-
-                        </a>
-
-                    </li>
-
-                    <li class="nav-item mb-2">
-
-                        <a
-                            href="orders.php"
-                            class="nav-link text-white">
-
-                            Orders
-
-                        </a>
-
-                    </li>
-                    <li class="nav-item mb-2">
-
-                        <a
-                            href="reviews.php"
-                            class="nav-link text-white">
-
-                            Product Reviews
-
-                        </a>
-
-                    </li>
-
-                    <li class="nav-item mb-2">
-
-                        <a
-                            href="profile.php"
-                            class="nav-link text-white">
-
-                            Store Profile
-
-                        </a>
-
-                    </li>
-
-                    <li class="nav-item mt-3">
-
-                        <a
-                            href="../outh/logout.php"
-                            class="nav-link text-danger">
-
-                            Logout
-
-                        </a>
-
-                    </li>
-
-                </ul>
-
-            </div>
-            <div class="col-md-10 p-4">
-
-                <div class="d-flex justify-content-between align-items-center mb-4">
-                    <div>
-                        <h2>
-                            Edit Product
-                        </h2>
-                        <p class="text-muted mb-0">
-                            Update your product information
-                        </p>
-
-                    </div>
-
-                    <a href="products.php"
-                        class="btn btn-secondary">
-
-                        Back to Products
-
-                    </a>
+            <div class="d-flex justify-content-between align-items-center mb-4">
+                <div>
+                    <h2>
+                        Edit Product
+                    </h2>
+                    <p class="text-muted mb-0">
+                        Update your product information
+                    </p>
 
                 </div>
-                <?php if (!empty($errors)): ?>
 
-                    <div class="alert alert-danger">
+                <a href="products.php"
+                    class="btn btn-secondary">
 
-                        <ul class="mb-0">
+                    Back to Products
 
-                            <?php foreach ($errors as $error): ?>
+                </a>
 
-                                <li>
-                                    <?= htmlspecialchars($error) ?>
-                                </li>
+            </div>
+            <?php if (!empty($errors)): ?>
 
-                            <?php endforeach; ?>
+                <div class="alert alert-danger">
 
-                        </ul>
+                    <ul class="mb-0">
 
-                    </div>
+                        <?php foreach ($errors as $error): ?>
 
-                <?php endif; ?>
-                <?php if ($success): ?>
+                            <li>
+                                <?= htmlspecialchars($error) ?>
+                            </li>
 
-                    <div class="alert alert-success">
+                        <?php endforeach; ?>
 
-                        <?= htmlspecialchars($success) ?>
+                    </ul>
 
-                    </div>
+                </div>
 
-                <?php endif; ?>
+            <?php endif; ?>
+            <?php if ($success): ?>
+
+                <div class="alert alert-success">
+
+                    <?= htmlspecialchars($success) ?>
+
+                </div>
+
+            <?php endif; ?>
 
 
-                <div class="card shadow-sm">
+            <div class="card shadow-sm">
 
-                    <div class="card-body">
+                <div class="card-body">
 
-                        <form
-                            method="POST"
-                            enctype="multipart/form-data">
+                    <form
+                        method="POST"
+                        enctype="multipart/form-data">
 
-                            <div class="row">
-                                <div class="col-md-6 mb-3">
+                        <input
+                            type="hidden"
+                            name="csrf_token"
+                            value="<?= vendorEscape(vendorCsrfToken()); ?>">
 
-                                    <label class="form-label">
-                                        SKU
-                                    </label>
+                        <div class="row">
+                            <div class="col-md-6 mb-3">
 
-                                    <input
-                                        type="text"
-                                        name="sku"
-                                        class="form-control"
-                                        value="<?= htmlspecialchars($product['sku'] ?? '') ?>"
-                                        required>
+                                <label class="form-label">
+                                    SKU
+                                </label>
 
-                                </div>
-                                <div class="col-md-6 mb-3">
+                                <input
+                                    type="text"
+                                    name="sku"
+                                    class="form-control"
+                                    value="<?= htmlspecialchars($product['sku'] ?? '') ?>"
+                                    required>
 
-                                    <label class="form-label">
-                                        Product Title
-                                    </label>
+                            </div>
+                            <div class="col-md-6 mb-3">
 
-                                    <input
-                                        type="text"
-                                        name="title"
-                                        class="form-control"
-                                        value="<?= htmlspecialchars($product['title'] ?? '') ?>"
-                                        required>
+                                <label class="form-label">
+                                    Product Title
+                                </label>
 
-                                </div>
-                                <div class="col-md-6 mb-3">
+                                <input
+                                    type="text"
+                                    name="title"
+                                    class="form-control"
+                                    value="<?= htmlspecialchars($product['title'] ?? '') ?>"
+                                    required>
 
-                                    <label class="form-label">
-                                        Category
-                                    </label>
+                            </div>
+                            <div class="col-md-6 mb-3">
 
-                                    <select
-                                        name="category_id"
-                                        class="form-select"
-                                        required>
+                                <label class="form-label">
+                                    Category
+                                </label>
 
-                                        <option value="">
-                                            Select Category
+                                <select
+                                    name="category_id"
+                                    class="form-select"
+                                    required>
+
+                                    <option value="">
+                                        Select Category
+                                    </option>
+
+                                    <?php foreach ($categories as $category): ?>
+
+                                        <option
+                                            value="<?= (int) $category['id'] ?>"
+                                            <?= ((int) $product['category_id'] === (int) $category['id']) ? 'selected' : '' ?>>
+
+                                            <?= htmlspecialchars($category['name']) ?>
+
                                         </option>
 
-                                        <?php foreach ($categories as $category): ?>
+                                    <?php endforeach; ?>
 
-                                            <option
-                                                value="<?= (int) $category['id'] ?>"
-                                                <?= ((int) $product['category_id'] === (int) $category['id']) ? 'selected' : '' ?>>
+                                </select>
 
-                                                <?= htmlspecialchars($category['name']) ?>
+                            </div>
+                            <div class="col-md-6 mb-3">
 
-                                            </option>
+                                <label class="form-label">
+                                    Brand
+                                </label>
 
-                                        <?php endforeach; ?>
+                                <select
+                                    name="brand_id"
+                                    class="form-select"
+                                    required>
 
-                                    </select>
+                                    <option value="">
+                                        Select Brand
+                                    </option>
 
-                                </div>
-                                <div class="col-md-6 mb-3">
+                                    <?php foreach ($brands as $brand): ?>
 
-                                    <label class="form-label">
-                                        Brand
-                                    </label>
+                                        <option
+                                            value="<?= (int) $brand['id'] ?>"
+                                            <?= ((int) $product['brand_id'] === (int) $brand['id']) ? 'selected' : '' ?>>
 
-                                    <select
-                                        name="brand_id"
-                                        class="form-select"
-                                        required>
+                                            <?= htmlspecialchars($brand['name']) ?>
 
-                                        <option value="">
-                                            Select Brand
                                         </option>
 
-                                        <?php foreach ($brands as $brand): ?>
+                                    <?php endforeach; ?>
 
-                                            <option
-                                                value="<?= (int) $brand['id'] ?>"
-                                                <?= ((int) $product['brand_id'] === (int) $brand['id']) ? 'selected' : '' ?>>
+                                </select>
 
-                                                <?= htmlspecialchars($brand['name']) ?>
+                            </div>
+                            <div class="col-md-4 mb-3">
 
-                                            </option>
+                                <label class="form-label">
+                                    Selling Price
+                                </label>
 
-                                        <?php endforeach; ?>
+                                <input
+                                    type="number"
+                                    name="price"
+                                    class="form-control"
+                                    step="0.01"
+                                    min="0"
+                                    value="<?= htmlspecialchars($product['price'] ?? '') ?>"
+                                    required>
 
-                                    </select>
+                            </div>
+                            <div class="col-md-4 mb-3">
+
+                                <label class="form-label">
+                                    Original Price
+                                </label>
+
+                                <input
+                                    type="number"
+                                    name="original_price"
+                                    class="form-control"
+                                    step="0.01"
+                                    min="0"
+                                    value="<?= htmlspecialchars($product['original_price'] ?? '') ?>"
+                                    required>
+
+                            </div>
+
+                            <div class="col-md-4 mb-3">
+
+                                <label class="form-label">
+                                    Stock
+                                </label>
+
+                                <input
+                                    type="number"
+                                    name="stock"
+                                    class="form-control"
+                                    min="0"
+                                    value="<?= htmlspecialchars($product['stock'] ?? 0) ?>"
+                                    required>
+
+                            </div>
+                            <div class="col-md-3">
+                                <label class="form-label">Weight (grams)</label>
+                                <input
+                                    type="number"
+                                    name="weight"
+                                    class="form-control"
+                                    min="0"
+                                    step="0.01"
+                                    value="<?= htmlspecialchars($product['weight'] ?? '') ?>">
+                            </div>
+
+                            <div class="col-md-3">
+                                <label class="form-label">Length (cm)</label>
+                                <input
+                                    type="number"
+                                    name="length"
+                                    class="form-control"
+                                    min="0"
+                                    step="0.01"
+                                    value="<?= htmlspecialchars($product['length'] ?? '') ?>">
+                            </div>
+
+                            <div class="col-md-3">
+                                <label class="form-label">Width (cm)</label>
+                                <input
+                                    type="number"
+                                    name="width"
+                                    class="form-control"
+                                    min="0"
+                                    step="0.01"
+                                    value="<?= htmlspecialchars($product['width'] ?? '') ?>">
+                            </div>
+
+                            <div class="col-md-3">
+                                <label class="form-label">Height (cm)</label>
+                                <input
+                                    type="number"
+                                    name="height"
+                                    class="form-control"
+                                    min="0"
+                                    step="0.01"
+                                    value="<?= htmlspecialchars($product['height'] ?? '') ?>">
+                            </div>
+                            <div class="col-md-6 mb-3">
+
+                                <label class="form-label">
+                                    Current Image
+                                </label>
+
+                                <div>
+
+                                    <?php if (!empty($product['image'])): ?>
+
+                                        <div class="image-tile position-relative" data-image-tile>
+                                            <img
+                                                src="../<?= htmlspecialchars($product['image']) ?>"
+                                                alt="Product"
+                                                style="width: 120px; height: 120px; object-fit: cover;"
+                                                class="rounded border">
+                                            <button type="button" class="btn btn-danger btn-sm image-cut-btn" aria-label="Remove main product image" data-remove-name="remove_main_image" data-remove-id="1">×</button>
+                                        </div>
+
+                                    <?php else: ?>
+
+                                        <p class="text-muted">
+                                            No image available
+                                        </p>
+
+                                    <?php endif; ?>
 
                                 </div>
-                                <div class="col-md-4 mb-3">
 
-                                    <label class="form-label">
-                                        Selling Price
-                                    </label>
+                            </div>
 
-                                    <input
-                                        type="number"
-                                        name="price"
-                                        class="form-control"
-                                        step="0.01"
-                                        min="0"
-                                        value="<?= htmlspecialchars($product['price'] ?? '') ?>"
-                                        required>
+                            <div class="col-md-6 mb-3">
 
-                                </div>
-                                <div class="col-md-4 mb-3">
+                                <label class="form-label">
+                                    Replace Image
+                                </label>
 
-                                    <label class="form-label">
-                                        Original Price
-                                    </label>
+                                <input
+                                    type="file"
+                                    name="image"
+                                    class="form-control"
+                                    accept=".jpg,.jpeg,.jfif,.png,.webp">
 
-                                    <input
-                                        type="number"
-                                        name="original_price"
-                                        class="form-control"
-                                        step="0.01"
-                                        min="0"
-                                        value="<?= htmlspecialchars($product['original_price'] ?? '') ?>"
-                                        required>
+                                <small class="text-muted">
+                                    JPG, JPEG, JFIF, PNG or WEBP. Maximum 5 MB.
+                                </small>
 
-                                </div>
+                            </div>
+                            <div class="col-md-12 mb-3">
 
-                                <div class="col-md-4 mb-3">
+                                <label class="form-label">
+                                    Description
+                                </label>
 
-                                    <label class="form-label">
-                                        Stock
-                                    </label>
-
-                                    <input
-                                        type="number"
-                                        name="stock"
-                                        class="form-control"
-                                        min="0"
-                                        value="<?= htmlspecialchars($product['stock'] ?? 0) ?>"
-                                        required>
-
-                                </div>
-                                <div class="col-md-6 mb-3">
-
-                                    <label class="form-label">
-                                        Current Image
-                                    </label>
-
-                                    <div>
-
-                                        <?php if (!empty($product['image'])): ?>
-
-                                            <div class="image-tile position-relative" data-image-tile>
-                                                <img
-                                                    src="../<?= htmlspecialchars($product['image']) ?>"
-                                                    alt="Product"
-                                                    style="width: 120px; height: 120px; object-fit: cover;"
-                                                    class="rounded border">
-                                                <button type="button" class="btn btn-danger btn-sm image-cut-btn" aria-label="Remove main product image" data-remove-name="remove_main_image" data-remove-id="1">×</button>
-                                            </div>
-
-                                        <?php else: ?>
-
-                                            <p class="text-muted">
-                                                No image available
-                                            </p>
-
-                                        <?php endif; ?>
-
-                                    </div>
-
-                                </div>
-
-                                <div class="col-md-6 mb-3">
-
-                                    <label class="form-label">
-                                        Replace Image
-                                    </label>
-
-                                    <input
-                                        type="file"
-                                        name="image"
-                                        class="form-control"
-                                        accept=".jpg,.jpeg,.jfif,.png,.webp">
-
-                                    <small class="text-muted">
-                                        JPG, JPEG, JFIF, PNG or WEBP. Maximum 5 MB.
-                                    </small>
-
-                                </div>
-                                <div class="col-md-12 mb-3">
-
-                                    <label class="form-label">
-                                        Description
-                                    </label>
-
-                                    <textarea name="description" class="form-control" rows="6">
+                                <textarea name="description" class="form-control" rows="6">
 
                                     <?= htmlspecialchars($product['description'] ?? '') ?></textarea>
 
+                            </div>
+                            <div class="col-md-12 mb-3">
+
+                                <label class="form-label">
+                                    Current Status
+                                </label>
+
+                                <div>
+
+                                    <?php if ((int) $product['status'] === 1): ?>
+
+                                        <span class="badge bg-success">
+                                            Active
+                                        </span>
+
+                                    <?php else: ?>
+                                        <span class="badge bg-warning text-dark">
+                                            Pending Approval
+                                        </span>
+                                    <?php endif; ?>
                                 </div>
-                                <div class="col-md-12 mb-3">
+                                <small class="text-muted">
+                                    Product status is controlled by the admin.
+                                </small>
 
-                                    <label class="form-label">
-                                        Current Status
-                                    </label>
+                            </div>
 
+                            <!-- Variant management -->
+                            <div class="card mt-4">
+                                <div class="card-header d-flex justify-content-between align-items-center">
                                     <div>
-
-                                        <?php if ((int) $product['status'] === 1): ?>
-
-                                            <span class="badge bg-success">
-                                                Active
-                                            </span>
-
-                                        <?php else: ?>
-                                            <span class="badge bg-warning text-dark">
-                                                Pending Approval
-                                            </span>
-                                        <?php endif; ?>
+                                        <h5 class="mb-1">Product Variants</h5>
+                                        <small class="text-muted">
+                                            Manage sizes, colors, SKUs, prices and stock.
+                                        </small>
                                     </div>
-                                    <small class="text-muted">
-                                        Product status is controlled by the admin.
-                                    </small>
 
+                                    <button type="button" class="btn btn-primary btn-sm" id="addVariantBtn">
+                                        + Add Variant
+                                    </button>
                                 </div>
 
-                                <!-- Variant management -->
-                                <div class="card mt-4">
-                                    <div class="card-header d-flex justify-content-between align-items-center">
-                                        <div>
-                                            <h5 class="mb-1">Product Variants</h5>
-                                            <small class="text-muted">
-                                                Manage sizes, colors, SKUs, prices and stock.
-                                            </small>
-                                        </div>
+                                <div class="card-body">
+                                    <input type="hidden" name="variants_submitted" value="1">
 
-                                        <button type="button" class="btn btn-primary btn-sm" id="addVariantBtn">
-                                            + Add Variant
+                                    <div id="variantsContainer"></div>
+
+                                    <div id="noVariantsMessage" class="text-muted text-center py-3">
+                                        No variants added yet. Click "Add Variant" to create one.
+                                    </div>
+
+                                    <small class="text-muted d-block mt-2">
+                                        Deactivating a variant keeps its record but excludes its stock
+                                        from the active variant stock total.
+                                    </small>
+                                </div>
+                            </div>
+
+                            <template id="variantTemplate">
+                                <div class="variant-item border rounded p-3 mb-3">
+                                    <div class="d-flex justify-content-between align-items-center mb-3">
+                                        <h6 class="variant-heading mb-0">Variant</h6>
+
+                                        <button type="button" class="btn btn-outline-danger btn-sm removeVariantBtn">
+                                            Remove
                                         </button>
                                     </div>
 
-                                    <div class="card-body">
-                                        <input type="hidden" name="variants_submitted" value="1">
+                                    <input type="hidden" data-field="id" value="0">
 
-                                        <div id="variantsContainer"></div>
-
-                                        <div id="noVariantsMessage" class="text-muted text-center py-3">
-                                            No variants added yet. Click "Add Variant" to create one.
+                                    <div class="row">
+                                        <div class="col-md-6 mb-3">
+                                            <label class="form-label">Variant Name</label>
+                                            <input type="text" class="form-control"
+                                                data-field="variant_title"
+                                                placeholder="e.g. Red - Large" required>
                                         </div>
 
-                                        <small class="text-muted d-block mt-2">
-                                            Deactivating a variant keeps its record but excludes its stock
-                                            from the active variant stock total.
-                                        </small>
+                                        <div class="col-md-6 mb-3">
+                                            <label class="form-label">SKU</label>
+                                            <input type="text" class="form-control"
+                                                data-field="sku"
+                                                placeholder="e.g. SHIRT-RED-L" required>
+                                        </div>
+
+                                        <div class="col-md-3 mb-3">
+                                            <label class="form-label">Selling Price</label>
+                                            <input type="number" class="form-control"
+                                                data-field="price" min="0" step="0.01" required>
+                                        </div>
+
+                                        <div class="col-md-3 mb-3">
+                                            <label class="form-label">Original Price</label>
+                                            <input type="number" class="form-control"
+                                                data-field="original_price" min="0" step="0.01" required>
+                                        </div>
+
+                                        <div class="col-md-3 mb-3">
+                                            <label class="form-label">Stock</label>
+                                            <input type="number" class="form-control"
+                                                data-field="stock" min="0" step="1" required>
+                                        </div>
+
+                                        <div class="col-md-3">
+                                            <label class="form-label">Weight (grams)</label>
+                                            <input
+                                                type="number"
+                                                class="form-control"
+                                                data-field="weight"
+                                                min="0"
+                                                step="0.01"
+                                                placeholder="Weight">
+                                        </div>
+
+                                        <div class="col-md-3">
+                                            <label class="form-label">Length (cm)</label>
+                                            <input
+                                                type="number"
+                                                class="form-control"
+                                                data-field="length"
+                                                min="0"
+                                                step="0.01"
+                                                placeholder="Length">
+                                        </div>
+
+                                        <div class="col-md-3">
+                                            <label class="form-label">Width (cm)</label>
+                                            <input
+                                                type="number"
+                                                class="form-control"
+                                                data-field="width"
+                                                min="0"
+                                                step="0.01"
+                                                placeholder="Width">
+                                        </div>
+
+                                        <div class="col-md-3">
+                                            <label class="form-label">Height (cm)</label>
+                                            <input
+                                                type="number"
+                                                class="form-control"
+                                                data-field="height"
+                                                min="0"
+                                                step="0.01"
+                                                placeholder="Height">
+                                        </div>
+
+                                        <div class="col-md-3 mb-3">
+                                            <label class="form-label">Status</label>
+                                            <select class="form-select" data-field="status">
+                                                <option value="1">Active</option>
+                                                <option value="0">Inactive</option>
+                                            </select>
+                                        </div>
+
+                                        <div class="col-12 mb-3">
+                                            <label class="form-label">Attributes (JSON)</label>
+                                            <textarea class="form-control"
+                                                data-field="attributes"
+                                                rows="2"
+                                                placeholder='{"Color":"Red","Size":"Large"}'></textarea>
+                                            <small class="text-muted">
+                                                Example: {"Color":"Red","Size":"Large"}
+                                            </small>
+                                        </div>
                                     </div>
-                                </div>
-
-                                <template id="variantTemplate">
-                                    <div class="variant-item border rounded p-3 mb-3">
-                                        <div class="d-flex justify-content-between align-items-center mb-3">
-                                            <h6 class="variant-heading mb-0">Variant</h6>
-
-                                            <button type="button" class="btn btn-outline-danger btn-sm removeVariantBtn">
-                                                Remove
-                                            </button>
-                                        </div>
-
-                                        <input type="hidden" data-field="id" value="0">
-
-                                        <div class="row">
-                                            <div class="col-md-6 mb-3">
-                                                <label class="form-label">Variant Name</label>
-                                                <input type="text" class="form-control"
-                                                    data-field="variant_title"
-                                                    placeholder="e.g. Red - Large" required>
-                                            </div>
-
-                                            <div class="col-md-6 mb-3">
-                                                <label class="form-label">SKU</label>
-                                                <input type="text" class="form-control"
-                                                    data-field="sku"
-                                                    placeholder="e.g. SHIRT-RED-L" required>
-                                            </div>
-
-                                            <div class="col-md-3 mb-3">
-                                                <label class="form-label">Selling Price</label>
-                                                <input type="number" class="form-control"
-                                                    data-field="price" min="0" step="0.01" required>
-                                            </div>
-
-                                            <div class="col-md-3 mb-3">
-                                                <label class="form-label">Original Price</label>
-                                                <input type="number" class="form-control"
-                                                    data-field="original_price" min="0" step="0.01" required>
-                                            </div>
-
-                                            <div class="col-md-3 mb-3">
-                                                <label class="form-label">Stock</label>
-                                                <input type="number" class="form-control"
-                                                    data-field="stock" min="0" step="1" required>
-                                            </div>
-
-                                            <div class="col-md-3 mb-3">
-                                                <label class="form-label">Status</label>
-                                                <select class="form-select" data-field="status">
-                                                    <option value="1">Active</option>
-                                                    <option value="0">Inactive</option>
-                                                </select>
-                                            </div>
-
-                                            <div class="col-12 mb-3">
-                                                <label class="form-label">Attributes (JSON)</label>
-                                                <textarea class="form-control"
-                                                    data-field="attributes"
-                                                    rows="2"
-                                                    placeholder='{"Color":"Red","Size":"Large"}'></textarea>
-                                                <small class="text-muted">
-                                                    Example: {"Color":"Red","Size":"Large"}
-                                                </small>
-                                            </div>
-                                        </div>
-                                        <!-- <script>
+                                    <!-- <script>
                                             document.addEventListener('DOMContentLoaded', function() {
                                                 const galleryInput = document.querySelector('input[name="gallery_images[]"]');
                                                 const galleryPreview = document.getElementById('galleryPreview');
@@ -1547,267 +1621,343 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
                                                 });
                                             });
                                         </script> -->
-                                    </div>
-                                </template>
-                                <div class="card mt-4">
-                                    <div class="card-header">
-                                        <h5 class="mb-0">Additional Product Images</h5>
-                                    </div>
-
-                                    <div class="card-body">
-                                        <label class="form-label">Upload Gallery Images</label>
-                                        <input type="file"
-                                            name="gallery_images[]"
-                                            class="form-control"
-                                            accept=".jpg,.jpeg,.jfif,.png,.webp"
-                                            multiple>
-
-                                        <small class="text-muted d-block mt-2">
-                                            Select multiple images. Your current main image and gallery images
-                                            will remain unchanged unless explicitly removed.
-                                        </small>
-
-                                        <div id="galleryPreview" class="d-flex flex-wrap gap-2 mt-3">
-                                            <?php foreach ($galleryImages as $galleryImage): ?>
-                                                <div class="image-tile position-relative" data-image-tile>
-                                                    <img
-                                                        src="../<?= htmlspecialchars(ltrim($galleryImage['image_path'], '/'), ENT_QUOTES, 'UTF-8') ?>"
-                                                        alt="<?= htmlspecialchars($galleryImage['alt_text'] ?? 'Product image', ENT_QUOTES, 'UTF-8') ?>"
-                                                        style="width:85px;height:85px;object-fit:cover;"
-                                                        class="border rounded">
-                                                    <button type="button" class="btn btn-danger btn-sm image-cut-btn" aria-label="Remove gallery image" data-remove-name="remove_gallery_images[]" data-remove-id="<?= (int) $galleryImage['id'] ?>">×</button>
-                                                </div>
-                                            <?php endforeach; ?>
-                                        </div>
-                                    </div>
+                                </div>
+                            </template>
+                            <div class="card mt-4">
+                                <div class="card-header">
+                                    <h5 class="mb-0">Additional Product Images</h5>
                                 </div>
 
-                                <div class="col-md-12">
-                                    <button type="submit" class="btn btn-primary">Update Product</button>
-                                    <a href="products.php" class="btn btn-secondary">Cancel</a>
+                                <div class="card-body">
+                                    <label class="form-label">Upload Gallery Images</label>
+                                    <input type="file"
+                                        name="gallery_images[]"
+                                        class="form-control"
+                                        accept=".jpg,.jpeg,.jfif,.png,.webp"
+                                        multiple>
 
+                                    <small class="text-muted d-block mt-2">
+                                        Select multiple images. Your current main image and gallery images
+                                        will remain unchanged unless explicitly removed.
+                                    </small>
+
+                                    <div id="galleryPreview" class="d-flex flex-wrap gap-2 mt-3">
+                                        <?php foreach ($galleryImages as $galleryImage): ?>
+                                            <div class="image-tile position-relative" data-image-tile>
+                                                <img
+                                                    src="../<?= htmlspecialchars(ltrim($galleryImage['image_path'], '/'), ENT_QUOTES, 'UTF-8') ?>"
+                                                    alt="<?= htmlspecialchars($galleryImage['alt_text'] ?? 'Product image', ENT_QUOTES, 'UTF-8') ?>"
+                                                    style="width:85px;height:85px;object-fit:cover;"
+                                                    class="border rounded">
+                                                <button type="button" class="btn btn-danger btn-sm image-cut-btn" aria-label="Remove gallery image" data-remove-name="remove_gallery_images[]" data-remove-id="<?= (int) $galleryImage['id'] ?>">×</button>
+                                            </div>
+                                        <?php endforeach; ?>
+                                    </div>
                                 </div>
                             </div>
-                        </form>
-                    </div>
+
+                            <div class="col-md-12">
+                                <button type="submit" class="btn btn-primary">Update Product</button>
+                                <a href="products.php" class="btn btn-secondary">Cancel</a>
+
+                            </div>
+                        </div>
+                    </form>
                 </div>
             </div>
         </div>
-    </div>
-    <script>
-        window.existingProductVariants = <?= json_encode(
-                                                array_map(static function ($variant) use ($variantImages) {
-                                                    $variantId = (int) $variant['id'];
+        <script>
+            window.existingProductVariants = <?= json_encode(
+                                                    array_map(static function ($variant) use ($variantImages) {
+                                                        $variantId = (int) $variant['id'];
 
-                                                    return [
-                                                        'id' => $variantId,
-                                                        'variant_title' => $variant['variant_title'] ?? '',
-                                                        'sku' => $variant['sku'] ?? '',
-                                                        'price' => $variant['price'] ?? 0,
-                                                        'original_price' => $variant['original_price'] ?? 0,
-                                                        'stock' => $variant['stock'] ?? 0,
-                                                        'status' => $variant['status'] ?? 1,
-                                                        'attributes' => $variant['attributes'] ?? '{}',
-                                                        'images' => array_values(array_map(
-                                                            static function ($image) {
-                                                                return [
-                                                                    'id' => (int) ($image['id'] ?? 0),
-                                                                    'image_path' => $image['image_path'] ?? '',
-                                                                    'alt_text' => $image['alt_text'] ?? ''
-                                                                ];
-                                                            },
-                                                            $variantImages[$variantId] ?? []
-                                                        ))
-                                                    ];
-                                                }, $variants),
-                                                JSON_HEX_TAG | JSON_HEX_APOS | JSON_HEX_AMP | JSON_HEX_QUOT
-                                            ) ?>;
+                                                        return [
+                                                            'id' => $variantId,
+                                                            'variant_title' => $variant['variant_title'] ?? '',
+                                                            'sku' => $variant['sku'] ?? '',
+                                                            'price' => $variant['price'] ?? 0,
+                                                            'original_price' => $variant['original_price'] ?? 0,
+                                                            'stock' => $variant['stock'] ?? 0,
+                                                            'weight' => $variant['weight'] ?? '',
+                                                            'length' => $variant['length'] ?? '',
+                                                            'width'  => $variant['width'] ?? '',
+                                                            'height' => $variant['height'] ?? '',
+                                                            'status' => $variant['status'] ?? 1,
+                                                            'attributes' => $variant['attributes'] ?? '{}',
+                                                            'images' => array_values(array_map(
+                                                                static function ($image) {
+                                                                    return [
+                                                                        'id' => (int) ($image['id'] ?? 0),
+                                                                        'image_path' => $image['image_path'] ?? '',
+                                                                        'alt_text' => $image['alt_text'] ?? ''
+                                                                    ];
+                                                                },
+                                                                $variantImages[$variantId] ?? []
+                                                            ))
+                                                        ];
+                                                    }, $variants),
+                                                    JSON_HEX_TAG | JSON_HEX_APOS | JSON_HEX_AMP | JSON_HEX_QUOT
+                                                ) ?>;
 
 
-        document.addEventListener('DOMContentLoaded', function() {
-            const container = document.getElementById('variantsContainer');
-            const template = document.getElementById('variantTemplate');
-            const addButton = document.getElementById('addVariantBtn');
-            const emptyMessage = document.getElementById('noVariantsMessage');
+            document.addEventListener('DOMContentLoaded', () => {
+                function initializeVariantEditor() {
+                    const container = document.getElementById('variantsContainer');
+                    const template = document.getElementById('variantTemplate');
+                    const addButton = document.getElementById('addVariantBtn');
+                    const emptyMessage = document.getElementById('noVariantsMessage');
 
-            if (!container || !template || !addButton) return;
+                    if (!container || !template || !addButton || !emptyMessage) return;
 
-            let nextIndex = 0;
+                    // Prevent duplicate initialization on the same page.
+                    if (container.dataset.initialized === '1') return;
+                    container.dataset.initialized = '1';
 
-            function refreshVariantNames() {
-                const items = container.querySelectorAll('.variant-item');
+                    function refreshVariantNames() {
+                        const items = container.querySelectorAll('.variant-item');
 
-                items.forEach((item, index) => {
-                    item.querySelector('.variant-heading').textContent =
-                        'Variant ' + (index + 1);
+                        items.forEach((item, index) => {
+                            item.querySelector('.variant-heading').textContent =
+                                'Variant ' + (index + 1);
 
-                    item.querySelectorAll('[data-field]').forEach(input => {
-                        input.name = `variants[${index}][${input.dataset.field}]`;
-                    });
+                            item.querySelectorAll('[data-field]').forEach(input => {
+                                input.name = `variants[${index}][${input.dataset.field}]`;
+                            });
 
-                    const imageInput = item.querySelector('[data-variant-images]');
+                            const imageInput = item.querySelector('[data-variant-images]');
 
-                    if (imageInput) {
-                        imageInput.name = `variants[${index}][images][]`;
+                            if (imageInput) {
+                                imageInput.name = `variants[${index}][images][]`;
+                            }
+                        });
+
+                        emptyMessage.style.display = items.length ? 'none' : 'block';
                     }
-                });
 
-                emptyMessage.style.display = items.length ? 'none' : 'block';
-            }
+                    function addVariant(data = {}) {
+                        const fragment = template.content.cloneNode(true);
+                        const item = fragment.querySelector('.variant-item');
 
+                        item.querySelectorAll('[data-field]').forEach(input => {
+                            const field = input.dataset.field;
 
-            function addVariant(data = {}) {
-                const fragment = template.content.cloneNode(true);
-                const item = fragment.querySelector('.variant-item');
-                item.querySelectorAll('[data-field]').forEach(input => {
-                    const field = input.dataset.field;
+                            if (Object.prototype.hasOwnProperty.call(data, field)) {
+                                input.value = data[field] ?? '';
+                            } else if (field === 'id') {
+                                input.value = '0';
+                            } else if (field === 'status') {
+                                input.value = '1';
+                            } else if (field === 'attributes') {
+                                input.value = '{}';
+                            } else {
+                                input.value = '';
+                            }
+                        });
 
-                    if (Object.prototype.hasOwnProperty.call(data, field)) {
-                        input.value = data[field] ?? '';
-                    } else if (field === 'id') {
-                        input.value = '0';
-                    } else if (field === 'status') {
-                        input.value = '1';
-                    } else if (field === 'attributes') {
-                        input.value = '{}';
-                    } else {
-                        input.value = '';
+                        item.querySelector('.removeVariantBtn').addEventListener('click', function() {
+                            item.remove();
+                            refreshVariantNames();
+                        });
+
+                        const imageSection = document.createElement('div');
+                        imageSection.className = 'col-12 mb-3';
+
+                        imageSection.innerHTML = `
+            <label class="form-label">Variant Images</label>
+            <input type="file"
+                   class="form-control"
+                   data-variant-images
+                   accept=".jpg,.jpeg,.jfif,.png,.webp"
+                   multiple>
+            <small class="text-muted">
+                Select multiple images. Existing images will be preserved.
+            </small>
+            <div class="variant-image-preview d-flex flex-wrap gap-2 mt-2"></div>
+        `;
+
+                        item.querySelector('.row').appendChild(imageSection);
+
+                        const preview = imageSection.querySelector('.variant-image-preview');
+                        const imageInput = imageSection.querySelector('[data-variant-images]');
+
+                        (Array.isArray(data.images) ? data.images : []).forEach(image => {
+                            if (!image.image_path) return;
+
+                            const img = document.createElement('img');
+                            img.src = '/e-commerce/' + image.image_path.replace(/^\/+/, '');
+                            img.alt = image.alt_text || 'Variant image';
+                            img.style.width = '75px';
+                            img.style.height = '75px';
+                            img.style.objectFit = 'cover';
+                            img.className = 'border rounded';
+
+                            const tile = document.createElement('div');
+                            tile.className = 'image-tile position-relative';
+                            tile.dataset.imageTile = '1';
+                            tile.appendChild(img);
+
+                            if (image.id) {
+                                const cutButton = document.createElement('button');
+                                cutButton.type = 'button';
+                                cutButton.className = 'btn btn-danger btn-sm image-cut-btn';
+                                cutButton.textContent = '×';
+                                cutButton.setAttribute('aria-label', 'Remove variant image');
+                                cutButton.dataset.removeName = 'remove_variant_images[]';
+                                cutButton.dataset.removeId = String(image.id);
+                                tile.appendChild(cutButton);
+                            }
+
+                            preview.appendChild(tile);
+                        });
+
+                        imageInput.addEventListener('change', function() {
+                            preview.querySelectorAll('[data-new-image-preview]').forEach(img => {
+                                URL.revokeObjectURL(img.src);
+                                img.remove();
+                            });
+
+                            Array.from(imageInput.files).forEach(file => {
+                                const img = document.createElement('img');
+                                img.src = URL.createObjectURL(file);
+                                img.alt = file.name;
+                                img.dataset.newImagePreview = '1';
+                                img.style.width = '75px';
+                                img.style.height = '75px';
+                                img.style.objectFit = 'cover';
+                                img.className = 'border rounded';
+
+                                preview.appendChild(img);
+                            });
+                        });
+
+                        container.appendChild(item);
+                        refreshVariantNames();
                     }
-                });
 
-                item.querySelector('.removeVariantBtn').addEventListener('click', function() {
-                    item.remove();
+                    addButton.addEventListener('click', () => addVariant());
+
+                    const existingVariants = window.existingProductVariants || [];
+                    existingVariants.forEach(variant => addVariant(variant));
+
                     refreshVariantNames();
-                });
-                const imageSection = document.createElement('div');
-                imageSection.className = 'mb-3';
+                }
 
-                imageSection.innerHTML = `
-        <label class="form-label">Variant Images</label>
-        <input type="file"
-               class="form-control"
-               data-variant-images
-               accept=".jpg,.jpeg,.jfif,.png,.webp"
-               multiple>
-        <small class="text-muted">
-            Select multiple images. Existing images will be preserved.
-        </small>
-        <div class="variant-image-preview d-flex flex-wrap gap-2 mt-2"></div>
-    `;
 
-                item.querySelector('.row').appendChild(imageSection);
+                function initializeGalleryPreview() {
+                    const galleryInput = document.querySelector('input[name="gallery_images[]"]');
+                    const galleryPreview = document.getElementById('galleryPreview');
 
-                const preview = imageSection.querySelector('.variant-image-preview');
-                const imageInput = imageSection.querySelector('[data-variant-images]');
-                (Array.isArray(data.images) ? data.images : []).forEach(image => {
-                    if (!image.image_path) return;
+                    if (!galleryInput || !galleryPreview) return;
 
-                    const img = document.createElement('img');
-                    img.src = '/e-commerce/' + image.image_path.replace(/^\/+/, '');
-                    img.alt = image.alt_text || 'Variant image';
-                    img.style.width = '75px';
-                    img.style.height = '75px';
-                    img.style.objectFit = 'cover';
-                    img.className = 'border rounded';
+                    if (galleryInput.dataset.initialized === '1') return;
+                    galleryInput.dataset.initialized = '1';
 
-                    img.onerror = function() {
-                        console.error('Could not load existing variant image:', img.src);
-                    };
+                    galleryInput.addEventListener('change', function() {
+                        galleryPreview.querySelectorAll('[data-new-gallery-preview]').forEach(node => {
+                            const img = node.querySelector('img');
 
-                    const tile = document.createElement('div');
-                    tile.className = 'image-tile position-relative';
-                    tile.dataset.imageTile = '1';
-                    tile.appendChild(img);
-                    if (image.id) {
-                        const cutButton = document.createElement('button');
-                        cutButton.type = 'button';
-                        cutButton.className = 'btn btn-danger btn-sm image-cut-btn';
-                        cutButton.textContent = '×';
-                        cutButton.setAttribute('aria-label', 'Remove variant image');
-                        cutButton.dataset.removeName = 'remove_variant_images[]';
-                        cutButton.dataset.removeId = String(image.id);
-                        tile.appendChild(cutButton);
-                    }
-                    preview.appendChild(tile);
-                });
-                imageInput.addEventListener('change', function() {
-                    preview.querySelectorAll('[data-new-image-preview]').forEach(img => {
-                        URL.revokeObjectURL(img.src);
-                        img.remove();
+                            if (img?.src) {
+                                URL.revokeObjectURL(img.src);
+                            }
+
+                            node.remove();
+                        });
+
+                        Array.from(galleryInput.files).forEach(file => {
+                            const img = document.createElement('img');
+                            img.src = URL.createObjectURL(file);
+                            img.alt = file.name;
+                            img.style.width = '85px';
+                            img.style.height = '85px';
+                            img.style.objectFit = 'cover';
+                            img.className = 'border rounded';
+
+                            const tile = document.createElement('div');
+                            tile.className = 'image-tile position-relative';
+                            tile.dataset.newGalleryPreview = '1';
+                            tile.appendChild(img);
+
+                            galleryPreview.appendChild(tile);
+                        });
+                    });
+                }
+
+
+                // Run immediately when the page fragment is inserted.
+                function initializeProductEditPage() {
+                    initializeVariantEditor();
+                    initializeGalleryPreview();
+                }
+
+                initializeProductEditPage();
+
+                // Also support vendor dashboard AJAX navigation.
+                document.addEventListener('vendor:page-loaded', initializeProductEditPage);
+
+
+                // Register the image removal handler only once.
+                if (!window.vendorProductImageRemovalInitialized) {
+                    window.vendorProductImageRemovalInitialized = true;
+
+                    document.addEventListener('click', function(event) {
+                        const button = event.target.closest('.image-cut-btn');
+                        if (!button) return;
+
+                        const form = button.closest('form');
+                        if (!form) return;
+
+                        const tile = button.closest('[data-image-tile], .image-tile');
+
+                        const input = document.createElement('input');
+                        input.type = 'hidden';
+                        input.name = button.dataset.removeName;
+                        input.value = button.dataset.removeId;
+
+                        form.appendChild(input);
+
+                        if (tile) tile.remove();
+                    });
+                }
+            })();
+            document.addEventListener('DOMContentLoaded', () => {
+                const galleryInput = document.querySelector('input[name="gallery_images[]"]');
+                const galleryPreview = document.getElementById('galleryPreview');
+
+                if (!galleryInput || !galleryPreview) return;
+
+                galleryInput.addEventListener('change', function() {
+                    galleryPreview.querySelectorAll('[data-new-gallery-preview]').forEach(node => {
+                        if (node.querySelector('img')?.src) URL.revokeObjectURL(node.querySelector('img').src);
+                        node.remove();
                     });
 
-                    Array.from(imageInput.files).forEach(file => {
+                    Array.from(galleryInput.files).forEach(file => {
                         const img = document.createElement('img');
-
                         img.src = URL.createObjectURL(file);
                         img.alt = file.name;
-                        img.dataset.newImagePreview = '1';
-                        img.style.width = '75px';
-                        img.style.height = '75px';
+                        img.style.width = '85px';
+                        img.style.height = '85px';
                         img.style.objectFit = 'cover';
                         img.className = 'border rounded';
-
-                        preview.appendChild(img);
+                        const tile = document.createElement('div');
+                        tile.className = 'image-tile position-relative';
+                        tile.dataset.newGalleryPreview = '1';
+                        tile.appendChild(img);
+                        galleryPreview.appendChild(tile);
                     });
                 });
-
-                container.appendChild(item);
-                nextIndex++;
-                refreshVariantNames();
-
-                console.log('Variant data:', data);
-                console.log('Variant images:', data.images);
-            }
-
-
-            addButton.addEventListener('click', () => addVariant());
-            const existingVariants = window.existingProductVariants || [];
-
-            existingVariants.forEach(variant => addVariant(variant));
-
-            refreshVariantNames();
-        });
-        document.addEventListener('DOMContentLoaded', function() {
-            const galleryInput = document.querySelector('input[name="gallery_images[]"]');
-            const galleryPreview = document.getElementById('galleryPreview');
-
-            if (!galleryInput || !galleryPreview) return;
-
-            galleryInput.addEventListener('change', function() {
-                galleryPreview.querySelectorAll('[data-new-gallery-preview]').forEach(node => {
-                    if (node.querySelector('img')?.src) URL.revokeObjectURL(node.querySelector('img').src);
-                    node.remove();
-                });
-
-                Array.from(galleryInput.files).forEach(file => {
-                    const img = document.createElement('img');
-                    img.src = URL.createObjectURL(file);
-                    img.alt = file.name;
-                    img.style.width = '85px';
-                    img.style.height = '85px';
-                    img.style.objectFit = 'cover';
-                    img.className = 'border rounded';
-                    const tile = document.createElement('div');
-                    tile.className = 'image-tile position-relative';
-                    tile.dataset.newGalleryPreview = '1';
-                    tile.appendChild(img);
-                    galleryPreview.appendChild(tile);
-                });
+            })();
+            document.addEventListener('click', function(event) {
+                const button = event.target.closest('.image-cut-btn');
+                if (!button) return;
+                const form = button.closest('form');
+                const tile = button.closest('[data-image-tile], .image-tile');
+                const input = document.createElement('input');
+                input.type = 'hidden';
+                input.name = button.dataset.removeName;
+                input.value = button.dataset.removeId;
+                form.appendChild(input);
+                if (tile) tile.remove();
             });
-        });
-        document.addEventListener('click', function(event) {
-            const button = event.target.closest('.image-cut-btn');
-            if (!button) return;
-            const form = button.closest('form');
-            const tile = button.closest('[data-image-tile], .image-tile');
-            const input = document.createElement('input');
-            input.type = 'hidden';
-            input.name = button.dataset.removeName;
-            input.value = button.dataset.removeId;
-            form.appendChild(input);
-            if (tile) tile.remove();
-        });
-    </script>
-</body>
-
-</html>
+        </script>
+        <?php vendorFooter(); ?>

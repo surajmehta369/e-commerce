@@ -1970,21 +1970,41 @@ if (
 
 $itemSql = "
     SELECT
-        id,
-        product_id,
-        variant_id,
-        product_name,
-        product_image,
-        price,
-        quantity,
-        subtotal,
-        weight,
-        length,
-        width,
-        height
-    FROM order_items
-    WHERE order_id = :order_id
-    ORDER BY id ASC
+        oi.id,
+        oi.product_id,
+        oi.variant_id,
+        oi.product_name,
+        oi.product_image,
+        oi.price,
+        oi.quantity,
+        oi.subtotal,
+        oi.weight,
+        oi.length,
+        oi.width,
+        oi.height,
+
+        p.vendor_id,
+        v.name AS vendor_name,
+
+        COALESCE(vos.status, 'confirmed') AS vendor_status,
+        vos.cancellation_reason,
+        vos.cancellation_requested_at
+
+    FROM order_items oi
+
+    LEFT JOIN products p
+        ON p.id = oi.product_id
+
+    LEFT JOIN users v
+        ON v.id = p.vendor_id
+
+    LEFT JOIN vendor_order_item_statuses vos
+        ON vos.order_item_id = oi.id
+        AND vos.vendor_id = p.vendor_id
+
+    WHERE oi.order_id = :order_id
+
+    ORDER BY oi.id ASC
 ";
 
 $itemStmt = $db->prepare($itemSql);
@@ -1993,6 +2013,7 @@ $itemStmt->execute([
 ]);
 
 $orderItems = $itemStmt->fetchAll(PDO::FETCH_ASSOC);
+
 
 
 /* ---------- LOAD EXISTING SHIPMENT ---------- */
@@ -2639,50 +2660,50 @@ adminHeader('Order #' . $order['id'], 'orders');
         <?php endif; ?>
 
 
-<?php if (isset($_GET['rto_received_confirmed'])): ?>
-    <div class="alert alert-success">
-        Returned shipment successfully received.
-    </div>
-<?php elseif (isset($_GET['rto_received_error'])): ?>
-    <div class="alert alert-danger">
-        Unable to confirm RTO receipt. Check the server error log.
-    </div>
-<?php endif; ?>
+        <?php if (isset($_GET['rto_received_confirmed'])): ?>
+            <div class="alert alert-success">
+                Returned shipment successfully received.
+            </div>
+        <?php elseif (isset($_GET['rto_received_error'])): ?>
+            <div class="alert alert-danger">
+                Unable to confirm RTO receipt. Check the server error log.
+            </div>
+        <?php endif; ?>
 
-<?php
-$canConfirmRtoReceived =
-    !empty($shipment) &&
-    strtolower($shipment['shipment_status'] ?? '') === 'rto_initiated';
-?>
+        <?php
+        $canConfirmRtoReceived =
+            !empty($shipment) &&
+            strtolower($shipment['shipment_status'] ?? '') === 'rto_initiated';
+        ?>
 
-<?php if ($canConfirmRtoReceived): ?>
-    <div class="border rounded p-3 mb-4">
-        <h6 class="fw-bold mb-2">
-            <i class="bi bi-box-seam me-2"></i>
-            Returned Shipment Receipt
-        </h6>
+        <?php if ($canConfirmRtoReceived): ?>
+            <div class="border rounded p-3 mb-4">
+                <h6 class="fw-bold mb-2">
+                    <i class="bi bi-box-seam me-2"></i>
+                    Returned Shipment Receipt
+                </h6>
 
-        <p class="text-muted">
-            Confirm only after all returned packages have physically arrived.
-        </p>
+                <p class="text-muted">
+                    Confirm only after all returned packages have physically arrived.
+                </p>
 
-        <form method="POST"
-            onsubmit="return confirm('Have all returned packages physically reached your business?');">
+                <form method="POST"
+                    onsubmit="return confirm('Have all returned packages physically reached your business?');">
 
-            <input type="hidden" name="action"
-                value="confirm_rto_received">
+                    <input type="hidden" name="action"
+                        value="confirm_rto_received">
 
-            <input type="hidden" name="csrf_token"
-                value="<?= e($_SESSION['orders_csrf_token']) ?>">
+                    <input type="hidden" name="csrf_token"
+                        value="<?= e($_SESSION['orders_csrf_token']) ?>">
 
-            <button type="submit"
-                class="btn btn-success rounded-pill px-4">
-                <i class="bi bi-box-seam me-2"></i>
-                Confirm RTO Received
-            </button>
-        </form>
-    </div>
-<?php endif; ?>
+                    <button type="submit"
+                        class="btn btn-success rounded-pill px-4">
+                        <i class="bi bi-box-seam me-2"></i>
+                        Confirm RTO Received
+                    </button>
+                </form>
+            </div>
+        <?php endif; ?>
 
         <form method="POST">
 
@@ -2891,6 +2912,75 @@ $canConfirmRtoReceived =
                             <p class="text-muted mb-0">
                                 Quantity: <?= (int) $item['quantity'] ?>
                             </p>
+
+
+                            <?php
+                            $vendorStatus = strtolower(
+                                $item['vendor_status'] ?? 'confirmed'
+                            );
+
+                            $vendorStatusLabels = [
+                                'confirmed' => 'Confirmed',
+                                'processing' => 'Processing',
+                                'packed' => 'Packed',
+                                'cancellation_requested' => 'Cancellation Requested'
+                            ];
+
+                            $vendorStatusClasses = [
+                                'confirmed' => 'bg-secondary',
+                                'processing' => 'bg-info text-dark',
+                                'packed' => 'bg-success',
+                                'cancellation_requested' => 'bg-warning text-dark'
+                            ];
+
+                            $vendorStatusLabel = $vendorStatusLabels[$vendorStatus]
+                                ?? ucwords(str_replace('_', ' ', $vendorStatus));
+
+                            $vendorStatusClass = $vendorStatusClasses[$vendorStatus]
+                                ?? 'bg-secondary';
+                            ?>
+
+                            <div class="mt-3">
+                                <small class="text-muted d-block mb-1">
+                                    <i class="bi bi-shop me-1"></i>
+                                    Vendor: <strong><?= e($item['vendor_name'] ?: 'Unknown Vendor') ?></strong>
+                                </small>
+
+                                <small class="text-muted me-2">Vendor Status:</small>
+
+                                <span class="badge <?= e($vendorStatusClass) ?>">
+                                    <?= e($vendorStatusLabel) ?>
+                                </span>
+
+                                <?php if ($vendorStatus === 'cancellation_requested'): ?>
+
+                                    <div class="alert alert-warning mt-2 mb-0">
+                                        <strong>
+                                            <i class="bi bi-exclamation-triangle me-1"></i>
+                                            Vendor Cancellation Request
+                                        </strong>
+
+                                        <?php if (!empty($item['cancellation_reason'])): ?>
+                                            <p class="mb-1 mt-2">
+                                                <strong>Reason:</strong>
+                                                <?= nl2br(e($item['cancellation_reason'])) ?>
+                                            </p>
+                                        <?php endif; ?>
+
+                                        <?php if (!empty($item['cancellation_requested_at'])): ?>
+                                            <small class="text-muted">
+                                                Requested on:
+                                                <?= date(
+                                                    'd M Y, h:i A',
+                                                    strtotime($item['cancellation_requested_at'])
+                                                ) ?>
+                                            </small>
+                                        <?php endif; ?>
+                                    </div>
+
+                                <?php endif; ?>
+                            </div>
+
                             <div class="mt-2">
                                 <small class="text-muted d-block">
                                     <i class="bi bi-box me-1"></i>
